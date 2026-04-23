@@ -104,7 +104,7 @@ function App(){
   const [df,setDf]=useState("הכל");
   const [notif,setNotif]=useState(null);
   const [loading,setLoading]=useState(false);
-  const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין"});
+  const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
   const [nc,setNc]=useState({name:"",phone:"",email:"",address:"",payment_terms:"שוטף + 30"});
   const [allUsers,setAllUsers]=useState([]);
 
@@ -134,9 +134,18 @@ function App(){
 
   const doAddTask=async()=>{
     if(!nt.title.trim())return;
-    try{await sb("tasks",{method:"POST",body:JSON.stringify({...nt,due_date:nt.due_date||null,created_by:user.name})});
-    setNt({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין"});
-    setAddTask(false);await load();notify("✅ משימה נוספה");}catch(e){notify("שגיאה","#EF4444");}
+    try{
+      let notes=nt.notes||"";
+      if(nt.dept==="משלוחים"){
+        const parts=[];
+        if(nt.address)parts.push(`📍 ${nt.address}`);
+        if(nt.phone)parts.push(`📞 ${nt.phone}`);
+        if(parts.length)notes=(parts.join(" | ")+(notes?" | "+notes:""));
+      }
+      await sb("tasks",{method:"POST",body:JSON.stringify({title:nt.title,dept:nt.dept,priority:nt.priority,client_name:nt.client_name,assignee:nt.assignee,due_date:nt.due_date||null,notes,status:nt.status,created_by:user.name})});
+      setNt({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
+      setAddTask(false);await load();notify("✅ משימה נוספה");
+    }catch(e){notify("שגיאה","#EF4444");}
   };
 
   const doAddClient=async()=>{
@@ -328,6 +337,13 @@ function App(){
           </select></div>
         </div>
         <div><label style={LS}>תאריך יעד</label><input type="date" style={IS} value={nt.due_date} onChange={e=>setNt(p=>({...p,due_date:e.target.value}))}/></div>
+        {nt.dept==="משלוחים"&&<div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:12}}>
+          <div style={{color:"#60A5FA",fontSize:11,fontWeight:700,marginBottom:10}}>🚚 פרטי משלוח</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div><label style={LS}>כתובת יעד</label><input style={IS} value={nt.address} onChange={e=>setNt(p=>({...p,address:e.target.value}))} placeholder="רחוב, עיר"/></div>
+            <div><label style={LS}>טלפון לקוח</label><input style={IS} value={nt.phone} onChange={e=>setNt(p=>({...p,phone:e.target.value}))} placeholder="050-0000000" type="tel"/></div>
+          </div>
+        </div>}
         <div><label style={LS}>הערות</label><input style={IS} value={nt.notes} onChange={e=>setNt(p=>({...p,notes:e.target.value}))} placeholder="הערות..."/></div>
         <div style={{display:"flex",gap:9}}>
           <button onClick={doAddTask} style={{flex:1,padding:"11px",borderRadius:9,border:"none",background:"linear-gradient(135deg,#3B82F6,#6366F1)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>הוסף</button>

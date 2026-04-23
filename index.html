@@ -307,15 +307,44 @@ function App(){
         </div>
       </div>}
 
-      {tab==="debt"&&isA&&<div>
-        <div style={{marginBottom:20}}><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1></div>
-        <div className="kg" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18}}>
-          {[{lb:"סה״כ",v:`₪${totD.toLocaleString()}`,c:"#3B82F6",ic:"📊"},{lb:"באיחור",v:`₪${ovD.toLocaleString()}`,c:"#EF4444",ic:"🚨"},{lb:"לקוחות",v:debt.length,c:"#10B981",ic:"👥"}].map((x,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:18}}>
-            <div style={{fontSize:20,marginBottom:6}}>{x.ic}</div><div style={{fontSize:24,fontWeight:900,color:x.c}}>{x.v}</div><div style={{color:"#64748B",fontSize:11,marginTop:4}}>{x.lb}</div>
-          </div>)}
-        </div>
-        {debt.length===0&&<div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:40,textAlign:"center"}}><div style={{fontSize:36,marginBottom:12}}>📂</div><div style={{fontWeight:700,fontSize:15,marginBottom:8}}>העלה את קובץ האקסל</div><div style={{color:"#64748B",fontSize:13}}>ניבא את נתוני הגבייה שלך</div></div>}
-      </div>}
+      {tab==="debt"&&isA&&(()=>{
+        const [df2,setDf2]=useState("הכל");
+        const overdue=debt.filter(d=>d.status==="באיחור").sort((a,b)=>b.days_overdue-a.days_overdue);
+        const current=debt.filter(d=>d.status!=="באיחור").sort((a,b)=>b.amount-a.amount);
+        const shown=df2==="הכל"?debt:df2==="באיחור"?overdue:current;
+        const totD2=debt.reduce((s,d)=>s+Number(d.amount),0);
+        const ovD2=overdue.reduce((s,d)=>s+Number(d.amount),0);
+        return<div>
+          <div style={{marginBottom:20}}><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1><p style={{color:"#64748B",margin:"3px 0 0",fontSize:12}}>{debt.length} לקוחות חייבים</p></div>
+          <div className="kg" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+            {[{lb:"סה״כ חוב",v:`₪${totD2.toLocaleString()}`,c:"#3B82F6",ic:"📊"},{lb:"באיחור",v:`₪${ovD2.toLocaleString()}`,c:"#EF4444",ic:"🚨"},{lb:"לקוחות",v:debt.length,c:"#10B981",ic:"👥"}].map((x,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:18}}>
+              <div style={{fontSize:18,marginBottom:6}}>{x.ic}</div><div style={{fontSize:22,fontWeight:900,color:x.c}}>{x.v}</div><div style={{color:"#64748B",fontSize:11,marginTop:4}}>{x.lb}</div>
+            </div>)}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:16}}>
+            {["הכל","באיחור","שוטף"].map(f=><button key={f} onClick={()=>setDf2(f)} style={{padding:"6px 16px",borderRadius:20,border:"1px solid",borderColor:df2===f?(f==="באיחור"?"#EF4444":"#3B82F6"):"rgba(255,255,255,0.1)",background:df2===f?(f==="באיחור"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)"):"transparent",color:df2===f?(f==="באיחור"?"#EF4444":"#60A5FA"):"#64748B",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{f} {f==="באיחור"?`(${overdue.length})`:f==="שוטף"?`(${current.length})`:`(${debt.length})`}</button>)}
+          </div>
+          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:500}}>
+                <thead><tr style={{background:"rgba(255,255,255,0.04)"}}>
+                  {["לקוח","סכום","תאריך פירעון","ימי איחור","סטטוס","פעולה"].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"right",fontSize:11,color:"#64748B",fontWeight:700,whiteSpace:"nowrap"}}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {shown.map(d=><tr key={d.id} style={{borderTop:"1px solid rgba(255,255,255,0.04)"}}>
+                    <td style={{padding:"11px 14px",fontWeight:600,fontSize:13}}>{d.client_name}</td>
+                    <td style={{padding:"11px 14px",fontWeight:700,color:d.status==="באיחור"?"#EF4444":"#10B981",fontSize:13}}>₪{Number(d.amount).toLocaleString()}</td>
+                    <td style={{padding:"11px 14px",color:"#94A3B8",fontSize:12}}>{d.due_date}</td>
+                    <td style={{padding:"11px 14px"}}>{d.days_overdue>0?<span style={{color:"#EF4444",fontWeight:700,fontSize:12}}>{d.days_overdue} ימים</span>:<span style={{color:"#10B981",fontSize:12}}>שוטף</span>}</td>
+                    <td style={{padding:"11px 14px"}}><span style={{padding:"3px 9px",borderRadius:20,fontSize:11,fontWeight:600,background:d.status==="באיחור"?"rgba(239,68,68,0.12)":"rgba(16,185,129,0.12)",color:d.status==="באיחור"?"#EF4444":"#10B981"}}>{d.status}</span></td>
+                    <td style={{padding:"11px 14px"}}><button onClick={()=>notify(`📧 תזכורת נשלחה ל-${d.client_name}`,"#3B82F6")} style={{padding:"5px 10px",borderRadius:7,border:"1px solid rgba(59,130,246,0.3)",background:"rgba(59,130,246,0.1)",color:"#60A5FA",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>שלח תזכורת</button></td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>;
+      })()}
     </div>
 
     <Modal open={addTask} onClose={()=>setAddTask(false)}>

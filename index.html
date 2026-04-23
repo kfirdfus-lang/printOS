@@ -102,6 +102,7 @@ function App(){
   const [addClient,setAddClient]=useState(false);
   const [det,setDet]=useState(null);
   const [df,setDf]=useState("הכל");
+  const [df2,setDf2]=useState("הכל");
   const [notif,setNotif]=useState(null);
   const [loading,setLoading]=useState(false);
   const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
@@ -307,8 +308,8 @@ function App(){
         </div>
       </div>}
 
-      {tab==="debt"&&isA&&(()=>{
-        const [df2,setDf2]=useState("הכל");
+      {tab==="debt"&&isA&&<div>
+        {(()=>{
         const overdue=debt.filter(d=>d.status==="באיחור").sort((a,b)=>b.days_overdue-a.days_overdue);
         const current=debt.filter(d=>d.status!=="באיחור").sort((a,b)=>b.amount-a.amount);
         const shown=df2==="הכל"?debt:df2==="באיחור"?overdue:current;
@@ -344,7 +345,8 @@ function App(){
             </div>
           </div>
         </div>;
-      })()}
+        })()}
+      </div>}
     </div>
 
     <Modal open={addTask} onClose={()=>setAddTask(false)}>

@@ -16,8 +16,8 @@ body{background:#080E17;font-family:'Heebo',sans-serif;color:#E2E8F0}
 select option{background:#0D1621;color:#fff}
 input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes bounce{0%,80%,100%{transform:scale(0.4);opacity:0.4}40%{transform:scale(1);opacity:1}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 @media(max-width:768px){
   .sd{display:none!important}
   .sm{display:block!important}
@@ -32,7 +32,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useRef}=React;
+const {useState,useEffect}=React;
 const SU="https://pvwcpukfhyrmdpxgfwrk.supabase.co";
 const SA="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d2NwdWtmaHlybWRweGdmd3JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NzIzNzMsImV4cCI6MjA5MjQ0ODM3M30.69GpTOQdwtAgouGN0MIHqQc6bImxAbfQ72xL2S4KaoM";
 
@@ -42,46 +42,84 @@ const sb=async(path,o={})=>{
 };
 
 const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי שחור לבן","אופסט","עבודות חוץ","משלוחים","תזכורות"];
-const USERS=[
-  {id:"admin",name:"מנהל ראשי",role:"admin",dept:null,color:"#6366F1",ini:"מנ"},
-  {id:"u2",name:"אבי כהן",role:"worker",dept:"פורמט רחב",color:"#3B82F6",ini:"אכ"},
-  {id:"u3",name:"שירה לוי",role:"worker",dept:"דיגיטלי צבעוני",color:"#EC4899",ini:"של"},
-  {id:"u4",name:"דוד מזרחי",role:"worker",dept:"דיגיטלי שחור לבן",color:"#10B981",ini:"דמ"},
-  {id:"u5",name:"יוסי פרץ",role:"worker",dept:"אופסט",color:"#F59E0B",ini:"יפ"},
-  {id:"u6",name:"נועה שמש",role:"worker",dept:"עבודות חוץ",color:"#8B5CF6",ini:"נש"},
-  {id:"u7",name:"רמי דהן",role:"worker",dept:"משלוחים",color:"#EF4444",ini:"רד"},
-  {id:"u8",name:"מיכל אזולאי",role:"worker",dept:"תזכורות",color:"#14B8A6",ini:"מא"},
-];
 const SC={"ממתין":{c:"#F59E0B",bg:"rgba(245,158,11,0.13)"},"בביצוע":{c:"#3B82F6",bg:"rgba(59,130,246,0.13)"},"הושלם":{c:"#10B981",bg:"rgba(16,185,129,0.13)"},"תקוע":{c:"#EF4444",bg:"rgba(239,68,68,0.13)"}};
 
 const Badge=({status})=>{const s=SC[status]||{};return<span style={{background:s.bg,color:s.c,border:`1px solid ${s.c}33`,borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:600,display:"inline-flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}><span style={{width:6,height:6,borderRadius:"50%",background:s.c,flexShrink:0}}/>{status}</span>};
-const Av=({u,sz=36})=><div style={{width:sz,height:sz,borderRadius:"50%",background:`linear-gradient(135deg,${u.color},${u.color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:800,color:"#fff",flexShrink:0}}>{u.ini}</div>;
+const Av=({u,sz=36})=><div style={{width:sz,height:sz,borderRadius:"50%",background:`linear-gradient(135deg,${u.color},${u.color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:800,color:"#fff",flexShrink:0}}>{u.initials}</div>;
 const Sp=({sz=20})=><div style={{width:sz,height:sz,border:"2px solid rgba(255,255,255,0.15)",borderTop:"2px solid #3B82F6",borderRadius:"50%",animation:"spin 0.8s linear infinite",flexShrink:0}}/>;
 const Modal=({open,onClose,children})=>!open?null:<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:"#0D1621",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,padding:26,width:"100%",maxWidth:500,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 30px 80px rgba(0,0,0,0.7)"}}>{children}</div></div>;
 
+/* ── PIN LOGIN ── */
 function Login({onLogin}){
+  const [users,setUsers]=useState([]);
   const [sel,setSel]=useState(null);
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState(false);
+  const [loading,setLoading]=useState(true);
+  const [step,setStep]=useState("pick"); // pick | pin
+
+  useEffect(()=>{
+    sb("users?order=role.desc,name.asc").then(u=>{ setUsers(u); setLoading(false); }).catch(()=>setLoading(false));
+  },[]);
+
+  const handlePick=(u)=>{ setSel(u); setPin(""); setErr(false); setStep("pin"); };
+
+  const handlePin=(d)=>{
+    if(pin.length>=4)return;
+    const np=pin+d;
+    setPin(np);
+    if(np.length===4){
+      if(np===sel.pin){ onLogin(sel); }
+      else{ setErr(true); setTimeout(()=>{ setPin(""); setErr(false); },600); }
+    }
+  };
+
+  const handleDel=()=>{ setPin(p=>p.slice(0,-1)); setErr(false); };
+
+  if(loading)return<div style={{minHeight:"100vh",background:"#080E17",display:"flex",alignItems:"center",justifyContent:"center"}}><Sp sz={32}/></div>;
+
   return<div style={{minHeight:"100vh",background:"#080E17",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
-    <div style={{width:"100%",maxWidth:400}}>
+    <div style={{width:"100%",maxWidth:380}}>
       <div style={{textAlign:"center",marginBottom:32}}>
-        <div style={{width:56,height:56,borderRadius:15,background:"linear-gradient(135deg,#3B82F6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 12px"}}>🖨️</div>
+        <div style={{width:60,height:60,borderRadius:16,background:"linear-gradient(135deg,#3B82F6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🖨️</div>
         <h1 style={{color:"#F8FAFC",fontSize:24,fontWeight:900,margin:"0 0 4px"}}>PrintOS</h1>
-        <p style={{color:"#64748B",margin:0,fontSize:13}}>בחר פרופיל להמשך</p>
+        <p style={{color:"#64748B",margin:0,fontSize:13}}>{step==="pick"?"בחר את הפרופיל שלך":"הכנס קוד PIN"}</p>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
-        {USERS.map(u=><button key={u.id} onClick={()=>setSel(u.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",borderRadius:12,border:"2px solid",borderColor:sel===u.id?u.color:"rgba(255,255,255,0.07)",background:sel===u.id?`${u.color}15`:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"inherit",textAlign:"right",transition:"all 0.15s",width:"100%"}}>
+
+      {step==="pick"&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {users.map(u=><button key={u.id} onClick={()=>handlePick(u)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"inherit",textAlign:"right",transition:"all 0.15s",width:"100%"}}>
           <Av u={u} sz={36}/>
           <div style={{flex:1}}><div style={{color:"#F8FAFC",fontWeight:700,fontSize:13}}>{u.name}</div><div style={{color:"#64748B",fontSize:11,marginTop:1}}>{u.role==="admin"?"👑 מנהל":`🏭 ${u.dept}`}</div></div>
-          {sel===u.id&&<span style={{color:u.color,fontSize:16,fontWeight:900}}>✓</span>}
+          <span style={{color:"#475569",fontSize:16}}>›</span>
         </button>)}
-      </div>
-      <button onClick={()=>{const u=USERS.find(u=>u.id===sel);if(u)onLogin(u);}} disabled={!sel} style={{width:"100%",padding:"12px",borderRadius:12,border:"none",background:sel?"linear-gradient(135deg,#3B82F6,#6366F1)":"rgba(255,255,255,0.05)",color:sel?"#fff":"#475569",fontWeight:700,fontSize:14,cursor:sel?"pointer":"not-allowed",fontFamily:"inherit"}}>
-        {sel?`כניסה כ-${USERS.find(u=>u.id===sel)?.name}`:"בחר פרופיל"}
-      </button>
+      </div>}
+
+      {step==="pin"&&sel&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:24}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:12,background:"rgba(255,255,255,0.05)",width:"100%"}}>
+          <Av u={sel} sz={36}/>
+          <div><div style={{color:"#F8FAFC",fontWeight:700,fontSize:14}}>{sel.name}</div><div style={{color:"#64748B",fontSize:11}}>{sel.role==="admin"?"מנהל ראשי":sel.dept}</div></div>
+        </div>
+
+        {/* PIN dots */}
+        <div style={{display:"flex",gap:14,animation:err?"shake 0.4s ease":"none"}}>
+          {[0,1,2,3].map(i=><div key={i} style={{width:16,height:16,borderRadius:"50%",background:pin.length>i?(err?"#EF4444":sel.color):"rgba(255,255,255,0.15)",transition:"all 0.15s"}}/>)}
+        </div>
+
+        {/* PIN pad */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,width:"100%",maxWidth:260}}>
+          {[1,2,3,4,5,6,7,8,9].map(d=><button key={d} onClick={()=>handlePin(String(d))} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#F8FAFC",fontSize:20,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.1s"}}>{d}</button>)}
+          <button onClick={()=>setStep("pick")} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#64748B",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>חזור</button>
+          <button onClick={()=>handlePin("0")} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#F8FAFC",fontSize:20,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>0</button>
+          <button onClick={handleDel} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94A3B8",fontSize:20,cursor:"pointer",fontFamily:"inherit"}}>⌫</button>
+        </div>
+
+        {err&&<div style={{color:"#EF4444",fontSize:13,fontWeight:600}}>קוד שגוי — נסה שוב</div>}
+      </div>}
     </div>
   </div>;
 }
 
+/* ── MAIN APP ── */
 function App(){
   const [user,setUser]=useState(null);
   const [tasks,setTasks]=useState([]);
@@ -113,9 +151,8 @@ function App(){
   };
 
   const isA=user?.role==="admin";
-  const vis=tasks;
-  const filt=(isA&&df!=="הכל")?vis.filter(t=>t.dept===df):vis;
-  const byS=s=>vis.filter(t=>t.status===s).length;
+  const filt=(isA&&df!=="הכל")?tasks.filter(t=>t.dept===df):tasks;
+  const byS=s=>tasks.filter(t=>t.status===s).length;
   const totD=debt.reduce((s,d)=>s+Number(d.amount),0);
   const ovD=debt.filter(d=>d.status==="באיחור").reduce((s,d)=>s+Number(d.amount),0);
 
@@ -123,24 +160,21 @@ function App(){
     if(!nt.title.trim())return;
     try{await sb("tasks",{method:"POST",body:JSON.stringify({...nt,due_date:nt.due_date||null,created_by:user.name})});
     setNt({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין"});
-    setAddTask(false);await load();notify("✅ משימה נוספה");}
-    catch(e){notify("שגיאה","#EF4444");}
+    setAddTask(false);await load();notify("✅ משימה נוספה");}catch(e){notify("שגיאה","#EF4444");}
   };
 
   const doAddClient=async()=>{
     if(!nc.name.trim())return;
     try{await sb("clients",{method:"POST",body:JSON.stringify(nc)});
     setNc({name:"",phone:"",email:"",address:"",payment_terms:"שוטף + 30"});
-    setAddClient(false);await load();notify("✅ לקוח נוסף");}
-    catch(e){notify("שגיאה","#EF4444");}
+    setAddClient(false);await load();notify("✅ לקוח נוסף");}catch(e){notify("שגיאה","#EF4444");}
   };
 
   const updStatus=async(id,s)=>{
     try{await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status:s})});
     setTasks(p=>p.map(t=>t.id===id?{...t,status:s}:t));
     if(det?.id===id)setDet(p=>({...p,status:s}));
-    notify(`עודכן: ${s}`);}
-    catch(e){notify("שגיאה","#EF4444");}
+    notify(`עודכן: ${s}`);}catch(e){notify("שגיאה","#EF4444");}
   };
 
   const IS={background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 13px",color:"#fff",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
@@ -159,7 +193,7 @@ function App(){
     <div style={{padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
       <Av u={user} sz={30}/>
       <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:12,color:"#F8FAFC",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.name}</div><div style={{fontSize:10,color:"#64748B"}}>{isA?"מנהל ראשי":user.dept}</div></div>
-      <button onClick={()=>{setUser(null);setTasks([]);setClients([]);}} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:14,padding:2}}>⎋</button>
+      <button onClick={()=>{setUser(null);setTasks([]);setClients([]);}} title="התנתק" style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:14,padding:2}}>⎋</button>
     </div>
     <nav style={{padding:"10px 8px",flex:1,overflowY:"auto"}}>
       {navs.map(n=><button key={n.id} onClick={()=>{setTab(n.id);setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:9,padding:"9px 11px",borderRadius:9,border:"none",cursor:"pointer",background:tab===n.id?"rgba(59,130,246,0.15)":"transparent",color:tab===n.id?"#60A5FA":"#64748B",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit"}}><span style={{fontSize:14}}>{n.ic}</span>{n.lb}</button>)}
@@ -311,7 +345,9 @@ function App(){
           <div><label style={LS}>לקוח</label><select style={IS} value={nt.client_name} onChange={e=>setNt(p=>({...p,client_name:e.target.value}))}>
             <option value="">בחר לקוח...</option>{clients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
           <div><label style={LS}>אחראי</label><select style={IS} value={nt.assignee} onChange={e=>setNt(p=>({...p,assignee:e.target.value}))}>
-            <option value="">בחר עובד...</option>{USERS.filter(u=>u.role==="worker"&&u.dept===nt.dept).map(u=><option key={u.id} value={u.name}>{u.name}</option>)}</select></div>
+            <option value="">בחר עובד...</option>
+            {nt.dept&&[{name:"אבי כהן",dept:"פורמט רחב"},{name:"שירה לוי",dept:"דיגיטלי צבעוני"},{name:"דוד מזרחי",dept:"דיגיטלי שחור לבן"},{name:"יוסי פרץ",dept:"אופסט"},{name:"נועה שמש",dept:"עבודות חוץ"},{name:"רמי דהן",dept:"משלוחים"},{name:"מיכל אזולאי",dept:"תזכורות"}].filter(u=>u.dept===nt.dept).map(u=><option key={u.name} value={u.name}>{u.name}</option>)}
+          </select></div>
         </div>
         <div><label style={LS}>תאריך יעד</label><input type="date" style={IS} value={nt.due_date} onChange={e=>setNt(p=>({...p,due_date:e.target.value}))}/></div>
         <div><label style={LS}>הערות</label><input style={IS} value={nt.notes} onChange={e=>setNt(p=>({...p,notes:e.target.value}))} placeholder="הערות..."/></div>

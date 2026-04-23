@@ -17,7 +17,6 @@ select option{background:#0D1621;color:#fff}
 input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.5)}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 @media(max-width:768px){
   .sd{display:none!important}
   .sm{display:block!important}
@@ -45,81 +44,53 @@ const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי �
 const SC={"ממתין":{c:"#F59E0B",bg:"rgba(245,158,11,0.13)"},"בביצוע":{c:"#3B82F6",bg:"rgba(59,130,246,0.13)"},"הושלם":{c:"#10B981",bg:"rgba(16,185,129,0.13)"},"תקוע":{c:"#EF4444",bg:"rgba(239,68,68,0.13)"}};
 
 const Badge=({status})=>{const s=SC[status]||{};return<span style={{background:s.bg,color:s.c,border:`1px solid ${s.c}33`,borderRadius:20,padding:"3px 10px",fontSize:12,fontWeight:600,display:"inline-flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}><span style={{width:6,height:6,borderRadius:"50%",background:s.c,flexShrink:0}}/>{status}</span>};
-const Av=({u,sz=36})=><div style={{width:sz,height:sz,borderRadius:"50%",background:`linear-gradient(135deg,${u.color},${u.color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:800,color:"#fff",flexShrink:0}}>{u.initials}</div>;
+
+const Av=({u,sz=36})=>{
+  const color=u.color||"#6366F1";
+  const ini=u.initials||(u.name?u.name[0]:"?");
+  return<div style={{width:sz,height:sz,borderRadius:"50%",background:`linear-gradient(135deg,${color},${color}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:800,color:"#fff",flexShrink:0}}>{ini}</div>;
+};
+
 const Sp=({sz=20})=><div style={{width:sz,height:sz,border:"2px solid rgba(255,255,255,0.15)",borderTop:"2px solid #3B82F6",borderRadius:"50%",animation:"spin 0.8s linear infinite",flexShrink:0}}/>;
 const Modal=({open,onClose,children})=>!open?null:<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:"#0D1621",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,padding:26,width:"100%",maxWidth:500,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 30px 80px rgba(0,0,0,0.7)"}}>{children}</div></div>;
 
-/* ── PIN LOGIN ── */
 function Login({onLogin}){
   const [users,setUsers]=useState([]);
   const [sel,setSel]=useState(null);
-  const [pin,setPin]=useState("");
-  const [err,setErr]=useState(false);
   const [loading,setLoading]=useState(true);
-  const [step,setStep]=useState("pick"); // pick | pin
 
   useEffect(()=>{
-    sb("users?order=role.desc,name.asc").then(u=>{ setUsers(u); setLoading(false); }).catch(()=>setLoading(false));
+    sb("users?order=role.desc,name.asc")
+      .then(u=>{setUsers(u);setLoading(false);})
+      .catch(()=>setLoading(false));
   },[]);
-
-  const handlePick=(u)=>{ setSel(u); setPin(""); setErr(false); setStep("pin"); };
-
-  const handlePin=(d)=>{
-    if(pin.length>=10)return;
-    const np=pin+d;
-    setPin(np);
-    if(np.length===10){
-      if(np===sel.pin){ onLogin(sel); }
-      else{ setErr(true); setTimeout(()=>{ setPin(""); setErr(false); },600); }
-    }
-  };
-
-  const handleDel=()=>{ setPin(p=>p.slice(0,-1)); setErr(false); };
 
   if(loading)return<div style={{minHeight:"100vh",background:"#080E17",display:"flex",alignItems:"center",justifyContent:"center"}}><Sp sz={32}/></div>;
 
   return<div style={{minHeight:"100vh",background:"#080E17",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
-    <div style={{width:"100%",maxWidth:380}}>
+    <div style={{width:"100%",maxWidth:400}}>
       <div style={{textAlign:"center",marginBottom:32}}>
         <div style={{width:60,height:60,borderRadius:16,background:"linear-gradient(135deg,#3B82F6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 14px"}}>🖨️</div>
         <h1 style={{color:"#F8FAFC",fontSize:24,fontWeight:900,margin:"0 0 4px"}}>PrintOS</h1>
-        <p style={{color:"#64748B",margin:0,fontSize:13}}>{step==="pick"?"בחר את הפרופיל שלך":"הכנס קוד PIN"}</p>
+        <p style={{color:"#64748B",margin:0,fontSize:13}}>בחר את הפרופיל שלך</p>
       </div>
-
-      {step==="pick"&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {users.map(u=><button key={u.id} onClick={()=>handlePick(u)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"inherit",textAlign:"right",transition:"all 0.15s",width:"100%"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+        {users.map(u=><button key={u.id} onClick={()=>setSel(u.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 15px",borderRadius:12,border:"2px solid",borderColor:sel===u.id?(u.color||"#6366F1"):"rgba(255,255,255,0.07)",background:sel===u.id?`${u.color||"#6366F1"}15`:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"inherit",textAlign:"right",transition:"all 0.15s",width:"100%"}}>
           <Av u={u} sz={36}/>
-          <div style={{flex:1}}><div style={{color:"#F8FAFC",fontWeight:700,fontSize:13}}>{u.name}</div><div style={{color:"#64748B",fontSize:11,marginTop:1}}>{u.role==="admin"?"👑 מנהל":`🏭 ${u.dept}`}</div></div>
-          <span style={{color:"#475569",fontSize:16}}>›</span>
+          <div style={{flex:1}}>
+            <div style={{color:"#F8FAFC",fontWeight:700,fontSize:13}}>{u.name}</div>
+            <div style={{color:"#64748B",fontSize:11,marginTop:1}}>{u.role==="admin"?"👑 מנהל — כל המחלקות":`🏭 ${u.dept}`}</div>
+          </div>
+          {sel===u.id&&<span style={{color:u.color||"#6366F1",fontSize:16,fontWeight:900}}>✓</span>}
         </button>)}
-      </div>}
-
-      {step==="pin"&&sel&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:24}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:12,background:"rgba(255,255,255,0.05)",width:"100%"}}>
-          <Av u={sel} sz={36}/>
-          <div><div style={{color:"#F8FAFC",fontWeight:700,fontSize:14}}>{sel.name}</div><div style={{color:"#64748B",fontSize:11}}>{sel.role==="admin"?"מנהל ראשי":sel.dept}</div></div>
-        </div>
-
-        {/* PIN dots */}
-        <div style={{display:"flex",gap:14,animation:err?"shake 0.4s ease":"none"}}>
-          {[0,1,2,3].map(i=><div key={i} style={{width:16,height:16,borderRadius:"50%",background:pin.length>i?(err?"#EF4444":sel.color):"rgba(255,255,255,0.15)",transition:"all 0.15s"}}/>)}
-        </div>
-
-        {/* PIN pad */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,width:"100%",maxWidth:260}}>
-          {[1,2,3,4,5,6,7,8,9].map(d=><button key={d} onClick={()=>handlePin(String(d))} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#F8FAFC",fontSize:20,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.1s"}}>{d}</button>)}
-          <button onClick={()=>setStep("pick")} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#64748B",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>חזור</button>
-          <button onClick={()=>handlePin("0")} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#F8FAFC",fontSize:20,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>0</button>
-          <button onClick={handleDel} style={{padding:"16px",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94A3B8",fontSize:20,cursor:"pointer",fontFamily:"inherit"}}>⌫</button>
-        </div>
-
-        {err&&<div style={{color:"#EF4444",fontSize:13,fontWeight:600}}>קוד שגוי — נסה שוב</div>}
-      </div>}
+      </div>
+      <button onClick={()=>{const u=users.find(u=>u.id===sel);if(u)onLogin(u);}} disabled={!sel} style={{width:"100%",padding:"12px",borderRadius:12,border:"none",background:sel?"linear-gradient(135deg,#3B82F6,#6366F1)":"rgba(255,255,255,0.05)",color:sel?"#fff":"#475569",fontWeight:700,fontSize:14,cursor:sel?"pointer":"not-allowed",fontFamily:"inherit"}}>
+        {sel?`כניסה כ-${users.find(u=>u.id===sel)?.name}`:"בחר פרופיל"}
+      </button>
     </div>
   </div>;
 }
 
-/* ── MAIN APP ── */
 function App(){
   const [user,setUser]=useState(null);
   const [tasks,setTasks]=useState([]);
@@ -135,6 +106,11 @@ function App(){
   const [loading,setLoading]=useState(false);
   const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין"});
   const [nc,setNc]=useState({name:"",phone:"",email:"",address:"",payment_terms:"שוטף + 30"});
+  const [allUsers,setAllUsers]=useState([]);
+
+  useEffect(()=>{
+    sb("users?role=eq.worker&order=name.asc").then(setAllUsers).catch(()=>{});
+  },[]);
 
   const notify=(m,c="#10B981")=>{setNotif({m,c});setTimeout(()=>setNotif(null),3000)};
 
@@ -182,6 +158,8 @@ function App(){
   const navs=[{id:"dashboard",ic:"◈",lb:"דשבורד"},{id:"tasks",ic:"⊞",lb:"משימות"},...(isA?[{id:"clients",ic:"👥",lb:"לקוחות"},{id:"debt",ic:"₪",lb:"גבייה"}]:[])];
 
   if(!user)return<Login onLogin={u=>{setUser(u);load(u);}}/>;
+
+  const color=user.color||"#6366F1";
 
   const Side=()=><div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
     <div style={{padding:"20px 16px 14px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexShrink:0}}>
@@ -346,7 +324,7 @@ function App(){
             <option value="">בחר לקוח...</option>{clients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
           <div><label style={LS}>אחראי</label><select style={IS} value={nt.assignee} onChange={e=>setNt(p=>({...p,assignee:e.target.value}))}>
             <option value="">בחר עובד...</option>
-            {nt.dept&&[{name:"אבי כהן",dept:"פורמט רחב"},{name:"שירה לוי",dept:"דיגיטלי צבעוני"},{name:"דוד מזרחי",dept:"דיגיטלי שחור לבן"},{name:"יוסי פרץ",dept:"אופסט"},{name:"נועה שמש",dept:"עבודות חוץ"},{name:"רמי דהן",dept:"משלוחים"},{name:"מיכל אזולאי",dept:"תזכורות"}].filter(u=>u.dept===nt.dept).map(u=><option key={u.name} value={u.name}>{u.name}</option>)}
+            {allUsers.filter(u=>u.dept===nt.dept).map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
           </select></div>
         </div>
         <div><label style={LS}>תאריך יעד</label><input type="date" style={IS} value={nt.due_date} onChange={e=>setNt(p=>({...p,due_date:e.target.value}))}/></div>

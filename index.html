@@ -65,10 +65,10 @@ function Login({onLogin}){
   const handlePick=(u)=>{ setSel(u); setPin(""); setErr(false); setStep("pin"); };
 
   const handlePin=(d)=>{
-    if(pin.length>=4)return;
+    if(pin.length>=10)return;
     const np=pin+d;
     setPin(np);
-    if(np.length===4){
+    if(np.length===10){
       if(np===sel.pin){ onLogin(sel); }
       else{ setErr(true); setTimeout(()=>{ setPin(""); setErr(false); },600); }
     }

@@ -9,6 +9,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#080E17;font-family:'Heebo',sans-serif;color:#E2E8F0}
@@ -100,8 +101,65 @@ const current=debt.filter(d=>d.status!==“באיחור”).sort((a,b)=>b.amount
 const shown=df2===“הכל”?debt:df2===“באיחור”?overdue:current;
 const totD2=debt.reduce((s,d)=>s+Number(d.amount),0);
 const ovD2=overdue.reduce((s,d)=>s+Number(d.amount),0);
+
+const exportExcel=()=>{
+try{
+const XLSX=window.XLSX;
+const wb=XLSX.utils.book_new();
+
+```
+  // Sheet 1 - כל החייבים
+  const all=[...overdue,...current];
+  const data1=[
+    ["דוח גבייה — בית דפוס","","","",""],
+    ["","","","",""],
+    ["לקוח","סכום חוב (₪)","תאריך פירעון","ימי איחור","סטטוס"],
+    ...all.map(d=>[d.client_name, Number(d.amount), d.due_date, d.days_overdue>0?d.days_overdue:'שוטף', d.status==='באיחור'?'באיחור':'שוטף']),
+    ["סה״כ", all.reduce((s,d)=>s+Number(d.amount),0),"","",""],
+  ];
+  const ws1=XLSX.utils.aoa_to_sheet(data1);
+  ws1['!cols']=[{wch:36},{wch:16},{wch:16},{wch:14},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws1,"סיכום");
+
+  // Sheet 2 - באיחור
+  const data2=[
+    ["חייבים באיחור","","","","",""],
+    ["לקוח","סכום (₪)","תאריך פירעון","ימי איחור","דחיפות","חשבוניות"],
+    ...overdue.map(d=>[
+      d.client_name,Number(d.amount),d.due_date,d.days_overdue,
+      d.days_overdue>90?"דחוף מאוד":d.days_overdue>30?"דחוף":"עקוב",
+      d.invoice_number||""
+    ]),
+    ["סה״כ",overdue.reduce((s,d)=>s+Number(d.amount),0),"","","",""],
+  ];
+  const ws2=XLSX.utils.aoa_to_sheet(data2);
+  ws2['!cols']=[{wch:36},{wch:16},{wch:16},{wch:14},{wch:14},{wch:22}];
+  XLSX.utils.book_append_sheet(wb,ws2,"חייבים באיחור");
+
+  // Sheet 3 - שוטף
+  const data3=[
+    ["חוב שוטף","","","",""],
+    ["לקוח","סכום (₪)","תאריך פירעון","חשבוניות","סטטוס"],
+    ...current.map(d=>[d.client_name,Number(d.amount),d.due_date,d.invoice_number||"","שוטף"]),
+    ["סה״כ",current.reduce((s,d)=>s+Number(d.amount),0),"","",""],
+  ];
+  const ws3=XLSX.utils.aoa_to_sheet(data3);
+  ws3['!cols']=[{wch:36},{wch:16},{wch:16},{wch:22},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws3,"שוטף");
+
+  XLSX.writeFile(wb,"דוח_גבייה.xlsx");
+  notify("📥 הדוח הורד בהצלחה!","#10B981");
+}catch(e){notify("שגיאה בייצוא: "+e.message,"#EF4444");}
+```
+
+};
 return<div>
-<div style={{marginBottom:20}}><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1><p style={{color:”#64748B”,margin:“3px 0 0”,fontSize:12}}>{debt.length} לקוחות חייבים</p></div>
+<div style={{marginBottom:20,display:“flex”,justifyContent:“space-between”,alignItems:“center”,flexWrap:“wrap”,gap:12}}>
+<div><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1><p style={{color:”#64748B”,margin:“3px 0 0”,fontSize:12}}>{debt.length} לקוחות חייבים</p></div>
+<button onClick={exportExcel} style={{padding:“10px 20px”,borderRadius:10,border:“none”,background:“linear-gradient(135deg,#10B981,#059669)”,color:”#fff”,fontWeight:700,fontSize:13,cursor:“pointer”,fontFamily:“inherit”,display:“flex”,alignItems:“center”,gap:8}}>
+📥 הורד דוח אקסל
+</button>
+</div>
 <div className=“kg” style={{display:“grid”,gridTemplateColumns:“repeat(3,1fr)”,gap:12,marginBottom:16}}>
 {[{lb:“סה״כ חוב”,v:`₪${totD2.toLocaleString()}`,c:”#3B82F6”,ic:“📊”},{lb:“באיחור”,v:`₪${ovD2.toLocaleString()}`,c:”#EF4444”,ic:“🚨”},{lb:“לקוחות”,v:debt.length,c:”#10B981”,ic:“👥”}].map((x,i)=><div key={i} style={{background:“rgba(255,255,255,0.03)”,border:“1px solid rgba(255,255,255,0.07)”,borderRadius:14,padding:18}}>
 <div style={{fontSize:18,marginBottom:6}}>{x.ic}</div><div style={{fontSize:22,fontWeight:900,color:x.c}}>{x.v}</div><div style={{color:”#64748B”,fontSize:11,marginTop:4}}>{x.lb}</div>
@@ -243,8 +301,13 @@ return<div style={{minHeight:“100vh”,background:”#080E17”,fontFamily:”
   <div style={{display:"flex",alignItems:"center",gap:8}}>
     <div style={{width:26,height:26,borderRadius:7,background:"linear-gradient(135deg,#3B82F6,#6366F1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>🖨️</div>
     <span style={{fontWeight:800,fontSize:15,color:"#F8FAFC"}}>PrintOS</span>
+    {tab!=="dashboard"&&<span style={{color:"#475569",fontSize:13}}>›</span>}
+    {tab!=="dashboard"&&<span style={{color:"#94A3B8",fontSize:13}}>{navs.find(n=>n.id===tab)?.lb}</span>}
   </div>
-  <button onClick={()=>setMob(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,color:"#fff",cursor:"pointer",padding:"5px 9px",fontSize:16}}>☰</button>
+  <div style={{display:"flex",gap:8}}>
+    {tab!=="dashboard"&&<button onClick={()=>setTab("dashboard")} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,color:"#94A3B8",cursor:"pointer",padding:"5px 10px",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>🏠 בית</button>}
+    <button onClick={()=>setMob(true)} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,color:"#fff",cursor:"pointer",padding:"5px 9px",fontSize:16}}>☰</button>
+  </div>
 </div>
 
 <div style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:150,background:"rgba(10,18,28,0.98)",backdropFilter:"blur(16px)",borderTop:"1px solid rgba(255,255,255,0.07)"}} className="bn">
@@ -255,6 +318,11 @@ return<div style={{minHeight:“100vh”,background:”#080E17”,fontFamily:”
 </div>
 
 <div className="ma" style={{marginRight:200,padding:"24px 26px 40px"}}>
+  {tab!=="dashboard"&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+    <button onClick={()=>setTab("dashboard")} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#94A3B8",cursor:"pointer",padding:"6px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>🏠 דשבורד</button>
+    <span style={{color:"#475569",fontSize:14}}>›</span>
+    <span style={{color:"#F8FAFC",fontSize:13,fontWeight:600}}>{navs.find(n=>n.id===tab)?.lb}</span>
+  </div>}
 
   {tab==="dashboard"&&<div>
     <div style={{marginBottom:20}}><h1 style={{fontSize:22,fontWeight:900,margin:0}}>שלום, {user.name.split(" ")[0]} 👋</h1><p style={{color:"#64748B",margin:"4px 0 0",fontSize:12}}>{isA?"סקירה כללית":`מחלקת ${user.dept}`}</p></div>

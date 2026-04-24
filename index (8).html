@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -119,17 +120,120 @@ function DebtTab({debt,notify}){
 
   const exportExcel=()=>{
     try{
-      const XLSX=window.XLSX;const wb=XLSX.utils.book_new();
+      const XLSX=window.XLSX;
+      const now=new Date().toLocaleDateString('he-IL');
       const all=[...overdue,...current];
-      const d1=[["דוח גבייה","","","","",""],["לקוח","סכום (₪)","פירעון","ימי איחור","סטטוס טיפול","הערות"],...all.map(d=>[d.client_name,Number(d.amount),d.due_date,d.days_overdue>0?d.days_overdue:"שוטף",d.payment_status||"ממתין",d.payment_notes||""]),["סה״כ",all.reduce((s,d)=>s+Number(d.amount),0),"","","",""]];
-      const ws1=XLSX.utils.aoa_to_sheet(d1);ws1['!cols']=[{wch:36},{wch:14},{wch:14},{wch:12},{wch:16},{wch:32}];
+      const total=localDebt.reduce((s,d)=>s+Number(d.amount),0);
+
+      // Style helpers
+      const hdrStyle=(bg,fg="FFFFFF")=>({font:{name:"Arial",bold:true,sz:11,color:{rgb:fg}},fill:{fgColor:{rgb:bg}},alignment:{horizontal:"center",vertical:"center",readingOrder:2},border:{top:{style:"thin",color:{rgb:"FFFFFF"}},bottom:{style:"thin",color:{rgb:"FFFFFF"}},left:{style:"thin",color:{rgb:"FFFFFF"}},right:{style:"thin",color:{rgb:"FFFFFF"}}}});
+      const datStyle=(bg,fg,bold=false,al="center")=>({font:{name:"Arial",sz:10,bold,color:{rgb:fg}},fill:{fgColor:{rgb:bg}},alignment:{horizontal:al,vertical:"center",readingOrder:2},border:{top:{style:"thin",color:{rgb:"E2E8F0"}},bottom:{style:"thin",color:{rgb:"E2E8F0"}},left:{style:"thin",color:{rgb:"E2E8F0"}},right:{style:"thin",color:{rgb:"E2E8F0"}}}});
+      const titleStyle=(bg,fg,sz=18)=>({font:{name:"Arial",bold:true,sz,color:{rgb:fg}},fill:{fgColor:{rgb:bg}},alignment:{horizontal:"right",vertical:"center",readingOrder:2}});
+      const totalStyle={font:{name:"Arial",bold:true,sz:11,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1E3A5F"}},alignment:{horizontal:"center",vertical:"center"},border:{top:{style:"medium",color:{rgb:"2563EB"}},bottom:{style:"medium",color:{rgb:"2563EB"}}}};
+
+      const setCell=(ws,addr,value,style,fmt)=>{
+        ws[addr]={v:value,t:typeof value==='number'?'n':'s',s:style};
+        if(fmt)ws[addr].z=fmt;
+      };
+
+      const makeRange=(ws,rows,cols)=>{ws['!ref']=`A1:${String.fromCharCode(64+cols)}${rows}`;};
+
+      // ── SHEET 1: סיכום ──
+      const ws1={};
+      // Title row
+      ws1['!merges']=[
+        {s:{r:0,c:0},e:{r:0,c:5}},
+        {s:{r:1,c:0},e:{r:1,c:5}},
+        {s:{r:3,c:0},e:{r:4,c:1}},
+        {s:{r:3,c:2},e:{r:4,c:3}},
+        {s:{r:3,c:4},e:{r:4,c:5}},
+      ];
+
+      setCell(ws1,'A1',`דוח גבייה — בית דפוס`,titleStyle("0F172A","F8FAFC",18));
+      for(let c=1;c<6;c++)setCell(ws1,String.fromCharCode(65+c)+'1',"",{fill:{fgColor:{rgb:"0F172A"}}});
+      setCell(ws1,'A2',`נוצר: ${now}  |  ${all.length} לקוחות חייבים`,{...titleStyle("0F172A","64748B",10),font:{name:"Arial",sz:10,color:{rgb:"64748B"}}});
+      for(let c=1;c<6;c++)setCell(ws1,String.fromCharCode(65+c)+'2',"",{fill:{fgColor:{rgb:"0F172A"}}});
+
+      // KPI
+      setCell(ws1,'A3',`סה״כ חוב: ₪${total.toLocaleString()}`,{font:{name:"Arial",bold:true,sz:13,color:{rgb:"1E40AF"}},fill:{fgColor:{rgb:"DBEAFE"}},alignment:{horizontal:"center",vertical:"center",readingOrder:2}});
+      setCell(ws1,'A4',"",{fill:{fgColor:{rgb:"DBEAFE"}}});
+      setCell(ws1,'C3',`באיחור: ₪${overdue.reduce((s,d)=>s+Number(d.amount),0).toLocaleString()}`,{font:{name:"Arial",bold:true,sz:13,color:{rgb:"991B1B"}},fill:{fgColor:{rgb:"FEE2E2"}},alignment:{horizontal:"center",vertical:"center",readingOrder:2}});
+      setCell(ws1,'C4',"",{fill:{fgColor:{rgb:"FEE2E2"}}});
+      setCell(ws1,'E3',`שוטף: ₪${current.reduce((s,d)=>s+Number(d.amount),0).toLocaleString()}`,{font:{name:"Arial",bold:true,sz:13,color:{rgb:"14532D"}},fill:{fgColor:{rgb:"DCFCE7"}},alignment:{horizontal:"center",vertical:"center",readingOrder:2}});
+      setCell(ws1,'E4',"",{fill:{fgColor:{rgb:"DCFCE7"}}});
+      for(let c=1;c<6;c+=2){['3','4'].forEach(r=>{ if(ws1[String.fromCharCode(65+c)+r])return; setCell(ws1,String.fromCharCode(65+c)+r,"",{fill:{fgColor:{rgb:"F8FAFC"}}}); }); }
+
+      // Headers row 6
+      ["לקוח","סכום (₪)","תאריך פירעון","ימי איחור","דחיפות","סטטוס"].forEach((h,i)=>{
+        setCell(ws1,String.fromCharCode(65+i)+'5',h,hdrStyle("1E3A5F"));
+      });
+
+      // Data
+      all.forEach((d,i)=>{
+        const r=i+6;
+        const isOv=d.status==="באיחור";
+        const days=d.days_overdue;
+        const bg=isOv?(i%2===0?"FEF2F2":"FFF7F7"):(i%2===0?"F8FAFC":"FFFFFF");
+        const urg=isOv?(days>90?"🔴 דחוף מאוד":days>30?"🟠 דחוף":"🟡 עקוב"):"🟢 שוטף";
+        const uc=isOv?(days>90?"991B1B":days>30?"C2410C":"854D0E"):"14532D";
+        setCell(ws1,`A${r}`,d.client_name,datStyle(bg,"1E293B",true,"right"));
+        setCell(ws1,`B${r}`,Number(d.amount),datStyle(bg,isOv?"DC2626":"16A34A",true),'#,##0');
+        setCell(ws1,`C${r}`,d.due_date,datStyle(bg,"475569"));
+        setCell(ws1,`D${r}`,isOv?days:"—",datStyle(bg,isOv?"DC2626":"475569",isOv));
+        setCell(ws1,`E${r}`,urg,datStyle(bg,uc));
+        setCell(ws1,`F${r}`,isOv?"באיחור":"שוטף",datStyle(bg,isOv?"DC2626":"16A34A",true));
+      });
+
+      // Total
+      const tr=all.length+6;
+      setCell(ws1,`A${tr}`,"סה״כ",totalStyle);
+      setCell(ws1,`B${tr}`,total,{...totalStyle,z:'#,##0'});
+      ["C","D","E","F"].forEach(c=>setCell(ws1,`${c}${tr}`,"",totalStyle));
+      ws1[`B${tr}`].z='#,##0';
+
+      makeRange(ws1,tr,6);
+      ws1['!cols']=[{wch:34},{wch:16},{wch:14},{wch:12},{wch:16},{wch:12}];
+      ws1['!rows']=[{hpt:30},{hpt:18},{hpt:36},{hpt:36},{hpt:26}];
+
+      // ── SHEET 2: באיחור ──
+      const ws2={};
+      ws2['!merges']=[{s:{r:0,c:0},e:{r:1,c:5}}];
+      setCell(ws2,'A1',`חייבים באיחור — ${overdue.length} לקוחות | ₪${overdue.reduce((s,d)=>s+Number(d.amount),0).toLocaleString()}`,titleStyle("450A0A","FECACA",14));
+      for(let c=1;c<6;c++)setCell(ws2,String.fromCharCode(65+c)+'1',"",{fill:{fgColor:{rgb:"450A0A"}}});
+      setCell(ws2,'A2',"",{fill:{fgColor:{rgb:"450A0A"}}});
+
+      ["לקוח","סכום (₪)","תאריך פירעון","ימי איחור","דחיפות"].forEach((h,i)=>{
+        setCell(ws2,String.fromCharCode(65+i)+'3',h,hdrStyle("DC2626"));
+      });
+
+      overdue.forEach((d,i)=>{
+        const r=i+4;
+        const days=d.days_overdue;
+        const bg=i%2===0?"FEF2F2":"FFFFFF";
+        const urg=days>90?"🔴 דחוף מאוד":days>30?"🟠 דחוף":"🟡 עקוב";
+        const uc=days>90?"991B1B":days>30?"C2410C":"854D0E";
+        setCell(ws2,`A${r}`,d.client_name,datStyle(bg,"1E293B",true,"right"));
+        setCell(ws2,`B${r}`,Number(d.amount),datStyle(bg,"DC2626",true));
+        ws2[`B${r}`].z='#,##0';
+        setCell(ws2,`C${r}`,d.due_date,datStyle(bg,"475569"));
+        setCell(ws2,`D${r}`,days,datStyle(bg,"DC2626",true));
+        setCell(ws2,`E${r}`,urg,datStyle(bg,uc));
+      });
+
+      const tr2=overdue.length+4;
+      setCell(ws2,`A${tr2}`,"סה״כ",totalStyle);
+      setCell(ws2,`B${tr2}`,overdue.reduce((s,d)=>s+Number(d.amount),0),{...totalStyle,z:'#,##0'});
+      ws2[`B${tr2}`].z='#,##0';
+      ["C","D","E"].forEach(c=>setCell(ws2,`${c}${tr2}`,"",totalStyle));
+      makeRange(ws2,tr2,5);
+      ws2['!cols']=[{wch:34},{wch:16},{wch:14},{wch:12},{wch:18}];
+
+      const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws1,"סיכום");
-      const d2=[["חייבים באיחור","","","","",""],["לקוח","סכום (₪)","פירעון","ימי איחור","סטטוס טיפול","הערות"],...overdue.map(d=>[d.client_name,Number(d.amount),d.due_date,d.days_overdue,d.payment_status||"ממתין",d.payment_notes||""]),["סה״כ",overdue.reduce((s,d)=>s+Number(d.amount),0),"","","",""]];
-      const ws2=XLSX.utils.aoa_to_sheet(d2);ws2['!cols']=[{wch:36},{wch:14},{wch:14},{wch:12},{wch:16},{wch:32}];
       XLSX.utils.book_append_sheet(wb,ws2,"חייבים באיחור");
       XLSX.writeFile(wb,"דוח_גבייה.xlsx");
       notify("📥 הדוח הורד!","#10B981");
-    }catch(e){notify("שגיאה","#EF4444");}
+    }catch(e){console.error(e);notify("שגיאה: "+e.message,"#EF4444");}
   };
 
   const TA={background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"9px 12px",color:"#fff",fontSize:12,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl",resize:"vertical",minHeight:70};

@@ -96,96 +96,94 @@ return<div style={{minHeight:“100vh”,background:”#080E17”,display:“fle
 
 function DebtTab({debt,notify}){
 const [df2,setDf2]=useState(“הכל”);
-const overdue=debt.filter(d=>d.status===“באיחור”).sort((a,b)=>b.days_overdue-a.days_overdue);
-const current=debt.filter(d=>d.status!==“באיחור”).sort((a,b)=>b.amount-a.amount);
-const shown=df2===“הכל”?debt:df2===“באיחור”?overdue:current;
-const totD2=debt.reduce((s,d)=>s+Number(d.amount),0);
+const [editing,setEditing]=useState(null);
+const [editData,setEditData]=useState({payment_status:“ממתין”,payment_notes:””});
+const [localDebt,setLocalDebt]=useState(debt);
+useEffect(()=>setLocalDebt(debt),[debt]);
+
+const overdue=localDebt.filter(d=>d.status===“באיחור”).sort((a,b)=>b.days_overdue-a.days_overdue);
+const current=localDebt.filter(d=>d.status!==“באיחור”).sort((a,b)=>b.amount-a.amount);
+const shown=df2===“הכל”?localDebt:df2===“באיחור”?overdue:current;
+const totD2=localDebt.reduce((s,d)=>s+Number(d.amount),0);
 const ovD2=overdue.reduce((s,d)=>s+Number(d.amount),0);
+
+const PS={“ממתין”:{c:”#F59E0B”,bg:“rgba(245,158,11,0.13)”},“בטיפול”:{c:”#3B82F6”,bg:“rgba(59,130,246,0.13)”},“הבטיח תשלום”:{c:”#8B5CF6”,bg:“rgba(139,92,246,0.13)”},“שולם”:{c:”#10B981”,bg:“rgba(16,185,129,0.13)”}};
+
+const startEdit=d=>{setEditing(d.id);setEditData({payment_status:d.payment_status||“ממתין”,payment_notes:d.payment_notes||””});};
+
+const saveEdit=async id=>{
+try{
+await sb(`debt?id=eq.${id}`,{method:“PATCH”,body:JSON.stringify({payment_status:editData.payment_status,payment_notes:editData.payment_notes})});
+setLocalDebt(p=>p.map(d=>d.id===id?{…d,…editData}:d));
+setEditing(null);notify(“✅ עודכן!”);
+}catch(e){notify(“שגיאה”,”#EF4444”);}
+};
 
 const exportExcel=()=>{
 try{
-const XLSX=window.XLSX;
-const wb=XLSX.utils.book_new();
-
-```
-  // Sheet 1 - כל החייבים
-  const all=[...overdue,...current];
-  const data1=[
-    ["דוח גבייה — בית דפוס","","","",""],
-    ["","","","",""],
-    ["לקוח","סכום חוב (₪)","תאריך פירעון","ימי איחור","סטטוס"],
-    ...all.map(d=>[d.client_name, Number(d.amount), d.due_date, d.days_overdue>0?d.days_overdue:'שוטף', d.status==='באיחור'?'באיחור':'שוטף']),
-    ["סה״כ", all.reduce((s,d)=>s+Number(d.amount),0),"","",""],
-  ];
-  const ws1=XLSX.utils.aoa_to_sheet(data1);
-  ws1['!cols']=[{wch:36},{wch:16},{wch:16},{wch:14},{wch:12}];
-  XLSX.utils.book_append_sheet(wb,ws1,"סיכום");
-
-  // Sheet 2 - באיחור
-  const data2=[
-    ["חייבים באיחור","","","","",""],
-    ["לקוח","סכום (₪)","תאריך פירעון","ימי איחור","דחיפות","חשבוניות"],
-    ...overdue.map(d=>[
-      d.client_name,Number(d.amount),d.due_date,d.days_overdue,
-      d.days_overdue>90?"דחוף מאוד":d.days_overdue>30?"דחוף":"עקוב",
-      d.invoice_number||""
-    ]),
-    ["סה״כ",overdue.reduce((s,d)=>s+Number(d.amount),0),"","","",""],
-  ];
-  const ws2=XLSX.utils.aoa_to_sheet(data2);
-  ws2['!cols']=[{wch:36},{wch:16},{wch:16},{wch:14},{wch:14},{wch:22}];
-  XLSX.utils.book_append_sheet(wb,ws2,"חייבים באיחור");
-
-  // Sheet 3 - שוטף
-  const data3=[
-    ["חוב שוטף","","","",""],
-    ["לקוח","סכום (₪)","תאריך פירעון","חשבוניות","סטטוס"],
-    ...current.map(d=>[d.client_name,Number(d.amount),d.due_date,d.invoice_number||"","שוטף"]),
-    ["סה״כ",current.reduce((s,d)=>s+Number(d.amount),0),"","",""],
-  ];
-  const ws3=XLSX.utils.aoa_to_sheet(data3);
-  ws3['!cols']=[{wch:36},{wch:16},{wch:16},{wch:22},{wch:12}];
-  XLSX.utils.book_append_sheet(wb,ws3,"שוטף");
-
-  XLSX.writeFile(wb,"דוח_גבייה.xlsx");
-  notify("📥 הדוח הורד בהצלחה!","#10B981");
-}catch(e){notify("שגיאה בייצוא: "+e.message,"#EF4444");}
-```
-
+const XLSX=window.XLSX;const wb=XLSX.utils.book_new();
+const all=[…overdue,…current];
+const d1=[[“דוח גבייה”,””,””,””,””,””],[“לקוח”,“סכום (₪)”,“פירעון”,“ימי איחור”,“סטטוס טיפול”,“הערות”],…all.map(d=>[d.client_name,Number(d.amount),d.due_date,d.days_overdue>0?d.days_overdue:“שוטף”,d.payment_status||“ממתין”,d.payment_notes||””]),[“סה״כ”,all.reduce((s,d)=>s+Number(d.amount),0),””,””,””,””]];
+const ws1=XLSX.utils.aoa_to_sheet(d1);ws1[’!cols’]=[{wch:36},{wch:14},{wch:14},{wch:12},{wch:16},{wch:32}];
+XLSX.utils.book_append_sheet(wb,ws1,“סיכום”);
+const d2=[[“חייבים באיחור”,””,””,””,””,””],[“לקוח”,“סכום (₪)”,“פירעון”,“ימי איחור”,“סטטוס טיפול”,“הערות”],…overdue.map(d=>[d.client_name,Number(d.amount),d.due_date,d.days_overdue,d.payment_status||“ממתין”,d.payment_notes||””]),[“סה״כ”,overdue.reduce((s,d)=>s+Number(d.amount),0),””,””,””,””]];
+const ws2=XLSX.utils.aoa_to_sheet(d2);ws2[’!cols’]=[{wch:36},{wch:14},{wch:14},{wch:12},{wch:16},{wch:32}];
+XLSX.utils.book_append_sheet(wb,ws2,“חייבים באיחור”);
+XLSX.writeFile(wb,“דוח_גבייה.xlsx”);
+notify(“📥 הדוח הורד!”,”#10B981”);
+}catch(e){notify(“שגיאה”,”#EF4444”);}
 };
+
+const TA={background:“rgba(255,255,255,0.06)”,border:“1px solid rgba(255,255,255,0.12)”,borderRadius:8,padding:“9px 12px”,color:”#fff”,fontSize:12,width:“100%”,outline:“none”,fontFamily:“inherit”,direction:“rtl”,resize:“vertical”,minHeight:70};
+
 return<div>
 <div style={{marginBottom:20,display:“flex”,justifyContent:“space-between”,alignItems:“center”,flexWrap:“wrap”,gap:12}}>
-<div><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1><p style={{color:”#64748B”,margin:“3px 0 0”,fontSize:12}}>{debt.length} לקוחות חייבים</p></div>
-<button onClick={exportExcel} style={{padding:“10px 20px”,borderRadius:10,border:“none”,background:“linear-gradient(135deg,#10B981,#059669)”,color:”#fff”,fontWeight:700,fontSize:13,cursor:“pointer”,fontFamily:“inherit”,display:“flex”,alignItems:“center”,gap:8}}>
-📥 הורד דוח אקסל
-</button>
+<div><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1><p style={{color:”#64748B”,margin:“3px 0 0”,fontSize:12}}>{localDebt.length} לקוחות</p></div>
+<button onClick={exportExcel} style={{padding:“10px 20px”,borderRadius:10,border:“none”,background:“linear-gradient(135deg,#10B981,#059669)”,color:”#fff”,fontWeight:700,fontSize:13,cursor:“pointer”,fontFamily:“inherit”}}>📥 הורד דוח אקסל</button>
 </div>
 <div className=“kg” style={{display:“grid”,gridTemplateColumns:“repeat(3,1fr)”,gap:12,marginBottom:16}}>
-{[{lb:“סה״כ חוב”,v:`₪${totD2.toLocaleString()}`,c:”#3B82F6”,ic:“📊”},{lb:“באיחור”,v:`₪${ovD2.toLocaleString()}`,c:”#EF4444”,ic:“🚨”},{lb:“לקוחות”,v:debt.length,c:”#10B981”,ic:“👥”}].map((x,i)=><div key={i} style={{background:“rgba(255,255,255,0.03)”,border:“1px solid rgba(255,255,255,0.07)”,borderRadius:14,padding:18}}>
+{[{lb:“סה״כ”,v:`₪${totD2.toLocaleString()}`,c:”#3B82F6”,ic:“📊”},{lb:“באיחור”,v:`₪${ovD2.toLocaleString()}`,c:”#EF4444”,ic:“🚨”},{lb:“לקוחות”,v:localDebt.length,c:”#10B981”,ic:“👥”}].map((x,i)=><div key={i} style={{background:“rgba(255,255,255,0.03)”,border:“1px solid rgba(255,255,255,0.07)”,borderRadius:14,padding:18}}>
 <div style={{fontSize:18,marginBottom:6}}>{x.ic}</div><div style={{fontSize:22,fontWeight:900,color:x.c}}>{x.v}</div><div style={{color:”#64748B”,fontSize:11,marginTop:4}}>{x.lb}</div>
 </div>)}
 </div>
 <div style={{display:“flex”,gap:8,marginBottom:16}}>
-{[“הכל”,“באיחור”,“שוטף”].map(f=><button key={f} onClick={()=>setDf2(f)} style={{padding:“6px 16px”,borderRadius:20,border:“1px solid”,borderColor:df2===f?(f===“באיחור”?”#EF4444”:”#3B82F6”):“rgba(255,255,255,0.1)”,background:df2===f?(f===“באיחור”?“rgba(239,68,68,0.15)”:“rgba(59,130,246,0.15)”):“transparent”,color:df2===f?(f===“באיחור”?”#EF4444”:”#60A5FA”):”#64748B”,fontWeight:600,fontSize:12,cursor:“pointer”,fontFamily:“inherit”}}>{f} {f===“באיחור”?`(${overdue.length})`:f===“שוטף”?`(${current.length})`:`(${debt.length})`}</button>)}
+{[“הכל”,“באיחור”,“שוטף”].map(f=><button key={f} onClick={()=>setDf2(f)} style={{padding:“6px 16px”,borderRadius:20,border:“1px solid”,borderColor:df2===f?(f===“באיחור”?”#EF4444”:”#3B82F6”):“rgba(255,255,255,0.1)”,background:df2===f?(f===“באיחור”?“rgba(239,68,68,0.15)”:“rgba(59,130,246,0.15)”):“transparent”,color:df2===f?(f===“באיחור”?”#EF4444”:”#60A5FA”):”#64748B”,fontWeight:600,fontSize:12,cursor:“pointer”,fontFamily:“inherit”}}>{f} ({f===“באיחור”?overdue.length:f===“שוטף”?current.length:localDebt.length})</button>)}
 </div>
-<div style={{background:“rgba(255,255,255,0.03)”,border:“1px solid rgba(255,255,255,0.07)”,borderRadius:14,overflow:“hidden”}}>
-<div style={{overflowX:“auto”}}>
-<table style={{width:“100%”,borderCollapse:“collapse”,minWidth:500}}>
-<thead><tr style={{background:“rgba(255,255,255,0.04)”}}>
-{[“לקוח”,“סכום”,“תאריך פירעון”,“ימי איחור”,“סטטוס”,“פעולה”].map(h=><th key={h} style={{padding:“10px 14px”,textAlign:“right”,fontSize:11,color:”#64748B”,fontWeight:700,whiteSpace:“nowrap”}}>{h}</th>)}
-</tr></thead>
-<tbody>
-{shown.map(d=><tr key={d.id} style={{borderTop:“1px solid rgba(255,255,255,0.04)”}}>
-<td style={{padding:“11px 14px”,fontWeight:600,fontSize:13}}>{d.client_name}</td>
-<td style={{padding:“11px 14px”,fontWeight:700,color:d.status===“באיחור”?”#EF4444”:”#10B981”,fontSize:13}}>₪{Number(d.amount).toLocaleString()}</td>
-<td style={{padding:“11px 14px”,color:”#94A3B8”,fontSize:12}}>{d.due_date}</td>
-<td style={{padding:“11px 14px”}}>{d.days_overdue>0?<span style={{color:”#EF4444”,fontWeight:700,fontSize:12}}>{d.days_overdue} ימים</span>:<span style={{color:”#10B981”,fontSize:12}}>שוטף</span>}</td>
-<td style={{padding:“11px 14px”}}><span style={{padding:“3px 9px”,borderRadius:20,fontSize:11,fontWeight:600,background:d.status===“באיחור”?“rgba(239,68,68,0.12)”:“rgba(16,185,129,0.12)”,color:d.status===“באיחור”?”#EF4444”:”#10B981”}}>{d.status}</span></td>
-<td style={{padding:“11px 14px”}}><button onClick={()=>notify(`📧 תזכורת נשלחה ל-${d.client_name}`,”#3B82F6”)} style={{padding:“5px 10px”,borderRadius:7,border:“1px solid rgba(59,130,246,0.3)”,background:“rgba(59,130,246,0.1)”,color:”#60A5FA”,fontSize:11,fontWeight:600,cursor:“pointer”,fontFamily:“inherit”}}>שלח תזכורת</button></td>
-</tr>)}
-</tbody>
-</table>
+<div style={{display:“flex”,flexDirection:“column”,gap:10}}>
+{shown.map(d=>{
+const ps=PS[d.payment_status||“ממתין”]||PS[“ממתין”];
+const isOver=d.status===“באיחור”;
+const isEdit=editing===d.id;
+return<div key={d.id} style={{background:“rgba(255,255,255,0.03)”,border:`1px solid ${isOver?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)"}`,borderRadius:14,padding:16}}>
+<div style={{display:“flex”,alignItems:“flex-start”,gap:10,marginBottom:isEdit?12:0}}>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontWeight:700,fontSize:14,marginBottom:5}}>{d.client_name}</div>
+<div style={{display:“flex”,flexWrap:“wrap”,gap:8,alignItems:“center”}}>
+<span style={{fontWeight:800,color:isOver?”#EF4444”:”#10B981”,fontSize:15}}>₪{Number(d.amount).toLocaleString()}</span>
+{isOver&&<span style={{color:”#EF4444”,fontSize:12}}>• {d.days_overdue} ימי איחור</span>}
+<span style={{background:ps.bg,color:ps.c,border:`1px solid ${ps.c}33`,borderRadius:20,padding:“2px 9px”,fontSize:11,fontWeight:600}}>{d.payment_status||“ממתין”}</span>
 </div>
+{d.payment_notes&&!isEdit&&<div style={{marginTop:8,padding:“7px 11px”,background:“rgba(99,102,241,0.08)”,borderRadius:8,fontSize:12,color:”#94A3B8”,borderRight:“3px solid #6366F1”}}>💬 {d.payment_notes}</div>}
+</div>
+<button onClick={()=>isEdit?setEditing(null):startEdit(d)} style={{padding:“6px 12px”,borderRadius:8,border:“1px solid rgba(255,255,255,0.1)”,background:isEdit?“rgba(239,68,68,0.1)”:“rgba(255,255,255,0.05)”,color:isEdit?”#EF4444”:”#94A3B8”,fontSize:12,fontWeight:600,cursor:“pointer”,fontFamily:“inherit”,flexShrink:0,whiteSpace:“nowrap”}}>
+{isEdit?“✕ סגור”:“✏️ עדכן”}
+</button>
+</div>
+{isEdit&&<div style={{borderTop:“1px solid rgba(255,255,255,0.08)”,paddingTop:12,display:“flex”,flexDirection:“column”,gap:10}}>
+<div>
+<label style={{color:”#94A3B8”,fontSize:11,fontWeight:700,marginBottom:6,display:“block”}}>סטטוס תשלום</label>
+<div style={{display:“flex”,gap:7,flexWrap:“wrap”}}>
+{Object.entries(PS).map(([s,sc])=><button key={s} onClick={()=>setEditData(p=>({…p,payment_status:s}))} style={{padding:“6px 14px”,borderRadius:20,border:“1px solid”,borderColor:editData.payment_status===s?sc.c:“rgba(255,255,255,0.1)”,background:editData.payment_status===s?sc.bg:“transparent”,color:editData.payment_status===s?sc.c:”#64748B”,fontWeight:600,fontSize:12,cursor:“pointer”,fontFamily:“inherit”}}>{s}</button>)}
+</div>
+</div>
+<div>
+<label style={{color:”#94A3B8”,fontSize:11,fontWeight:700,marginBottom:6,display:“block”}}>הערות</label>
+<textarea value={editData.payment_notes} onChange={e=>setEditData(p=>({…p,payment_notes:e.target.value}))} placeholder=“לדוגמה: הלקוח אמר שיעביר ב-01/05, כפיר דיבר איתו…” style={TA} rows={3}/>
+</div>
+<button onClick={()=>saveEdit(d.id)} style={{padding:“10px”,borderRadius:9,border:“none”,background:“linear-gradient(135deg,#3B82F6,#6366F1)”,color:”#fff”,fontWeight:700,fontSize:13,cursor:“pointer”,fontFamily:“inherit”}}>💾 שמור</button>
+</div>}
+</div>;
+})}
 </div>
 
   </div>;

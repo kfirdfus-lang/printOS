@@ -240,7 +240,7 @@ function DebtTab({debt,notify}){
   return<div>
     <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
       <div><h1 style={{fontSize:22,fontWeight:900,margin:0}}>מערכת גבייה</h1><p style={{color:"#64748B",margin:"3px 0 0",fontSize:12}}>{localDebt.length} לקוחות</p></div>
-      <button onClick={exportExcel} style={{padding:"10px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10B981,#059669)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📥 הורד דוח אקסל</button>
+      <button onClick={()=>{ window.location.href='/api/export_excel'; }} style={{padding:"10px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#10B981,#059669)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📥 הורד דוח אקסל</button>
     </div>
     <div className="kg" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
       {[{lb:"סה״כ",v:`₪${totD2.toLocaleString()}`,c:"#3B82F6",ic:"📊"},{lb:"באיחור",v:`₪${ovD2.toLocaleString()}`,c:"#EF4444",ic:"🚨"},{lb:"לקוחות",v:localDebt.length,c:"#10B981",ic:"👥"}].map((x,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:18}}>

@@ -1,7 +1,5 @@
 export const config = { runtime: 'edge' };
 
-const ANTHROPIC_KEY = "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";
-
 export default async function handler(req) {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -19,12 +17,13 @@ export default async function handler(req) {
 
   try {
     const body = await req.json();
+    const key = process.env.ANTHROPIC_KEY;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
+        'x-api-key': key,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),

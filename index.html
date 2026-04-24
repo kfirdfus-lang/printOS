@@ -324,6 +324,117 @@ function DebtTab({debt,notify}){
   </div>;
 }
 
+// ── AI CHAT ──
+function AiChat({user,tasks,clients,onRefresh,onClose}){
+  const [msgs,setMsgs]=useState([{role:"ai",text:`שלום ${user.name.split(" ")[0]}! 👋\nאני עוזר ה-AI של PrintOS.\n\nתוכל לבקש ממני:\n• להוסיף משימות\n• לעדכן סטטוסים\n• לשאול על נתונים\n\nמה תרצה?`}]);
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+  const bottomRef=useRef(null);
+  useEffect(()=>bottomRef.current?.scrollIntoView({behavior:"smooth"}),[msgs]);
+
+  const send=async()=>{
+    if(!input.trim()||loading)return;
+    const txt=input.trim();
+    setInput("");
+    setMsgs(p=>[...p,{role:"user",text:txt}]);
+    setLoading(true);
+
+    const system=`אתה עוזר AI לניהול בית דפוס PrintOS. עונה בעברית בלבד, קצר וברור.
+משתמש: ${user.name} | ${user.role==="admin"?"מנהל":"עובד ב-"+user.dept}
+מחלקות: ${DEPTS.join(", ")}
+משימות קיימות (${tasks.length}): ${tasks.slice(0,10).map(t=>`[${t.id?.slice(0,6)}] ${t.title}|${t.dept}|${t.status}`).join(" | ")}
+לקוחות: ${clients.slice(0,10).map(c=>c.name).join(", ")}
+
+כשצריך לבצע פעולה, כלול JSON בתוך \`\`\`json ... \`\`\`:
+{ "action": "add_task"|"update_status"|"none", "data": {...}, "message": "תשובה" }
+
+add_task: data={title,dept,priority,client_name,assignee,due_date,notes}
+update_status: data={task_id(6תווים),status}`;
+
+    try{
+      const res=await fetch("/api/claude",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:600,
+          system,
+          messages:[
+            ...msgs.filter(m=>m.role!=="ai"||msgs.indexOf(m)>0).slice(-6).map(m=>({role:m.role==="user"?"user":"assistant",content:m.text})),
+            {role:"user",content:txt}
+          ]
+        })
+      });
+      const data=await res.json();
+      const raw=data.content?.[0]?.text||"מצטער, לא הצלחתי להבין.";
+      const match=raw.match(/```json\s*([\s\S]*?)\s*```/);
+      let action=null;
+      if(match){try{action=JSON.parse(match[1]);}catch{}}
+      const reply=action?.message||raw.replace(/```json[\s\S]*?```/g,"").trim();
+      setMsgs(p=>[...p,{role:"ai",text:reply}]);
+
+      if(action?.action==="add_task"&&action.data?.title){
+        const d=action.data;
+        await sb("tasks",{method:"POST",body:JSON.stringify({title:d.title,dept:d.dept||user.dept||DEPTS[0],priority:d.priority||"בינונית",status:"ממתין",client_name:d.client_name||"",assignee:d.assignee||"",due_date:d.due_date||null,notes:d.notes||"",created_by:user.name})});
+        onRefresh();
+        setMsgs(p=>[...p,{role:"ai",text:`✅ המשימה "${d.title}" נוספה!`}]);
+      }
+      if(action?.action==="update_status"&&action.data){
+        const task=tasks.find(t=>t.id?.startsWith(action.data.task_id));
+        if(task){
+          await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({status:action.data.status})});
+          onRefresh();
+          setMsgs(p=>[...p,{role:"ai",text:`✅ סטטוס עודכן ל-"${action.data.status}"`}]);
+        }
+      }
+    }catch(e){
+      setMsgs(p=>[...p,{role:"ai",text:"מצטער, הייתה שגיאה. נסה שוב."}]);
+    }
+    setLoading(false);
+  };
+
+  const suggestions=["הוסף משימה למשלוחים","מה תקוע?","כמה משימות פתוחות?","עדכן סטטוס"];
+
+  return<div style={{position:"fixed",bottom:0,left:0,width:"min(400px,100vw)",height:"min(560px,90vh)",background:"#fff",border:"1px solid var(--border)",borderRadius:"20px 20px 0 0",zIndex:500,display:"flex",flexDirection:"column",boxShadow:"0 -8px 40px rgba(0,0,0,0.12)"}}>
+    {/* Header */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",borderBottom:"1px solid var(--border)",flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#2563EB,#7C3AED)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🤖</div>
+        <div><div style={{fontWeight:700,fontSize:14,color:"var(--text)"}}>עוזר AI</div><div style={{fontSize:11,color:"var(--text3)"}}>מזין משימות ועונה על שאלות</div></div>
+      </div>
+      <button onClick={onClose} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text2)",cursor:"pointer",width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>✕</button>
+    </div>
+
+    {/* Messages */}
+    <div style={{flex:1,overflowY:"auto",padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
+      {msgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-start":"flex-end"}}>
+        <div style={{maxWidth:"82%",padding:"9px 13px",borderRadius:m.role==="user"?"13px 13px 4px 13px":"13px 13px 13px 4px",background:m.role==="user"?"var(--blue-light)":"var(--bg2)",border:`1px solid ${m.role==="user"?"var(--blue-mid)":"var(--border)"}`,color:"var(--text)",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}}>
+          {m.text}
+        </div>
+      </div>)}
+      {loading&&<div style={{display:"flex",justifyContent:"flex-end"}}>
+        <div style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:"13px 13px 13px 4px",padding:"11px 14px",display:"flex",gap:5}}>
+          {[0,1,2].map(i=><div key={i} style={{width:6,height:6,borderRadius:"50%",background:"var(--blue)",animation:`pulse 1.2s ${i*0.2}s infinite`}}/>)}
+        </div>
+      </div>}
+      <div ref={bottomRef}/>
+    </div>
+
+    {/* Suggestions */}
+    <div style={{padding:"8px 14px",display:"flex",gap:6,flexWrap:"wrap",borderTop:"1px solid var(--border)",flexShrink:0}}>
+      {suggestions.map(s=><button key={s} onClick={()=>setInput(s)} style={{padding:"4px 10px",borderRadius:20,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{s}</button>)}
+    </div>
+
+    {/* Input */}
+    <div style={{padding:"10px 14px 14px",flexShrink:0,display:"flex",gap:8}}>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()} placeholder="כתוב בעברית חופשית..." style={{flex:1,background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"9px 13px",color:"var(--text)",fontSize:13,outline:"none",fontFamily:"inherit",direction:"rtl"}}/>
+      <button onClick={send} disabled={loading||!input.trim()} style={{padding:"9px 16px",borderRadius:10,border:"none",background:input.trim()?"var(--blue)":"var(--bg3)",color:input.trim()?"#fff":"var(--text3)",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",flexShrink:0,display:"flex",alignItems:"center"}}>
+        {loading?<Spinner sz={16} color="#fff"/>:"שלח"}
+      </button>
+    </div>
+  </div>;
+}
+
 // ── MAIN APP ──
 function App(){
   const [user,setUser]=useState(null);
@@ -335,6 +446,7 @@ function App(){
   const [addTask,setAddTask]=useState(false);
   const [addClient,setAddClient]=useState(false);
   const [det,setDet]=useState(null);
+  const [showChat,setShowChat]=useState(false);
   const [deptFilter,setDeptFilter]=useState("הכל");
   const [notif,setNotif]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -712,6 +824,10 @@ function App(){
         </div>
       </div>}
     </Modal>
+
+    {/* AI Chat */}
+    {showChat&&<AiChat user={user} tasks={tasks} clients={clients} onRefresh={load} onClose={()=>setShowChat(false)}/>}
+    {!showChat&&<button onClick={()=>setShowChat(true)} style={{position:"fixed",bottom:28,left:28,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#2563EB,#7C3AED)",border:"none",color:"#fff",fontSize:22,cursor:"pointer",boxShadow:"0 4px 20px rgba(37,99,235,0.4)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}}>🤖</button>}
   </div>;
 }
 

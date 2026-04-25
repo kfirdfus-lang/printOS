@@ -446,6 +446,84 @@ update_status: data={task_id(6תווים),status}`;
   </div>;
 }
 
+// ── CALENDAR TAB ──
+function CalendarTab({tasks,user,isA,onTaskClick}){
+  const [weekOffset,setWeekOffset]=useState(0);
+  const [deptFilter,setDeptFilter]=useState(isA?"הכל":user.dept);
+
+  const getWeekDays=()=>{
+    const today=new Date();
+    const monday=new Date(today);
+    monday.setDate(today.getDate()-today.getDay()+1+weekOffset*7);
+    return Array.from({length:7},(_,i)=>{
+      const d=new Date(monday);
+      d.setDate(monday.getDate()+i);
+      return d;
+    });
+  };
+
+  const days=getWeekDays();
+  const todayStr=new Date().toISOString().split('T')[0];
+
+  const dayNames=["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+  const monthNames=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+
+  const getTasksForDay=(dateStr)=>{
+    let filtered=tasks.filter(t=>t.due_date===dateStr);
+    if(deptFilter!=="הכל") filtered=filtered.filter(t=>t.dept===deptFilter);
+    return filtered;
+  };
+
+  const weekStart=days[0];
+  const weekEnd=days[6];
+  const weekLabel=`${weekStart.getDate()} ${monthNames[weekStart.getMonth()]} — ${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]} ${weekEnd.getFullYear()}`;
+
+  return<div>
+    <div style={{marginBottom:20}}>
+      <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>לוח שנה 📅</h1>
+      <p style={{color:"var(--text3)",margin:"5px 0 0",fontSize:13}}>{weekLabel}</p>
+    </div>
+
+    {/* Controls */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12}}>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setWeekOffset(p=>p-1)} style={{padding:"7px 14px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:13}}>← שבוע קודם</button>
+        <button onClick={()=>setWeekOffset(0)} style={{padding:"7px 14px",borderRadius:8,border:"1px solid var(--border)",background:weekOffset===0?"var(--blue-light)":"#fff",color:weekOffset===0?"var(--blue)":"var(--text2)",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600}}>היום</button>
+        <button onClick={()=>setWeekOffset(p=>p+1)} style={{padding:"7px 14px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:13}}>שבוע הבא →</button>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {["הכל",...DEPTS].map(d=><button key={d} onClick={()=>setDeptFilter(d)} style={{padding:"5px 10px",borderRadius:20,border:`1px solid ${deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--border)"}`,background:deptFilter===d?`${DEPT_COLORS[d]||"#2563EB"}15`:"#fff",color:deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--text2)",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{d}</button>)}
+      </div>
+    </div>
+
+    {/* Week grid */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+      {days.map((day,i)=>{
+        const dateStr=day.toISOString().split('T')[0];
+        const dayTasks=getTasksForDay(dateStr);
+        const isToday=dateStr===todayStr;
+        const isWeekend=day.getDay()===5||day.getDay()===6;
+
+        return<div key={dateStr} style={{background:isToday?"var(--blue-light)":isWeekend?"var(--bg2)":"#fff",border:`1px solid ${isToday?"var(--blue-mid)":"var(--border)"}`,borderRadius:12,padding:10,minHeight:140}}>
+          <div style={{marginBottom:8,textAlign:"center"}}>
+            <div style={{fontSize:11,fontWeight:600,color:isToday?"var(--blue)":"var(--text3)"}}>{dayNames[day.getDay()]}</div>
+            <div style={{width:28,height:28,borderRadius:"50%",background:isToday?"var(--blue)":"transparent",color:isToday?"#fff":"var(--text)",fontWeight:isToday?800:600,fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",margin:"2px auto 0"}}>{day.getDate()}</div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {dayTasks.map(t=>{
+              const sc=SC[t.status]||{c:"#475569",bg:"#F1F5F9"};
+              return<div key={t.id} onClick={()=>onTaskClick(t)} style={{padding:"4px 7px",borderRadius:6,background:sc.bg,borderRight:`3px solid ${DEPT_COLORS[t.dept]||sc.c}`,cursor:"pointer",fontSize:10,fontWeight:600,color:sc.c,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={t.title}>
+                {t.title}
+              </div>;
+            })}
+            {dayTasks.length===0&&<div style={{fontSize:10,color:"var(--text3)",textAlign:"center",paddingTop:8}}>—</div>}
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 // ── DELIVERY TAB ──
 function DeliveryTab({tasks}){
   const DRIVERS=["חיים","ניסן/ברק","טייגר","עומרי"];
@@ -625,6 +703,7 @@ function App(){
   const navs=[
     {id:"dashboard",ic:"⊟",lb:"דשבורד"},
     {id:"tasks",ic:"☑",lb:"משימות"},
+    {id:"calendar",ic:"📅",lb:"לוח שנה"},
     ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"debt",ic:"₪",lb:"גבייה"},{id:"delivery",ic:"🚚",lb:"משלוחים"}]:[]),
   ];
 
@@ -863,6 +942,9 @@ function App(){
           </div>}
         </div>
       </div>}
+
+      {/* CALENDAR */}
+      {tab==="calendar"&&<CalendarTab tasks={tasks} user={user} isA={isA} onTaskClick={setDet}/>}
 
       {/* DEBT */}
       {tab==="debt"&&isA&&<DebtTab debt={debt} notify={notify}/>}

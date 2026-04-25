@@ -1063,7 +1063,7 @@ function App(){
     {showChat&&<AiChat user={user} tasks={tasks} clients={clients} onRefresh={load} onClose={()=>setShowChat(false)}/>}
     {!showChat&&<button onClick={()=>setShowChat(true)} style={{position:"fixed",bottom:28,left:28,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#2563EB,#7C3AED)",border:"none",color:"#fff",fontSize:22,cursor:"pointer",boxShadow:"0 4px 20px rgba(37,99,235,0.4)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}}>🤖</button>}
   </div>;
-}
+
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>

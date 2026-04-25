@@ -1,0 +1,37 @@
+name: Deploy Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_content:
+        description: 'Base64 encoded file content'
+        required: true
+      file_path:
+        description: 'File path in repo'
+        required: true
+        default: 'index.html'
+      commit_message:
+        description: 'Commit message'
+        required: false
+        default: 'Update file via automation'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.DEPLOY_TOKEN }}
+
+      - name: Write file
+        run: |
+          echo "${{ github.event.inputs.file_content }}" | base64 -d > "${{ github.event.inputs.file_path }}"
+
+      - name: Commit and push
+        run: |
+          git config user.name "PrintOS Bot"
+          git config user.email "bot@printos.app"
+          git add "${{ github.event.inputs.file_path }}"
+          git commit -m "${{ github.event.inputs.commit_message }}"
+          git push

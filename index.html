@@ -634,7 +634,7 @@ function App(){
     setLoading(true);
     try{
       const isA=cu.role==="admin";
-      const tp=isA?"tasks?order=created_at.desc":`tasks?dept=eq.${encodeURIComponent(cu.dept)}&order=created_at.desc`;
+      const tp=isA?"tasks?order=created_at.desc":`tasks?order=created_at.desc`;
       const [t,c,d]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([])]);
       setTasks(t);setClients(c);setDebt(d);
       sb("users?role=eq.worker&order=name.asc").then(setAllUsers).catch(()=>{});
@@ -643,7 +643,7 @@ function App(){
   };
 
   const isA=user?.role==="admin";
-  const visTasks=(isA&&deptFilter!=="הכל")?tasks.filter(t=>t.dept===deptFilter):tasks;
+  const visTasks=(deptFilter!=="הכל")?tasks.filter(t=>t.dept===deptFilter):tasks;
   const byS=s=>tasks.filter(t=>t.status===s).length;
   const totD=debt.reduce((s,d)=>s+Number(d.amount),0);
   const ovD=debt.filter(d=>d.status==="באיחור").reduce((s,d)=>s+Number(d.amount),0);
@@ -725,7 +725,8 @@ function App(){
     {id:"dashboard",ic:"⊟",lb:"דשבורד"},
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"debt",ic:"₪",lb:"גבייה"},{id:"delivery",ic:"🚚",lb:"משלוחים"}]:[]),
+    {id:"delivery",ic:"🚚",lb:"משלוחים"},
+    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"debt",ic:"₪",lb:"גבייה"}]:[]),
   ];
 
   if(!user)return<Login onLogin={u=>{setUser(u);load(u);}}/>;
@@ -923,9 +924,9 @@ function App(){
           </div>
         </div>
 
-        {isA&&<div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
           {["הכל",...DEPTS].map(d=><button key={d} onClick={()=>setDeptFilter(d)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--border)"}`,background:deptFilter===d?`${DEPT_COLORS[d]||"#2563EB"}10`:"#fff",color:deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--text2)",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{d}</button>)}
-        </div>}
+        </div>
 
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {visTasks.map(t=><div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${DEPT_COLORS[t.dept]||"var(--blue)"}`}} onClick={()=>setDet(t)}>

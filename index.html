@@ -617,6 +617,7 @@ function App(){
   const [mob,setMob]=useState(false);
   const [addTask,setAddTask]=useState(false);
   const [addClient,setAddClient]=useState(false);
+  const [editTask,setEditTask]=useState(null);
   const [det,setDet]=useState(null);
   const [showChat,setShowChat]=useState(false);
   const [deptFilter,setDeptFilter]=useState("הכל");
@@ -685,6 +686,16 @@ function App(){
     }catch{notify("שגיאה","#DC2626");}
   };
 
+  const doEditTask=async()=>{
+    if(!editTask||!editTask.title.trim())return;
+    try{
+      await sb(`tasks?id=eq.${editTask.id}`,{method:"PATCH",body:JSON.stringify({title:editTask.title,dept:editTask.dept,priority:editTask.priority,client_name:editTask.client_name,assignee:editTask.assignee,due_date:editTask.due_date||null,notes:editTask.notes,status:editTask.status})});
+      setTasks(p=>p.map(t=>t.id===editTask.id?{...t,...editTask}:t));
+      setEditTask(null);
+      notify("✅ משימה עודכנה");
+    }catch{notify("שגיאה","#DC2626");}
+  };
+
   const updStatus=async(id,s)=>{
     try{
       await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status:s})});
@@ -739,11 +750,25 @@ function App(){
     </div>
 
     {/* Nav */}
-    <nav style={{padding:"12px 10px",flex:1}}>
+    <nav style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
       {navs.map(n=><button key={n.id} onClick={()=>{setTab(n.id);setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:tab===n.id?"var(--blue-light)":"transparent",color:tab===n.id?"var(--blue)":"var(--text2)",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit",transition:"all 0.15s"}}>
         <span style={{fontSize:15}}>{n.ic}</span>{n.lb}
         {tab===n.id&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
       </button>)}
+
+      {isA&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
+        <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.06em",marginBottom:8,paddingRight:4}}>מחלקות</div>
+        {DEPTS.map(dept=>{
+          const color=DEPT_COLORS[dept]||"#2563EB";
+          const count=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
+          const isActive=tab==="tasks"&&deptFilter===dept;
+          return<button key={dept} onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
+            <span style={{fontSize:12,fontWeight:isActive?700:400,color:isActive?color:"var(--text2)",flex:1,textAlign:"right"}}>{dept}</span>
+            {count>0&&<span style={{background:color,color:"#fff",borderRadius:20,padding:"1px 7px",fontSize:10,fontWeight:700,flexShrink:0}}>{count}</span>}
+          </button>;
+        })}
+      </div>}
     </nav>
 
     {/* Actions */}
@@ -917,6 +942,7 @@ function App(){
               </select>
               {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
               {isA&&<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
+              {isA&&<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
               {isA&&<button onClick={()=>{
                 const recipients={
                   "כפיר":"kfir.dfus@gmail.com",
@@ -1064,6 +1090,33 @@ function App(){
     {/* AI Chat */}
     {showChat&&<AiChat user={user} tasks={tasks} clients={clients} onRefresh={load} onClose={()=>setShowChat(false)}/>}
     {!showChat&&<button onClick={()=>setShowChat(true)} style={{position:"fixed",bottom:28,left:28,width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#2563EB,#7C3AED)",border:"none",color:"#fff",fontSize:22,cursor:"pointer",boxShadow:"0 4px 20px rgba(37,99,235,0.4)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}}>🤖</button>}
+
+    {/* Edit Task Modal */}
+    <Modal open={!!editTask} onClose={()=>setEditTask(null)} title="✏️ עריכת משימה">
+      {editTask&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><label style={LS}>כותרת</label><input style={IS} value={editTask.title} onChange={e=>setEditTask(p=>({...p,title:e.target.value}))}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><label style={LS}>מחלקה</label><select style={IS} value={editTask.dept} onChange={e=>setEditTask(p=>({...p,dept:e.target.value}))}>
+            {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}</select></div>
+          <div><label style={LS}>עדיפות</label><select style={IS} value={editTask.priority} onChange={e=>setEditTask(p=>({...p,priority:e.target.value}))}>
+            {["גבוהה","בינונית","נמוכה"].map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><label style={LS}>לקוח</label><select style={IS} value={editTask.client_name||""} onChange={e=>setEditTask(p=>({...p,client_name:e.target.value}))}>
+            <option value="">בחר לקוח...</option>{clients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+          <div><label style={LS}>אחראי</label><select style={IS} value={editTask.assignee||""} onChange={e=>setEditTask(p=>({...p,assignee:e.target.value}))}>
+            <option value="">בחר עובד...</option>{allUsers.filter(u=>u.dept===editTask.dept).map(u=><option key={u.id} value={u.name}>{u.name}</option>)}</select></div>
+        </div>
+        <div><label style={LS}>סטטוס</label><select style={IS} value={editTask.status} onChange={e=>setEditTask(p=>({...p,status:e.target.value}))}>
+          {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+        <div><label style={LS}>תאריך יעד</label><input type="date" style={IS} value={editTask.due_date||""} onChange={e=>setEditTask(p=>({...p,due_date:e.target.value}))}/></div>
+        <div><label style={LS}>הערות</label><input style={IS} value={editTask.notes||""} onChange={e=>setEditTask(p=>({...p,notes:e.target.value}))} placeholder="הערות..."/></div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={doEditTask} style={{flex:1,padding:"11px",borderRadius:10,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>שמור שינויים</button>
+          <button onClick={()=>setEditTask(null)} style={{padding:"11px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        </div>
+      </div>}
+    </Modal>
   </div>;
 
 

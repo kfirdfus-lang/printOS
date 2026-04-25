@@ -561,6 +561,7 @@ function DeliveryTab({tasks}){
         <div class="delivery-date">📅 ${t.due_date}</div>
         ${t.client_name?`<div class="detail"><strong>לקוח:</strong> ${t.client_name}</div>`:''}
         ${t.notes?`<div class="detail"><strong>פרטים:</strong> ${t.notes}</div>`:''}
+        ${t.notes&&t.notes.includes('📍')?`<div style="margin-top:8px"><a href="https://waze.com/ul?q=${encodeURIComponent(t.notes.match(/📍\s*([^|]+)/)?.[1]||'')}&navigate=yes" style="display:inline-flex;align-items:center;gap:6px;background:#00D4FF;color:#000;padding:6px 14px;border-radius:20px;text-decoration:none;font-size:12px;font-weight:700">🧭 פתח ב-Waze</a></div>`:''}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid #E2E8F0">
           <div style="display:flex;gap:20px">
             <div style="flex:1;font-size:12px;color:#94A3B8">חתימה: ________________</div>
@@ -976,7 +977,13 @@ function App(){
               <option value="">בחר נהג...</option>
               {["חיים","ניסן/ברק","טייגר","עומרי"].map(d=><option key={d} value={d}>{d}</option>)}
             </select></div>
-            <div><label style={LS}>איש קשר</label><input style={IS} value={nt.contact||""} onChange={e=>setNt(p=>({...p,contact:e.target.value}))} placeholder="שם איש קשר"/></div>
+            <div><label style={LS}>איש קשר</label>
+              <select style={IS} value={nt.contact||""} onChange={e=>setNt(p=>({...p,contact:e.target.value}))}>
+                <option value="">בחר מהרשימה...</option>
+                {clients.map(c=><option key={c.id} value={c.name}>{c.name}{c.phone?` — ${c.phone}`:''}</option>)}
+              </select>
+              <input style={{...IS,marginTop:6}} value={nt.contact||""} onChange={e=>setNt(p=>({...p,contact:e.target.value}))} placeholder="או הקלד ידנית..."/>
+            </div>
             <div><label style={LS}>כתובת יעד</label><input style={IS} value={nt.address} onChange={e=>setNt(p=>({...p,address:e.target.value}))} placeholder="רחוב, עיר"/></div>
             <div><label style={LS}>טלפון</label><input style={IS} value={nt.phone} onChange={e=>setNt(p=>({...p,phone:e.target.value}))} placeholder="050-0000000" type="tel"/></div>
           </div>

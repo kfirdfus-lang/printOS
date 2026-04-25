@@ -919,6 +919,7 @@ function App(){
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>load()} style={{padding:"8px 12px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↻</button>
             {isA&&<button onClick={()=>setAddTask(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ חדשה</button>}
+            {!isA&&<button onClick={()=>setAddTask(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ חדשה</button>}
           </div>
         </div>
 
@@ -941,9 +942,10 @@ function App(){
                 {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}
               </select>
               {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
-              {isA&&<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
-              {isA&&<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
-              {isA&&<button onClick={()=>{
+              {<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
+              {<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
+              {
+              <button onClick={()=>{
                 const recipients={
                   "כפיר":"kfir.dfus@gmail.com",
                   "נטלי":"natalie.zem@gmail.com",

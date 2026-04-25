@@ -684,6 +684,8 @@ function App(){
       notify("🗑️ המשימה נמחקה");
     }catch{notify("שגיאה","#DC2626");}
   };
+
+  const updStatus=async(id,s)=>{
     try{
       await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status:s})});
       setTasks(p=>p.map(t=>t.id===id?{...t,status:s}:t));

@@ -86,7 +86,7 @@ const sb=async(path,o={})=>{
   const t=await r.text();if(!r.ok)throw new Error(t);return t?JSON.parse(t):[];
 };
 
-const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי שחור לבן","אופסט","עבודות חוץ","משלוחים","תזכורות"];
+const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי שחור לבן","אופסט","עבודות חוץ","משלוחים","תזכורות","ביגוד ומוצרי פרסום"];
 
 const DEPT_COLORS={
   "פורמט רחב":"#2563EB","דיגיטלי צבעוני":"#7C3AED","דיגיטלי שחור לבן":"#475569",
@@ -676,7 +676,14 @@ function App(){
     }catch{notify("שגיאה","#DC2626");}
   };
 
-  const updStatus=async(id,s)=>{
+  const deleteTask=async(id)=>{
+    if(!window.confirm("למחוק את המשימה?"))return;
+    try{
+      await sb(`tasks?id=eq.${id}`,{method:"DELETE"});
+      setTasks(p=>p.filter(t=>t.id!==id));
+      notify("🗑️ המשימה נמחקה");
+    }catch{notify("שגיאה","#DC2626");}
+  };
     try{
       await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status:s})});
       setTasks(p=>p.map(t=>t.id===id?{...t,status:s}:t));
@@ -907,6 +914,23 @@ function App(){
                 {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}
               </select>
               {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
+              {isA&&<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
+              {isA&&<button onClick={()=>{
+                const recipients={
+                  "כפיר":"kfir.dfus@gmail.com",
+                  "נטלי":"natalie.zem@gmail.com",
+                  "דניאל":"daniel.natalie.print@gmail.com",
+                  "אדם":"adam.dfusnatalie@gmail.com",
+                  "איריס":"iris.z726@gmail.com",
+                  "ברק":"BARAKDFUS268@gmail.com",
+                };
+                const name=window.prompt("שלח תזכורת למי?\n"+Object.keys(recipients).join(" / "));
+                if(!name)return;
+                const email=recipients[name];
+                if(!email){notify("לא נמצא","#DC2626");return;}
+                const msg=`תזכורת משימה:\n\nכותרת: ${t.title}\nמחלקה: ${t.dept}\nסטטוס: ${t.status}\nלקוח: ${t.client_name||"—"}\nאחראי: ${t.assignee||"—"}\nתאריך יעד: ${t.due_date||"—"}\n${t.notes?"הערות: "+t.notes:""}`;
+                emailjs.send("service_el3vmud","template_zfjuge9",{subject:`⏰ תזכורת: ${t.title}`,message:msg,to_email:email}).then(()=>notify(`📧 נשלח ל-${name}!`)).catch(()=>notify("שגיאה","#DC2626"));
+              }} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔔 תזכורת</button>}
             </div>
           </div>)}
           {visTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
@@ -978,7 +1002,10 @@ function App(){
               {["חיים","ניסן/ברק","טייגר","עומרי"].map(d=><option key={d} value={d}>{d}</option>)}
             </select></div>
             <div><label style={LS}>איש קשר</label>
-              <select style={IS} value={nt.contact||""} onChange={e=>setNt(p=>({...p,contact:e.target.value}))}>
+              <select style={IS} value={nt.contact||""} onChange={e=>{
+                const selected=clients.find(c=>c.name===e.target.value);
+                setNt(p=>({...p,contact:e.target.value,phone:selected?.phone||p.phone}));
+              }}>
                 <option value="">בחר מהרשימה...</option>
                 {clients.map(c=><option key={c.id} value={c.name}>{c.name}{c.phone?` — ${c.phone}`:''}</option>)}
               </select>

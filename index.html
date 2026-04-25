@@ -9,6 +9,17 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  (function(){emailjs.init({publicKey:"1F454gMxVf2n8p9MN"});})();
+  window.sendAlert = function(subject, message) {
+    return emailjs.send("service_el3vmud","template_zfjuge9",{
+      subject: subject,
+      message: message,
+      to_email: "kfir.dfus@gmail.com"
+    });
+  };
+</script>
 <style>
 :root{
   --bg:#F8FAFC;
@@ -486,6 +497,10 @@ function App(){
         if(p.length)notes=(p.join(" | ")+(notes?" | "+notes:""));
       }
       await sb("tasks",{method:"POST",body:JSON.stringify({title:nt.title,dept:nt.dept,priority:nt.priority,client_name:nt.client_name,assignee:nt.assignee,due_date:nt.due_date||null,notes,status:nt.status,created_by:user.name})});
+      window.sendAlert(
+        `משימה חדשה נוצרה: ${nt.title}`,
+        `משימה חדשה נוצרה במערכת PrintOS:\n\nכותרת: ${nt.title}\nמחלקה: ${nt.dept}\nלקוח: ${nt.client_name||"—"}\nאחראי: ${nt.assignee||"—"}\nעדיפות: ${nt.priority}\nתאריך יעד: ${nt.due_date||"—"}\nנוצר ע"י: ${user.name}`
+      ).catch(()=>{});
       setNt({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
       setAddTask(false);await load();notify("✅ משימה נוספה");
     }catch{notify("שגיאה","#DC2626");}
@@ -505,6 +520,19 @@ function App(){
       await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status:s})});
       setTasks(p=>p.map(t=>t.id===id?{...t,status:s}:t));
       if(det?.id===id)setDet(p=>({...p,status:s}));
+      const task=tasks.find(t=>t.id===id);
+      if(s==="הושלם"&&task){
+        window.sendAlert(
+          `✅ משימה הושלמה: ${task.title}`,
+          `משימה הושלמה במערכת PrintOS:\n\nכותרת: ${task.title}\nמחלקה: ${task.dept}\nלקוח: ${task.client_name||"—"}\nאחראי: ${task.assignee||"—"}`
+        ).catch(()=>{});
+      }
+      if(s==="תקוע"&&task){
+        window.sendAlert(
+          `⚠️ משימה תקועה: ${task.title}`,
+          `שים לב! משימה עברה לסטטוס תקוע:\n\nכותרת: ${task.title}\nמחלקה: ${task.dept}\nלקוח: ${task.client_name||"—"}\nאחראי: ${task.assignee||"—"}`
+        ).catch(()=>{});
+      }
       notify(`עודכן: ${s}`);
     }catch{notify("שגיאה","#DC2626");}
   };

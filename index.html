@@ -206,16 +206,11 @@ function Login({onLogin}){
 // ── DEBT TAB ──
 function DebtTab({debt,notify}){
   const [filter,setFilter]=useState("הכל");
+  const [expanded,setExpanded]=useState(null);
   const [editing,setEditing]=useState(null);
   const [editData,setEditData]=useState({payment_status:"ממתין",payment_notes:""});
   const [local,setLocal]=useState(debt);
   useEffect(()=>setLocal(debt),[debt]);
-
-  const overdue=local.filter(d=>d.status==="באיחור").sort((a,b)=>b.days_overdue-a.days_overdue);
-  const current=local.filter(d=>d.status!=="באיחור").sort((a,b)=>b.amount-a.amount);
-  const shown=filter==="הכל"?local:filter==="באיחור"?overdue:current;
-  const totAll=local.reduce((s,d)=>s+Number(d.amount),0);
-  const totOv=overdue.reduce((s,d)=>s+Number(d.amount),0);
 
   const PS={
     "ממתין":{c:"#D97706",bg:"#FFFBEB"},
@@ -224,10 +219,42 @@ function DebtTab({debt,notify}){
     "שולם":{c:"#16A34A",bg:"#F0FDF4"},
   };
 
-  const saveEdit=async id=>{
+  // Group by client
+  const byClient={};
+  local.forEach(d=>{
+    const n=d.client_name;
+    if(!byClient[n]) byClient[n]={invoices:[],overdue:0,current:0,maxDays:0,payment_status:d.payment_status,payment_notes:d.payment_notes};
+    byClient[n].invoices.push(d);
+    if(d.status==="באיחור"){byClient[n].overdue+=Number(d.amount);byClient[n].maxDays=Math.max(byClient[n].maxDays,d.days_overdue);}
+    else byClient[n].current+=Number(d.amount);
+  });
+
+  const clients=Object.entries(byClient).map(([name,d])=>({
+    name,
+    total:d.overdue+d.current,
+    overdue:d.overdue,
+    current:d.current,
+    maxDays:d.maxDays,
+    status:d.overdue>0?"באיחור":"שוטף",
+    invoices:d.invoices.sort((a,b)=>b.days_overdue-a.days_overdue),
+    payment_status:d.payment_status,
+    payment_notes:d.payment_notes,
+  }));
+
+  const overdueClients=clients.filter(c=>c.status==="באיחור").sort((a,b)=>b.overdue-a.overdue);
+  const currentClients=clients.filter(c=>c.status==="שוטף").sort((a,b)=>b.total-a.total);
+  const shown=filter==="הכל"?[...overdueClients,...currentClients]:filter==="באיחור"?overdueClients:currentClients;
+
+  const totAll=clients.reduce((s,c)=>s+c.total,0);
+  const totOv=clients.reduce((s,c)=>s+c.overdue,0);
+
+  const saveEdit=async(clientName)=>{
     try{
-      await sb(`debt?id=eq.${id}`,{method:"PATCH",body:JSON.stringify(editData)});
-      setLocal(p=>p.map(d=>d.id===id?{...d,...editData}:d));
+      const ids=local.filter(d=>d.client_name===clientName).map(d=>d.id);
+      for(const id of ids){
+        await sb(`debt?id=eq.${id}`,{method:"PATCH",body:JSON.stringify(editData)});
+      }
+      setLocal(p=>p.map(d=>d.client_name===clientName?{...d,...editData}:d));
       setEditing(null);notify("✅ עודכן!");
     }catch{notify("שגיאה","#DC2626");}
   };
@@ -235,48 +262,42 @@ function DebtTab({debt,notify}){
   const exportExcel=()=>{
     try{
       const XLSX=window.XLSX;const wb=XLSX.utils.book_new();
-      const all=[...overdue,...current];
       const makeSheet=(rows,name)=>{
         const ws=XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols']=[{wch:36},{wch:14},{wch:14},{wch:12},{wch:14},{wch:32}];
+        ws['!cols']=[{wch:36},{wch:14},{wch:14},{wch:14},{wch:12},{wch:14},{wch:32}];
         XLSX.utils.book_append_sheet(wb,ws,name);
       };
       makeSheet([
-        ["דוח גבייה","","","","",""],
-        ["לקוח","סכום (₪)","תאריך פירעון","ימי איחור","סטטוס","הערות"],
-        ...all.map(d=>[d.client_name,Number(d.amount),d.due_date,d.days_overdue||"שוטף",d.status,d.payment_notes||""]),
-        ["סה״כ",totAll,"","","",""]
+        ["דוח גבייה","","","","","",""],
+        ["לקוח","מספר חשבונית","תאריך חשבונית","תאריך פירעון","ימי איחור","סכום (₪)","סטטוס"],
+        ...local.map(d=>[d.client_name,d.invoice_number||"",d.invoice_date||"",d.due_date||"",d.days_overdue||0,Number(d.amount),d.status]),
+        ["סה״כ","","","","",totAll,""]
       ],"סיכום");
       makeSheet([
-        ["חייבים באיחור","","","","",""],
-        ["לקוח","סכום (₪)","תאריך פירעון","ימי איחור","סטטוס טיפול","הערות"],
-        ...overdue.map(d=>[d.client_name,Number(d.amount),d.due_date,d.days_overdue,d.payment_status||"ממתין",d.payment_notes||""]),
-        ["סה״כ",totOv,"","","",""]
+        ["חייבים באיחור","","","","","",""],
+        ["לקוח","מספר חשבונית","תאריך חשבונית","תאריך פירעון","ימי איחור","סכום (₪)","סטטוס טיפול"],
+        ...local.filter(d=>d.status==="באיחור").map(d=>[d.client_name,d.invoice_number||"",d.invoice_date||"",d.due_date||"",d.days_overdue,Number(d.amount),d.payment_status||"ממתין"]),
+        ["סה״כ","","","","",totOv,""]
       ],"חייבים באיחור");
-      makeSheet([
-        ["חוב שוטף","","",""],
-        ["לקוח","סכום (₪)","תאריך פירעון","הערות"],
-        ...current.map(d=>[d.client_name,Number(d.amount),d.due_date,d.payment_notes||""]),
-        ["סה״כ",totAll-totOv,"",""]
-      ],"שוטף");
       XLSX.writeFile(wb,"דוח_גבייה.xlsx");
       notify("📥 הדוח הורד!","#16A34A");
     }catch(e){notify("שגיאה","#DC2626");}
   };
 
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,padding:"9px 12px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
+  const LS={color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:5,display:"block"};
 
   return<div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
-      <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>מערכת גבייה</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{local.length} לקוחות חייבים</p></div>
+      <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>מערכת גבייה</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{clients.length} לקוחות • {local.length} חשבוניות</p></div>
       <button onClick={exportExcel} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"#16A34A",color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>📥 הורד דוח אקסל</button>
     </div>
 
     <div className="kg3" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:20}}>
       {[
-        {lb:"סה״כ חוב",v:`₪${totAll.toLocaleString()}`,c:"var(--blue)",bg:"var(--blue-light)",ic:"📊"},
-        {lb:"באיחור",v:`₪${totOv.toLocaleString()}`,c:"var(--red)",bg:"var(--red-light)",ic:"🚨"},
-        {lb:"לקוחות",v:local.length,c:"var(--purple)",bg:"#F5F3FF",ic:"👥"},
+        {lb:"סה״כ חוב",v:`₪${Math.round(totAll).toLocaleString()}`,c:"var(--blue)",bg:"var(--blue-light)",ic:"📊"},
+        {lb:"באיחור",v:`₪${Math.round(totOv).toLocaleString()}`,c:"var(--red)",bg:"var(--red-light)",ic:"🚨"},
+        {lb:"לקוחות",v:clients.length,c:"var(--purple)",bg:"#F5F3FF",ic:"👥"},
       ].map((x,i)=><div key={i} style={{background:x.bg,border:`1px solid ${x.c}22`,borderRadius:14,padding:"18px 16px"}}>
         <div style={{fontSize:20,marginBottom:8}}>{x.ic}</div>
         <div style={{fontSize:22,fontWeight:800,color:x.c}}>{x.v}</div>
@@ -286,44 +307,78 @@ function DebtTab({debt,notify}){
 
     <div style={{display:"flex",gap:6,marginBottom:16}}>
       {["הכל","באיחור","שוטף"].map(f=><button key={f} onClick={()=>setFilter(f)} style={{padding:"6px 16px",borderRadius:20,border:`1px solid ${filter===f?"#2563EB":"var(--border)"}`,background:filter===f?"#2563EB":"#fff",color:filter===f?"#fff":"var(--text2)",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-        {f} ({f==="באיחור"?overdue.length:f==="שוטף"?current.length:local.length})
+        {f} ({f==="באיחור"?overdueClients.length:f==="שוטף"?currentClients.length:clients.length})
       </button>)}
     </div>
 
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {shown.map(d=>{
-        const isOv=d.status==="באיחור";
-        const ps=PS[d.payment_status||"ממתין"]||PS["ממתין"];
-        const isEdit=editing===d.id;
-        return<div key={d.id} style={{background:"#fff",border:`1px solid ${isOv?"#FECACA":"var(--border)"}`,borderRadius:14,padding:16,boxShadow:"var(--shadow)",borderRight:isOv?"4px solid #DC2626":"4px solid #16A34A"}}>
-          <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:isEdit?14:0}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:6}}>{d.client_name}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
-                <span style={{fontWeight:800,color:isOv?"var(--red)":"var(--green)",fontSize:15}}>₪{Number(d.amount).toLocaleString()}</span>
-                {isOv&&<span style={{color:"var(--red)",fontSize:12,fontWeight:500}}>• {d.days_overdue} ימי איחור</span>}
-                {!isOv&&<span style={{color:"var(--green)",fontSize:12,fontWeight:500}}>• שוטף</span>}
-                <span style={{background:ps.bg,color:ps.c,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:600}}>{d.payment_status||"ממתין"}</span>
+      {shown.map(c=>{
+        const isOv=c.status==="באיחור";
+        const isExp=expanded===c.name;
+        const isEdit=editing===c.name;
+        const ps=PS[c.payment_status||"ממתין"]||PS["ממתין"];
+        return<div key={c.name} style={{background:"#fff",border:`1px solid ${isOv?"#FECACA":"var(--border)"}`,borderRadius:14,boxShadow:"var(--shadow)",borderRight:isOv?"4px solid #DC2626":"4px solid #16A34A",overflow:"hidden"}}>
+          
+          {/* Client header */}
+          <div style={{padding:"14px 16px",cursor:"pointer"}} onClick={()=>setExpanded(isExp?null:c.name)}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:6}}>{c.name}</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+                  <span style={{fontWeight:800,color:isOv?"var(--red)":"var(--green)",fontSize:15}}>₪{Math.round(c.total).toLocaleString()}</span>
+                  {isOv&&c.overdue>0&&<span style={{color:"var(--red)",fontSize:12}}>• באיחור ₪{Math.round(c.overdue).toLocaleString()}</span>}
+                  {isOv&&c.current>0&&<span style={{color:"var(--green)",fontSize:12}}>• שוטף ₪{Math.round(c.current).toLocaleString()}</span>}
+                  <span style={{background:ps.bg,color:ps.c,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:600}}>{c.payment_status||"ממתין"}</span>
+                </div>
+                {c.payment_notes&&<div style={{marginTop:6,padding:"6px 10px",background:"var(--bg2)",borderRadius:8,fontSize:12,color:"var(--text2)",borderRight:"3px solid #7C3AED"}}>💬 {c.payment_notes}</div>}
               </div>
-              {d.payment_notes&&!isEdit&&<div style={{marginTop:8,padding:"7px 11px",background:"var(--bg2)",borderRadius:8,fontSize:12,color:"var(--text2)",borderRight:"3px solid #7C3AED"}}>💬 {d.payment_notes}</div>}
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={e=>{e.stopPropagation();isEdit?setEditing(null):(setEditing(c.name),setEditData({payment_status:c.payment_status||"ממתין",payment_notes:c.payment_notes||""}));}} style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:isEdit?"var(--red-light)":"var(--bg2)",color:isEdit?"var(--red)":"var(--text2)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                  {isEdit?"✕":"✏️"}
+                </button>
+                <span style={{color:"var(--text3)",fontSize:18,paddingTop:4}}>{isExp?"▲":"▼"}</span>
+              </div>
             </div>
-            <button onClick={()=>isEdit?setEditing(null):(setEditing(d.id),setEditData({payment_status:d.payment_status||"ממתין",payment_notes:d.payment_notes||""}))} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--border)",background:isEdit?"var(--red-light)":"var(--bg2)",color:isEdit?"var(--red)":"var(--text2)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}>
-              {isEdit?"✕ סגור":"✏️ עדכן"}
-            </button>
           </div>
 
-          {isEdit&&<div style={{borderTop:"1px solid var(--border)",paddingTop:14,display:"flex",flexDirection:"column",gap:12}}>
-            <div>
-              <label style={{color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:6,display:"block"}}>סטטוס תשלום</label>
-              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                {Object.entries(PS).map(([s,sc])=><button key={s} onClick={()=>setEditData(p=>({...p,payment_status:s}))} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${editData.payment_status===s?sc.c:"var(--border)"}`,background:editData.payment_status===s?sc.bg:"#fff",color:editData.payment_status===s?sc.c:"var(--text2)",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{s}</button>)}
+          {/* Edit section */}
+          {isEdit&&<div style={{padding:"0 16px 14px",borderTop:"1px solid var(--border)"}}>
+            <div style={{paddingTop:14,display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label style={LS}>סטטוס תשלום</label>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                  {Object.entries(PS).map(([s,sc])=><button key={s} onClick={()=>setEditData(p=>({...p,payment_status:s}))} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${editData.payment_status===s?sc.c:"var(--border)"}`,background:editData.payment_status===s?sc.bg:"#fff",color:editData.payment_status===s?sc.c:"var(--text2)",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{s}</button>)}
+                </div>
               </div>
+              <div>
+                <label style={LS}>הערות</label>
+                <textarea value={editData.payment_notes} onChange={e=>setEditData(p=>({...p,payment_notes:e.target.value}))} style={{...IS,resize:"vertical",minHeight:60}} rows={2}/>
+              </div>
+              <button onClick={()=>saveEdit(c.name)} style={{padding:"10px",borderRadius:9,border:"none",background:"#2563EB",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור</button>
             </div>
-            <div>
-              <label style={{color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:6,display:"block"}}>הערות</label>
-              <textarea value={editData.payment_notes} onChange={e=>setEditData(p=>({...p,payment_notes:e.target.value}))} placeholder="לדוגמה: הלקוח אמר שיעביר ב-01/05..." style={{...IS,resize:"vertical",minHeight:70}} rows={3}/>
-            </div>
-            <button onClick={()=>saveEdit(d.id)} style={{padding:"10px",borderRadius:9,border:"none",background:"#2563EB",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור עדכון</button>
+          </div>}
+
+          {/* Invoice breakdown */}
+          {isExp&&<div style={{borderTop:"1px solid var(--border)",background:"var(--bg2)"}}>
+            <div style={{padding:"10px 16px 6px",fontSize:11,fontWeight:700,color:"var(--text3)"}}>פירוט חשבוניות ({c.invoices.length})</div>
+            {c.invoices.map((inv,i)=>{
+              const invOv=inv.status==="באיחור";
+              return<div key={inv.id} style={{padding:"10px 16px",borderTop:i>0?"1px solid var(--border3,#E2E8F0)":"none",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    <span style={{fontWeight:600,fontSize:13,color:invOv?"var(--red)":"var(--text)"}}>₪{Math.round(Number(inv.amount)).toLocaleString()}</span>
+                    {inv.invoice_number&&<span style={{fontSize:11,color:"var(--text3)"}}>חשבונית #{inv.invoice_number}</span>}
+                    <span style={{fontSize:11,color:invOv?"var(--red)":"var(--green)",fontWeight:600,background:invOv?"var(--red-light)":"var(--green-light)",padding:"2px 8px",borderRadius:20}}>
+                      {invOv?`${inv.days_overdue} ימי איחור`:"שוטף"}
+                    </span>
+                  </div>
+                  <div style={{fontSize:11,color:"var(--text3)",marginTop:3}}>
+                    {inv.invoice_date&&`חשבונית: ${inv.invoice_date}`}
+                    {inv.due_date&&` • פירעון: ${inv.due_date}`}
+                  </div>
+                </div>
+              </div>;
+            })}
           </div>}
         </div>;
       })}

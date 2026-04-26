@@ -732,52 +732,40 @@ function App(){
     }catch{notify("שגיאה","#DC2626");}
   };
 
-  const sendDailyReports=async(tasks,notify)=>{
-    const DEPT_EMAILS={
-      "פורמט רחב":["kfir.dfus@gmail.com"],
-      "דיגיטלי צבעוני":["kfir.dfus@gmail.com"],
-      "דיגיטלי שחור לבן":["kfir.dfus@gmail.com"],
-      "עבודות חוץ":["kfir.dfus@gmail.com"],
-      "משלוחים":["kfir.dfus@gmail.com"],
-      "תזכורות":["kfir.dfus@gmail.com"],
-      "ביגוד ומוצרי פרסום":["kfir.dfus@gmail.com"],
-    };
+  const [showReportModal,setShowReportModal]=useState(false);
+  const [reportRecipients,setReportRecipients]=useState([]);
+
+  const DEPT_EMAILS={
+    "פורמט רחב":{email:"daniel.natalie.print@gmail.com",name:"דניאל"},
+    "דיגיטלי צבעוני":{email:"adam.dfusnatalie@gmail.com",name:"אדם"},
+    "דיגיטלי שחור לבן":{email:"iris.z726@gmail.com",name:"איריס"},
+    "עבודות חוץ":{email:"kfir.dfus@gmail.com",name:"כפיר"},
+    "משלוחים":{email:"kfir.dfus@gmail.com",name:"כפיר"},
+    "תזכורות":{email:"kfir.dfus@gmail.com",name:"כפיר"},
+    "ביגוד ומוצרי פרסום":{email:"BARAKDFUS268@gmail.com",name:"ברק + ולדה"},
+  };
+
+  const sendDailyReports=async(selected,notify)=>{
     const today=new Date().toLocaleDateString('he-IL');
     let sent=0;
-    for(const [dept,emails] of Object.entries(DEPT_EMAILS)){
+    for(const dept of selected){
+      const deptInfo=DEPT_EMAILS[dept];
+      if(!deptInfo) continue;
       const deptTasks=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם");
       if(deptTasks.length===0) continue;
-      const color=DEPT_COLORS[dept]||"#2563EB";
-      const taskRows=deptTasks.map(t=>`
-        <div style="background:#F8FAFC;border-radius:10px;padding:14px 16px;margin-bottom:10px;border-right:4px solid ${color};font-family:Arial,sans-serif">
-          <div style="font-weight:700;font-size:15px;color:#0F172A;margin-bottom:6px">${t.title}</div>
-          <div style="font-size:13px;color:#64748B;margin-bottom:4px">
-            ${t.client_name?`👤 ${t.client_name} &nbsp;&nbsp;`:''}${t.assignee?`👷 ${t.assignee} &nbsp;&nbsp;`:''}${t.due_date?`📅 ${t.due_date}`:''}
-          </div>
-          <span style="background:${t.status==='תקוע'?'#FEF2F2':t.status==='בביצוע'?'#EFF6FF':'#FFFBEB'};color:${t.status==='תקוע'?'#DC2626':t.status==='בביצוע'?'#2563EB':'#D97706'};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${t.status}</span>
-          ${t.notes?`<div style="font-size:12px;color:#94A3B8;margin-top:6px">📝 ${t.notes}</div>`:''}
-        </div>`).join('');
-      const html=`<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#F8FAFC;padding:24px">
-        <div style="background:linear-gradient(135deg,#1E3A5F,${color});padding:28px;border-radius:14px;text-align:center;margin-bottom:24px">
-          <div style="font-size:32px;margin-bottom:10px">🖨️</div>
-          <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700">דוח יומי — ${dept}</h1>
-          <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:14px">${today} &nbsp;•&nbsp; ${deptTasks.length} משימות פתוחות</p>
-        </div>
-        ${taskRows}
-        <div style="text-align:center;padding:20px;color:#94A3B8;font-size:12px;border-top:1px solid #E2E8F0;margin-top:16px">
-          PrintOS — מערכת ניהול בית דפוס נטלי
-        </div>
-      </div>`;
+      const taskLines=deptTasks.map((t,i)=>`${i+1}. ${t.title}${t.client_name?' | '+t.client_name:''}${t.due_date?' | '+t.due_date:''}${t.assignee?' | '+t.assignee:''} [${t.status}]${t.notes?'\n   הערה: '+t.notes:''}`).join('\n\n');
+      const message=`שלום ${deptInfo.name},\n\nדוח יומי — ${dept}\nתאריך: ${today}\nמשימות פתוחות: ${deptTasks.length}\n\n${"─".repeat(36)}\n\n${taskLines}\n\n${"─".repeat(36)}\n\nPrintOS — מערכת ניהול בית דפוס נטלי`;
+      const emails=dept==="ביגוד ומוצרי פרסום"?["BARAKDFUS268@gmail.com","vladalovetea18@gmail.com"]:[deptInfo.email];
       for(const email of emails){
         try{
-          const r=await fetch('/api/sendmail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:email,subject:`📋 דוח יומי — ${dept} | ${today}`,html})});
-          const d=await r.json();
-          if(d.id||r.ok) sent++;
-          else console.error(d);
+          await emailjs.send("service_el3vmud","template_zfjuge9",{subject:`📋 דוח יומי — ${dept} | ${today}`,message,to_email:email});
+          sent++;
         }catch(e){console.error(e);}
       }
     }
-    notify(`📧 נשלחו ${sent} מיילים!`,"#7C3AED");
+    notify(`📧 נשלחו דוחות ל-${selected.length} מחלקות!`,"#7C3AED");
+    setShowReportModal(false);
+    setReportRecipients([]);
   };
 
   const deleteTask=async(id)=>{
@@ -937,7 +925,7 @@ function App(){
             <h1 style={{fontSize:24,fontWeight:900,color:"var(--text)",margin:0}}>שלום, {user.name.split(" ")[0]} 👋</h1>
             <p style={{color:"var(--text3)",margin:"5px 0 0",fontSize:13}}>{isA?"סקירה כללית של בית הדפוס":`הבורד שלך — מחלקת ${user.dept}`}</p>
           </div>
-          {isA&&<button onClick={()=>sendDailyReports(tasks,notify)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>}
+          {isA&&<button onClick={()=>setShowReportModal(true)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>}
         </div>
         {loading&&<div style={{display:"flex",alignItems:"center",gap:8,color:"var(--text3)",fontSize:13,marginBottom:16}}><Spinner sz={16}/> טוען נתונים...</div>}
 
@@ -1194,6 +1182,34 @@ function App(){
           })}
         </div>
       </div>}
+    </Modal>
+
+    {/* Report Modal */}
+    <Modal open={showReportModal} onClose={()=>{setShowReportModal(false);setReportRecipients([]);}} title="📧 שלח דוחות יומיים">
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <p style={{fontSize:13,color:"var(--text2)"}}>בחר את המחלקות שאליהן לשלוח דוח:</p>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {Object.entries(DEPT_EMAILS).map(([dept,info])=>{
+            const deptCount=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
+            const isSel=reportRecipients.includes(dept);
+            return<label key={dept} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,border:`1px solid ${isSel?"var(--blue)":"var(--border)"}`,background:isSel?"var(--blue-light)":"#fff",cursor:"pointer"}}>
+              <input type="checkbox" checked={isSel} onChange={()=>setReportRecipients(p=>isSel?p.filter(d=>d!==dept):[...p,dept])} style={{accentColor:"var(--blue)"}}/>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:600,fontSize:13,color:"var(--text)"}}>{dept}</div>
+                <div style={{fontSize:11,color:"var(--text3)"}}>→ {info.name} • {deptCount} משימות פתוחות</div>
+              </div>
+              <span style={{background:deptCount>0?"var(--blue-light)":"var(--bg2)",color:deptCount>0?"var(--blue)":"var(--text3)",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:600}}>{deptCount}</span>
+            </label>;
+          })}
+        </div>
+        <div style={{display:"flex",gap:10,marginTop:4}}>
+          <button onClick={()=>setReportRecipients(Object.keys(DEPT_EMAILS))} style={{padding:"8px 14px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>בחר הכל</button>
+          <button onClick={()=>setReportRecipients([])} style={{padding:"8px 14px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>נקה</button>
+          <button onClick={()=>sendDailyReports(reportRecipients,notify)} disabled={reportRecipients.length===0} style={{flex:1,padding:"10px",borderRadius:9,border:"none",background:reportRecipients.length>0?"linear-gradient(135deg,#7C3AED,#2563EB)":"var(--bg3)",color:reportRecipients.length>0?"#fff":"var(--text3)",fontWeight:700,fontSize:13,cursor:reportRecipients.length>0?"pointer":"not-allowed",fontFamily:"inherit"}}>
+            📧 שלח ל-{reportRecipients.length} מחלקות
+          </button>
+        </div>
+      </div>
     </Modal>
 
     {/* AI Chat */}

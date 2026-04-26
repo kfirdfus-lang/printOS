@@ -734,46 +734,24 @@ function App(){
 
   const sendDailyReports=async(tasks,notify)=>{
     const DEPT_EMAILS={
-      "פורמט רחב":["daniel.natalie.print@gmail.com"],
-      "דיגיטלי צבעוני":["adam.dfusnatalie@gmail.com"],
-      "דיגיטלי שחור לבן":["iris.z726@gmail.com"],
+      "פורמט רחב":["kfir.dfus@gmail.com"],
+      "דיגיטלי צבעוני":["kfir.dfus@gmail.com"],
+      "דיגיטלי שחור לבן":["kfir.dfus@gmail.com"],
       "עבודות חוץ":["kfir.dfus@gmail.com"],
       "משלוחים":["kfir.dfus@gmail.com"],
       "תזכורות":["kfir.dfus@gmail.com"],
-      "ביגוד ומוצרי פרסום":["BARAKDFUS268@gmail.com","vladalovetea18@gmail.com"],
+      "ביגוד ומוצרי פרסום":["kfir.dfus@gmail.com"],
     };
     const today=new Date().toLocaleDateString('he-IL');
     let sent=0;
     for(const [dept,emails] of Object.entries(DEPT_EMAILS)){
       const deptTasks=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם");
       if(deptTasks.length===0) continue;
-      const taskRows=deptTasks.map(t=>`
-        <div style="background:#F8FAFC;border-radius:10px;padding:12px 14px;margin-bottom:8px;border-right:3px solid ${DEPT_COLORS[dept]||'#2563EB'}">
-          <div style="font-weight:700;font-size:14px;color:#0F172A;margin-bottom:4px">${t.title}</div>
-          <div style="font-size:12px;color:#64748B">
-            ${t.client_name?`👤 ${t.client_name} &nbsp;`:''}
-            ${t.assignee?`👷 ${t.assignee} &nbsp;`:''}
-            ${t.due_date?`📅 ${t.due_date} &nbsp;`:''}
-            <span style="background:${t.status==='תקוע'?'#FEF2F2':t.status==='בביצוע'?'#EFF6FF':'#FFFBEB'};color:${t.status==='תקוע'?'#DC2626':t.status==='בביצוע'?'#2563EB':'#D97706'};padding:2px 8px;border-radius:20px;font-weight:600">${t.status}</span>
-          </div>
-          ${t.notes?`<div style="font-size:12px;color:#94A3B8;margin-top:4px">📝 ${t.notes}</div>`:''}
-        </div>`).join('');
-      const message=`<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#F8FAFC;padding:20px">
-        <div style="background:linear-gradient(135deg,#1E3A5F,#2563EB);padding:24px;border-radius:12px;text-align:center;margin-bottom:20px">
-          <div style="font-size:28px;margin-bottom:8px">🖨️</div>
-          <h1 style="color:#fff;margin:0;font-size:20px">דוח יומי — ${dept}</h1>
-          <p style="color:#BFDBFE;margin:6px 0 0;font-size:13px">${today} • ${deptTasks.length} משימות פתוחות</p>
-        </div>
-        ${taskRows}
-        <div style="text-align:center;padding:16px;color:#94A3B8;font-size:12px;margin-top:8px">PrintOS — מערכת ניהול בית דפוס</div>
-      </div>`;
+      const taskLines=deptTasks.map((t,i)=>`${i+1}. ${t.title}${t.client_name?' | '+t.client_name:''}${t.due_date?' | '+t.due_date:''}${t.assignee?' | '+t.assignee:''} [${t.status}]${t.notes?'\n   הערה: '+t.notes:''}`).join('\n\n');
+      const message=`שלום,\n\nדוח יומי — ${dept}\nתאריך: ${today}\nמשימות פתוחות: ${deptTasks.length}\n\n────────────────────────\n\n${taskLines}\n\n────────────────────────\n\nPrintOS — מערכת ניהול בית דפוס`;
       for(const email of emails){
         try{
-          await emailjs.send("service_el3vmud","template_zfjuge9",{
-            subject:`📋 דוח יומי — ${dept} | ${today}`,
-            message,
-            to_email:email
-          });
+          await emailjs.send("service_el3vmud","template_zfjuge9",{subject:`📋 דוח יומי — ${dept} | ${today}`,message,to_email:email});
           sent++;
         }catch(e){console.error(e);}
       }

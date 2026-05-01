@@ -678,6 +678,7 @@ function App(){
   const [deptFilter,setDeptFilter]=useState("הכל");
   const [notif,setNotif]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [binaSyncing,setBinaSyncing]=useState(false);
   const [allUsers,setAllUsers]=useState([]);
   const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
   const [nc,setNc]=useState({name:"",phone:"",email:"",address:"",payment_terms:"שוטף + 30"});
@@ -696,6 +697,37 @@ function App(){
     }catch(e){notify("שגיאה בטעינה","#DC2626");}
     setLoading(false);
   };
+
+  const syncBina=async()=>{
+    if(binaSyncing)return;
+    setBinaSyncing(true);
+    try{
+      const r=await fetch(`${SU}/functions/v1/sync-bina-orders`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:`Bearer ${SA}`},
+        body:JSON.stringify({})
+      });
+      const data=await r.json();
+      if(!r.ok){
+        if(data.error&&data.error.includes("dns")){
+          notify("⚠️ בינה לא זמינה כרגע, נסה שוב בעוד כמה דקות","#DC2626");
+        }else if(data.binaResponse){
+          notify(`❌ שגיאה מבינה: ${data.binaResponse[0]?.ResMsg||"לא ידוע"}`,"#DC2626");
+        }else{
+          notify(`⚠️ שגיאה: ${data.error||"לא ידוע"}`,"#DC2626");
+        }
+      }else if(data.created>0){
+        notify(`✅ נמצאו ${data.created} הזמנות חדשות מבינה`,"#16A34A");
+        await load();
+      }else{
+        notify("ℹ️ אין הזמנות חדשות בבינה","#0891B2");
+      }
+    }catch(e){
+      notify("⚠️ אין חיבור לאינטרנט","#DC2626");
+    }
+    setBinaSyncing(false);
+  };
+
 
   const isA=user?.role==="admin";
   const visTasks=(deptFilter!=="הכל")?tasks.filter(t=>t.dept===deptFilter):tasks;
@@ -866,6 +898,7 @@ function App(){
     {/* Actions */}
     <div style={{padding:"0 10px 16px",display:"flex",flexDirection:"column",gap:6}}>
       {isA&&<button onClick={()=>{setAddTask(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ משימה חדשה</button>}
+      {isA&&<button onClick={syncBina} disabled={binaSyncing} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:binaSyncing?"#f1f5f9":"#fff",color:"var(--text)",fontWeight:600,fontSize:12,cursor:binaSyncing?"wait":"pointer",fontFamily:"inherit",opacity:binaSyncing?0.7:1}}>{binaSyncing?"🔄 מושך...":"🔄 משוך מבינה"}</button>}
     </div>
   </div>;
 

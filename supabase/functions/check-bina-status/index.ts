@@ -4,6 +4,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
+const BINA_ROOT_URL = "https://webfiles.binaw.com/";
+const FETCH_TIMEOUT_MS = 15_000;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -17,12 +20,14 @@ Deno.serve(async (req) => {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort("timeout"), 5000);
+  const timeoutId = setTimeout(() => controller.abort("timeout"), FETCH_TIMEOUT_MS);
 
   try {
-    await fetch("https://webfiles.binaw.com/post/PostJsonDocV2.aspx", {
+    // Any HTTP response (200, 404, 500, …) means the host is reachable; fetch only throws on network/DNS/timeout.
+    await fetch(BINA_ROOT_URL, {
       method: "GET",
       signal: controller.signal,
+      redirect: "follow",
     });
 
     return new Response(JSON.stringify({ status: "online" }), {

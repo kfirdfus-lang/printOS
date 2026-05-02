@@ -43,7 +43,8 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "orders@dfusnatalie.com",
+        // TODO: Temporary sender until dfusnatalie.com is verified in Resend; switch back to orders@dfusnatalie.com afterward.
+        from: "onboarding@resend.dev",
         to: Array.isArray(to) ? to : [to],
         subject,
         html,

@@ -757,19 +757,18 @@ function App(){
         const code=resRow.kuponId??resRow.requestId??resRow.KuponId??resRow.custId??resRow.docId??"—";
         const addrLine=`${bcf.custCity.trim()}, ${bcf.custAddress.trim()}`;
         const phoneLine=`${bcfDigits(bcf.custTel)} · ${bcfDigits(bcf.custCel)}`;
-        const notesLine=[bcf.notes?.trim(),`ת.ז./ח.פ.: ${bcfDigits(bcf.custTz)}`,`קוד לקוח בינה: ${code}`].filter(Boolean).join("\n");
-        const base={name:savedName,phone:phoneLine,email:bcf.custEmail.trim(),address:addrLine,payment_terms:bcf.termsofPayment.trim()};
-        try{
-          await sb("clients",{method:"POST",body:JSON.stringify({...base,notes:notesLine||null})});
-        }catch{
-          try{
-            await sb("clients",{method:"POST",body:JSON.stringify({...base,address:`${addrLine}\n${notesLine}`.trim()})});
-          }catch(e2){
-            console.error(e2);
-            notify("נוצר בבינה אך השמירה ל-Supabase נכשלה — בדוק את טבלת clients","#DC2626");
-            setBinaClientSaving(false);return;
-          }
-        }
+        const notesParts=[bcf.notes?.trim(),`ת.ז./ח.פ.: ${bcfDigits(bcf.custTz)}`].filter(Boolean);
+        const notesVal=notesParts.length?notesParts.join("\n"):null;
+        const binaId=code!=="—"&&code!=null&&String(code).trim()!==""?String(code):null;
+        await sb("clients",{method:"POST",body:JSON.stringify({
+          name:savedName,
+          phone:phoneLine,
+          email:bcf.custEmail.trim(),
+          address:addrLine,
+          payment_terms:bcf.termsofPayment.trim(),
+          notes:notesVal,
+          bina_customer_id:binaId,
+        })});
         setBinaClientOpen(false);
         setBcf(BCF_DEFAULT());
         await load();

@@ -1,0 +1,7 @@
+# Supabase CLI (linked project / local state)
+supabase/.temp/
+supabase/config.toml
+
+# Env secrets
+.env
+.env.local

@@ -11,10 +11,16 @@ function formatAxiosError(e: unknown): string {
   return String(e);
 }
 
+export type FetchBinaViaQuotaGuardOptions = {
+  /** Per-request axios timeout (ms). Defaults to AXIOS_TIMEOUT_MS (3 minutes). */
+  timeoutMs?: number;
+};
+
 /** POST JSON to Bina (webfiles.binaw.com only) via QuotaGuard HTTP proxy using CONNECT tunneling. */
 export async function fetchBinaViaQuotaGuard(
   binaUrl: string,
   jsonBody: unknown,
+  options?: FetchBinaViaQuotaGuardOptions,
 ): Promise<{ ok: boolean; status: number; text: string }> {
   const host = new URL(binaUrl).hostname;
   if (host !== "webfiles.binaw.com") {
@@ -49,6 +55,8 @@ export async function fetchBinaViaQuotaGuard(
     path: new URL(binaUrl).pathname,
   });
 
+  const timeoutMs = options?.timeoutMs ?? AXIOS_TIMEOUT_MS;
+
   const config: AxiosRequestConfig = {
     method: "POST",
     url: binaUrl,
@@ -59,7 +67,7 @@ export async function fetchBinaViaQuotaGuard(
     responseType: "text",
     transformResponse: [(data) => data],
     validateStatus: () => true,
-    timeout: AXIOS_TIMEOUT_MS,
+    timeout: timeoutMs,
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
   };

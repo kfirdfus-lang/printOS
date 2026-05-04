@@ -142,10 +142,13 @@ const Spinner=({sz=20,color="#2563EB"})=><div style={{width:sz,height:sz,border:
 
 const Card=({children,style={}})=><div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:16,boxShadow:"var(--shadow)",padding:20,...style}}>{children}</div>;
 
-const Modal=({open,onClose,children,title})=>!open?null:
+const Modal=({open,onClose,children,title,maxWidth=520})=>!open?null:
   <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:28,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto",boxShadow:"var(--shadow-lg)"}}>
-      {title&&<div style={{fontWeight:800,fontSize:17,color:"var(--text)",marginBottom:20,paddingBottom:16,borderBottom:"1px solid var(--border)"}}>{title}</div>}
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:28,width:"100%",maxWidth:maxWidth,maxHeight:"90vh",overflowY:"auto",boxShadow:"var(--shadow-lg)"}}>
+      {title&&<div style={{fontWeight:800,fontSize:17,color:"var(--text)",marginBottom:20,paddingBottom:16,borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+        <span style={{flex:1}}>{title}</span>
+        <button type="button" onClick={onClose} aria-label="סגור" style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,width:36,height:36,cursor:"pointer",color:"var(--text2)",fontSize:18,lineHeight:1,fontFamily:"inherit",flexShrink:0}}>×</button>
+      </div>}
       {children}
     </div>
   </div>;
@@ -683,7 +686,8 @@ function App(){
   const [tab,setTab]=useState("dashboard");
   const [mob,setMob]=useState(false);
   const [addTask,setAddTask]=useState(false);
-  const [addClient,setAddClient]=useState(false);
+  const [binaClientOpen,setBinaClientOpen]=useState(false);
+  const [binaClientSaving,setBinaClientSaving]=useState(false);
   const [editTask,setEditTask]=useState(null);
   const [det,setDet]=useState(null);
   const [showChat,setShowChat]=useState(false);
@@ -695,9 +699,92 @@ function App(){
   const [binaLastCheckAt,setBinaLastCheckAt]=useState(null);
   const [allUsers,setAllUsers]=useState([]);
   const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
-  const [nc,setNc]=useState({name:"",phone:"",email:"",address:"",payment_terms:"שוטף + 30"});
+  const BCF_DEFAULT=()=>({custName:"",custTz:"",custCity:"",custAddress:"",custGroup:"ישראל",custTel:"",custCel:"",custEmail:"",termsofPayment:"שוטף + 30",notes:""});
+  const [bcf,setBcf]=useState(BCF_DEFAULT());
+  const [bcfErr,setBcfErr]=useState({});
 
   const notify=(m,c="#16A34A")=>{setNotif({m,c});setTimeout(()=>setNotif(null),3000);};
+
+  const bcfDigits=s=>String(s||"").replace(/\D/g,"");
+  const openBinaClientModal=()=>{setBcf(BCF_DEFAULT());setBcfErr({});setBinaClientOpen(true);};
+  const validateBcf=()=>{
+    const er={};
+    const t=s=>String(s||"").trim();
+    if(!t(bcf.custName))er.custName="שדה חובה";
+    if(bcfDigits(bcf.custTz).length!==9)er.custTz="נדרשות בדיוק 9 ספרות";
+    if(!t(bcf.custCity))er.custCity="שדה חובה";
+    if(!t(bcf.custAddress))er.custAddress="שדה חובה";
+    if(!t(bcf.custGroup))er.custGroup="שדה חובה";
+    const tel=bcfDigits(bcf.custTel);
+    if(tel.length<9||tel.length>10)er.custTel="9–10 ספרות";
+    const cel=bcfDigits(bcf.custCel);
+    if(cel.length<9||cel.length>10)er.custCel="9–10 ספרות";
+    const em=t(bcf.custEmail);
+    if(!em)er.custEmail="שדה חובה";
+    else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)||!em.includes("@")||!em.split("@")[1]?.includes("."))er.custEmail="מייל לא תקין (חייבים @ ונקודה בדומיין)";
+    if(!t(bcf.termsofPayment))er.termsofPayment="שדה חובה";
+    return er;
+  };
+  const submitBinaCustomer=async()=>{
+    const er=validateBcf();
+    if(Object.keys(er).length){setBcfErr(er);return;}
+    setBcfErr({});
+    setBinaClientSaving(true);
+    const savedName=bcf.custName.trim();
+    try{
+      const body={
+        custName:savedName,
+        custTz:bcfDigits(bcf.custTz),
+        custCity:bcf.custCity.trim(),
+        custAddress:bcf.custAddress.trim(),
+        custGroup:bcf.custGroup.trim(),
+        custTel:bcfDigits(bcf.custTel),
+        custCel:bcfDigits(bcf.custCel),
+        custEmail:bcf.custEmail.trim(),
+        termsofPayment:bcf.termsofPayment.trim()
+      };
+      const {data,error:invE}=await supabaseClient.functions.invoke("bina-create-customer",{body});
+      if(invE){
+        notify(`❌ שגיאה ביצירת הלקוח: ${invE.message||"לא ידוע"}`,"#DC2626");
+        setBinaClientSaving(false);return;
+      }
+      let resRow=data;
+      if(typeof data==="string"){try{resRow=JSON.parse(data)}catch{resRow=null}}
+      resRow=Array.isArray(resRow)?resRow[0]:resRow;
+      if(resRow==null){notify("❌ שגיאה ביצירת הלקוח: תשובה לא צפויה מבינה","#DC2626");setBinaClientSaving(false);return;}
+      const rc=resRow.ResCode;
+      if(rc===0||rc==="0"){
+        const code=resRow.kuponId??resRow.requestId??resRow.KuponId??resRow.custId??resRow.docId??"—";
+        const addrLine=`${bcf.custCity.trim()}, ${bcf.custAddress.trim()}`;
+        const phoneLine=`${bcfDigits(bcf.custTel)} · ${bcfDigits(bcf.custCel)}`;
+        const notesLine=[bcf.notes?.trim(),`ת.ז./ח.פ.: ${bcfDigits(bcf.custTz)}`,`קוד לקוח בינה: ${code}`].filter(Boolean).join("\n");
+        const base={name:savedName,phone:phoneLine,email:bcf.custEmail.trim(),address:addrLine,payment_terms:bcf.termsofPayment.trim()};
+        try{
+          await sb("clients",{method:"POST",body:JSON.stringify({...base,notes:notesLine||null})});
+        }catch{
+          try{
+            await sb("clients",{method:"POST",body:JSON.stringify({...base,address:`${addrLine}\n${notesLine}`.trim()})});
+          }catch(e2){
+            console.error(e2);
+            notify("נוצר בבינה אך השמירה ל-Supabase נכשלה — בדוק את טבלת clients","#DC2626");
+            setBinaClientSaving(false);return;
+          }
+        }
+        setBinaClientOpen(false);
+        setBcf(BCF_DEFAULT());
+        await load();
+        notify(`✅ הלקוח ${savedName} נוצר בהצלחה!\nקוד לקוח: ${code}`,"#16A34A");
+      }else if(rc===-5||rc==="-5"){
+        notify("❌ ת.ז./ח.פ. כבר קיים במערכת","#DC2626");
+      }else{
+        const det=resRow.ResMsg||resRow.ResMsgHe||JSON.stringify(resRow).slice(0,120);
+        notify(`❌ שגיאה ביצירת הלקוח: ${det}`,"#DC2626");
+      }
+    }catch(x){
+      notify(`❌ שגיאה ביצירת הלקוח: ${x.message||String(x)}`,"#DC2626");
+    }
+    setBinaClientSaving(false);
+  };
 
   const setBinaStatusGlobal=(status,lastCheckAt)=>{
     window.BINA_STATUS=status;
@@ -803,15 +890,6 @@ function App(){
       ).catch(()=>{});
       setNt({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
       setAddTask(false);await load();notify("✅ משימה נוספה");
-    }catch{notify("שגיאה","#DC2626");}
-  };
-
-  const doAddClient=async()=>{
-    if(!nc.name.trim())return;
-    try{
-      await sb("clients",{method:"POST",body:JSON.stringify(nc)});
-      setNc({name:"",phone:"",email:"",address:"",payment_terms:"שוטף + 30"});
-      setAddClient(false);await load();notify("✅ לקוח נוסף");
     }catch{notify("שגיאה","#DC2626");}
   };
 
@@ -958,13 +1036,14 @@ function App(){
     <div style={{padding:"0 10px 16px",display:"flex",flexDirection:"column",gap:6}}>
       {isA&&<button onClick={()=>{setAddTask(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ משימה חדשה</button>}
       {isA&&<button onClick={syncBina} disabled={binaSyncing} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:binaSyncing?"#f1f5f9":"#fff",color:"var(--text)",fontWeight:600,fontSize:12,cursor:binaSyncing?"wait":"pointer",fontFamily:"inherit",opacity:binaSyncing?0.7:1}}>{binaSyncing?"🔄 מושך...":"🔄 משוך מבינה"}</button>}
+      {isA&&<button onClick={()=>{openBinaClientModal();setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--green)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>➕ לקוח חדש</button>}
     </div>
   </div>;
 
   return<div style={{minHeight:"100vh",background:"var(--bg)",fontFamily:"'Heebo',sans-serif",color:"var(--text)"}}>
 
     {/* Notification */}
-    {notif&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:notif.c,color:"#fff",padding:"10px 20px",borderRadius:12,fontWeight:600,zIndex:9999,boxShadow:"var(--shadow-lg)",whiteSpace:"nowrap",fontSize:13,animation:"fadeUp 0.3s ease"}}>{notif.m}</div>}
+    {notif&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:notif.c,color:"#fff",padding:"10px 20px",borderRadius:12,fontWeight:600,zIndex:9999,boxShadow:"var(--shadow-lg)",whiteSpace:"pre-line",maxWidth:"min(420px,92vw)",textAlign:"center",fontSize:13,animation:"fadeUp 0.3s ease"}}>{notif.m}</div>}
 
     {mob&&<div onClick={()=>setMob(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.3)",zIndex:199}}/>}
 
@@ -1161,7 +1240,7 @@ function App(){
       {tab==="clients"&&isA&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
           <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>אנשי קשר</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{clients.length} לקוחות</p></div>
-          <button onClick={()=>setAddClient(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--green)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>+ לקוח חדש</button>
+          <button onClick={openBinaClientModal} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--green)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>➕ לקוח חדש</button>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {clients.map(c=><Card key={c.id} style={{padding:"14px 16px"}}>
@@ -1241,19 +1320,42 @@ function App(){
       </div>
     </Modal>
 
-    <Modal open={addClient} onClose={()=>setAddClient(false)} title="+ לקוח חדש">
-      <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><label style={LS}>שם *</label><input style={IS} value={nc.name} onChange={e=>setNc(p=>({...p,name:e.target.value}))} placeholder="שם חברה / לקוח"/></div>
+    <Modal open={binaClientOpen} onClose={()=>!binaClientSaving&&setBinaClientOpen(false)} title="➕ לקוח חדש בבינה" maxWidth={580}>
+      <div style={{display:"flex",flexDirection:"column",gap:12,direction:"rtl"}}>
+        <p style={{fontSize:12,color:"var(--text3)",margin:"0 0 4px"}}>השדות נשלחים לבינה ליצירת כרטיס לקוח. הערות נשמרות רק ב-PrintOS.</p>
+        <datalist id="bcf-cust-group-dl">
+          <option value="ישראל"/><option value="חוץ"/><option value="מוסדות"/><option value="פרטי"/>
+        </datalist>
+        <div><label style={LS}>שם הלקוח / חברה *</label><input style={IS} value={bcf.custName} onChange={e=>{setBcf(p=>({...p,custName:e.target.value}));if(bcfErr.custName)setBcfErr(er=>({...er,custName:null}));}} placeholder="למשל: דפוס נטלי בע״מ"/>
+        {bcfErr.custName&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custName}</div>}</div>
+        <div><label style={LS}>ת.ז. / ח.פ. *</label><input style={IS} inputMode="numeric" value={bcf.custTz} onChange={e=>{setBcf(p=>({...p,custTz:e.target.value.replace(/\D/g,"").slice(0,9)}));if(bcfErr.custTz)setBcfErr(er=>({...er,custTz:null}));}} placeholder="9 ספרות"/>
+        {bcfErr.custTz&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custTz}</div>}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div><label style={LS}>טלפון</label><input style={IS} value={nc.phone} onChange={e=>setNc(p=>({...p,phone:e.target.value}))} placeholder="050-0000000"/></div>
-          <div><label style={LS}>מייל</label><input style={IS} value={nc.email} onChange={e=>setNc(p=>({...p,email:e.target.value}))} placeholder="name@co.il"/></div>
+          <div><label style={LS}>עיר *</label><input style={IS} value={bcf.custCity} onChange={e=>{setBcf(p=>({...p,custCity:e.target.value}));if(bcfErr.custCity)setBcfErr(er=>({...er,custCity:null}));}} placeholder="תל אביב"/>
+          {bcfErr.custCity&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custCity}</div>}</div>
+          <div><label style={LS}>כתובת *</label><input style={IS} value={bcf.custAddress} onChange={e=>{setBcf(p=>({...p,custAddress:e.target.value}));if(bcfErr.custAddress)setBcfErr(er=>({...er,custAddress:null}));}} placeholder="רחוב ומספר"/>
+          {bcfErr.custAddress&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custAddress}</div>}</div>
         </div>
-        <div><label style={LS}>כתובת</label><input style={IS} value={nc.address} onChange={e=>setNc(p=>({...p,address:e.target.value}))} placeholder="רחוב, עיר"/></div>
-        <div><label style={LS}>תנאי תשלום</label><select style={IS} value={nc.payment_terms} onChange={e=>setNc(p=>({...p,payment_terms:e.target.value}))}>
-          {["שוטף","שוטף + 30","שוטף + 60","שוטף + 90","מזומן"].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-        <div style={{display:"flex",gap:10,marginTop:4}}>
-          <button onClick={doAddClient} style={{flex:1,padding:"11px",borderRadius:10,border:"none",background:"var(--green)",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>הוסף לקוח</button>
-          <button onClick={()=>setAddClient(false)} style={{padding:"11px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <div><label style={LS}>קבוצה *</label><input style={IS} list="bcf-cust-group-dl" value={bcf.custGroup} onChange={e=>{setBcf(p=>({...p,custGroup:e.target.value}));if(bcfErr.custGroup)setBcfErr(er=>({...er,custGroup:null}));}} placeholder="בחר מהרשימה או הקלד"/>
+        {bcfErr.custGroup&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custGroup}</div>}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div><label style={LS}>טלפון *</label><input style={IS} type="tel" inputMode="tel" value={bcf.custTel} onChange={e=>{setBcf(p=>({...p,custTel:e.target.value}));if(bcfErr.custTel)setBcfErr(er=>({...er,custTel:null}));}} placeholder="9–10 ספרות"/>
+          {bcfErr.custTel&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custTel}</div>}</div>
+          <div><label style={LS}>סלולרי *</label><input style={IS} type="tel" inputMode="tel" value={bcf.custCel} onChange={e=>{setBcf(p=>({...p,custCel:e.target.value}));if(bcfErr.custCel)setBcfErr(er=>({...er,custCel:null}));}} placeholder="9–10 ספרות"/>
+          {bcfErr.custCel&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custCel}</div>}</div>
+        </div>
+        <div><label style={LS}>מייל *</label><input style={IS} type="email" value={bcf.custEmail} onChange={e=>{setBcf(p=>({...p,custEmail:e.target.value}));if(bcfErr.custEmail)setBcfErr(er=>({...er,custEmail:null}));}} placeholder="name@example.com"/>
+        {bcfErr.custEmail&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.custEmail}</div>}</div>
+        <div><label style={LS}>תנאי תשלום *</label><select style={IS} value={bcf.termsofPayment} onChange={e=>{setBcf(p=>({...p,termsofPayment:e.target.value}));if(bcfErr.termsofPayment)setBcfErr(er=>({...er,termsofPayment:null}));}}>
+          {["שוטף + 30","שוטף + 45","שוטף + 60","שוטף + 90","מזומן","מראש"].map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+        {bcfErr.termsofPayment&&<div style={{color:"#DC2626",fontSize:11,marginTop:4,fontWeight:600}}>{bcfErr.termsofPayment}</div>}</div>
+        <div><label style={LS}>הערות (אופציונלי — רק PrintOS)</label><textarea style={{...IS,minHeight:72,resize:"vertical"}} value={bcf.notes} onChange={e=>setBcf(p=>({...p,notes:e.target.value}))} placeholder="לא נשלח לבינה"/></div>
+        <div style={{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>
+          <button type="button" disabled={binaClientSaving} onClick={submitBinaCustomer} style={{flex:1,minWidth:140,padding:"11px",borderRadius:10,border:"none",background:binaClientSaving?"var(--bg3)":"var(--green)",color:"#fff",fontWeight:700,fontSize:14,cursor:binaClientSaving?"wait":"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            {binaClientSaving&&<Spinner sz={18} color="#fff"/>}{binaClientSaving?"יוצר...":"צור לקוח"}
+          </button>
+          <button type="button" disabled={binaClientSaving} onClick={()=>setBinaClientOpen(false)} style={{padding:"11px 18px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontWeight:600,fontSize:14,cursor:binaClientSaving?"not-allowed":"pointer",fontFamily:"inherit"}}>ביטול</button>
         </div>
       </div>
     </Modal>

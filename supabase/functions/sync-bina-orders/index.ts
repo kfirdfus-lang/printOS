@@ -53,11 +53,10 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    const today = new Date()
-    const twoDaysAgo = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000)
-    const thirtyDaysAhead = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-    const fromDate = twoDaysAgo.toISOString().split('T')[0]
-    const toDate = thirtyDaysAhead.toISOString().split('T')[0]
+    // חלון יום אספקה אחד בלבד: היום (YYYY-MM-DD). הזמנות חדשות מקבלות תאריך אספקה של היום — מצמצם נפח תשובה מבינה.
+    const todayStr = new Date().toISOString().split('T')[0]
+    const fromDate = todayStr
+    const toDate = todayStr
 
     const requestBody = {
       tokenId: binaToken,
@@ -66,7 +65,12 @@ Deno.serve(async (req) => {
       toDate: toDate,
     }
 
-    console.log('Sending to Bina:', JSON.stringify(requestBody))
+    console.log(
+      '[sync-bina-orders] מסנכרנים יום אספקה אחד בלבד (fromDate=toDate=היום, פורמט YYYY-MM-DD):',
+      fromDate,
+      '| שליחה לבינה:',
+      JSON.stringify(requestBody),
+    )
 
     const binaResponse = await fetchBinaViaQuotaGuard(BINA_API_URL, requestBody)
     const responseText = binaResponse.text

@@ -2,7 +2,8 @@ import { fetchBinaViaQuotaGuard } from "../_shared/bina-proxy-fetch.ts";
 
 const BINA_API_URL = "https://webfiles.binaw.com/post/PostJsonDocV2.aspx";
 const DOC_TYPE = -26;
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 45_000;
+const MAX_ATTEMPTS = 2;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -91,7 +92,10 @@ Deno.serve(async (req) => {
   console.log("[bina-create-customer] Creating customer:", displayName);
 
   try {
-    const r = await fetchBinaViaQuotaGuard(BINA_API_URL, binaRequest, { timeoutMs: TIMEOUT_MS });
+    const r = await fetchBinaViaQuotaGuard(BINA_API_URL, binaRequest, {
+      timeoutMs: TIMEOUT_MS,
+      maxAttempts: MAX_ATTEMPTS,
+    });
     console.log("[bina-create-customer] Bina response:", r.status);
 
     if (!r.ok) {

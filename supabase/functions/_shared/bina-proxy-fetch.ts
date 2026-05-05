@@ -14,6 +14,8 @@ function formatAxiosError(e: unknown): string {
 export type FetchBinaViaQuotaGuardOptions = {
   /** Per-request axios timeout (ms). Defaults to AXIOS_TIMEOUT_MS (3 minutes). */
   timeoutMs?: number;
+  /** Maximum retry attempts including the first try. Defaults to MAX_ATTEMPTS (3). */
+  maxAttempts?: number;
 };
 
 /** POST JSON to Bina (webfiles.binaw.com only) via QuotaGuard HTTP proxy using CONNECT tunneling. */
@@ -56,6 +58,7 @@ export async function fetchBinaViaQuotaGuard(
   });
 
   const timeoutMs = options?.timeoutMs ?? AXIOS_TIMEOUT_MS;
+  const attempts = Math.max(1, Math.min(options?.maxAttempts ?? MAX_ATTEMPTS, MAX_ATTEMPTS));
 
   const config: AxiosRequestConfig = {
     method: "POST",
@@ -74,7 +77,7 @@ export async function fetchBinaViaQuotaGuard(
 
   let res: Awaited<ReturnType<typeof axios.request<string>>> | undefined;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       res = await axios.request<string>(config);
       break;
@@ -85,11 +88,11 @@ export async function fetchBinaViaQuotaGuard(
         proxyHost: proxyParsed.hostname,
         detail: errorMessage,
       });
-      if (attempt === MAX_ATTEMPTS) {
+      if (attempt === attempts) {
         throw e;
       }
       const nextAttempt = attempt + 1;
-      console.log("[bina] retry attempt", nextAttempt, "of 3 after error:", errorMessage);
+      console.log("[bina] retry attempt", nextAttempt, "of", attempts, "after error:", errorMessage);
       const waitMs = attempt === 1 ? RETRY_DELAY_MS[0] : RETRY_DELAY_MS[1];
       await new Promise((r) => setTimeout(r, waitMs));
     }

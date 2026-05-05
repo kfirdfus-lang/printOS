@@ -72,7 +72,9 @@ Deno.serve(async (req) => {
       JSON.stringify(requestBody),
     )
 
-    const binaResponse = await fetchBinaViaQuotaGuard(BINA_API_URL, requestBody)
+    const binaResponse = await fetchBinaViaQuotaGuard(BINA_API_URL, requestBody, {
+      maxAttempts: 2,
+    })
     const responseText = binaResponse.text
     console.log('Bina raw response:', responseText)
 

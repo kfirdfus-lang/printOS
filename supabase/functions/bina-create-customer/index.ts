@@ -2,9 +2,6 @@ import { fetchBinaViaQuotaGuard } from "../_shared/bina-proxy-fetch.ts";
 
 const BINA_API_URL = "https://webfiles.binaw.com/post/PostJsonDocV2.aspx";
 const DOC_TYPE = -26;
-const TIMEOUT_MS = 45_000;
-const MAX_ATTEMPTS = 2;
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -65,17 +62,8 @@ Deno.serve(async (req) => {
     );
   }
 
-  const binaToken = Deno.env.get("BINA_TOKEN");
-  if (!binaToken?.trim()) {
-    return new Response(JSON.stringify({ error: "BINA_TOKEN secret is not configured" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const input = body as unknown as CustomerInput;
   const binaRequest = {
-    tokenId: binaToken,
     docType: DOC_TYPE,
     custName: input.custName.trim(),
     custCity: input.custCity.trim(),
@@ -92,10 +80,7 @@ Deno.serve(async (req) => {
   console.log("[bina-create-customer] Creating customer:", displayName);
 
   try {
-    const r = await fetchBinaViaQuotaGuard(BINA_API_URL, binaRequest, {
-      timeoutMs: TIMEOUT_MS,
-      maxAttempts: MAX_ATTEMPTS,
-    });
+    const r = await fetchBinaViaQuotaGuard(BINA_API_URL, binaRequest);
     console.log("[bina-create-customer] Bina response:", r.status);
 
     if (!r.ok) {

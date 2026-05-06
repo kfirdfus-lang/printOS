@@ -107,6 +107,11 @@ Deno.serve(async (req) => {
     });
   }
 
+  /** TEMPORARY: expose first 5 chars of token in JSON for debugging wrong-token issues; remove when fixed. */
+  const tokenTrimmed = binaToken.trim();
+  const diagTokenPrefix = tokenTrimmed.slice(0, 5);
+  const withDiag = (o: Record<string, unknown>) => ({ ...o, diag_token_prefix: diagTokenPrefix });
+
   const client = body.client as BodyClient;
   const items = body.items as BodyItem[];
   const titleOpt = typeof body.title === "string" ? body.title.trim() : "";
@@ -114,10 +119,10 @@ Deno.serve(async (req) => {
 
   const custId = parseCustId(client.binaCustomerId);
   if (custId == null) {
-    return new Response(
-      JSON.stringify({ success: false, error: "client.binaCustomerId must be a positive numeric Bina customer id" }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(withDiag({
+      success: false,
+      error: "client.binaCustomerId must be a positive numeric Bina customer id",
+    })), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
   const requestId = Date.now();
@@ -126,7 +131,7 @@ Deno.serve(async (req) => {
   const docStatus = "חדש";
 
   const binaRequest = {
-    tokenId: binaToken,
+    tokenId: tokenTrimmed,
     requestId,
     docType: DOC_TYPE,
     docWithvat: 1,
@@ -153,7 +158,6 @@ Deno.serve(async (req) => {
     })),
   };
 
-  const tokenTrimmed = binaToken.trim();
   const payloadJson = JSON.stringify(binaRequest);
   const payloadBytes = new TextEncoder().encode(payloadJson).length;
 
@@ -184,28 +188,22 @@ Deno.serve(async (req) => {
 
     if (!r.ok) {
       console.error("[bina-create-order] non-2xx body snippet:", r.text.slice(0, 800));
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Bina HTTP ${r.status}`,
-          binaResponse: r.text,
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify(withDiag({
+        success: false,
+        error: `Bina HTTP ${r.status}`,
+        binaResponse: r.text,
+      })), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(r.text);
     } catch {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Bina returned non-JSON",
-          binaResponse: r.text,
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify(withDiag({
+        success: false,
+        error: "Bina returned non-JSON",
+        binaResponse: r.text,
+      })), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const responseObj = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -213,14 +211,11 @@ Deno.serve(async (req) => {
 
     if (!ro || ro.ResCode === undefined) {
       console.error("[bina-create-order] unexpected shape:", JSON.stringify(parsed).slice(0, 500));
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Unexpected Bina response shape",
-          binaResponse: parsed,
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify(withDiag({
+        success: false,
+        error: "Unexpected Bina response shape",
+        binaResponse: parsed,
+      })), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const resCode = ro.ResCode;
@@ -229,34 +224,28 @@ Deno.serve(async (req) => {
     if (!okCode) {
       const msg = String(ro.ResMsg ?? ro.ResMsgHe ?? "Unknown error");
       console.error("[bina-create-order] ResCode", resCode, "ResMsg", msg);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: msg,
-          binaResponse: parsed,
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify(withDiag({
+        success: false,
+        error: msg,
+        binaResponse: parsed,
+      })), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const docId = ro.docId ?? ro.DocId;
     const binaOrderId = docId != null ? docId : null;
     console.log("[bina-create-order] success docId", binaOrderId);
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        binaOrderId,
-        message: "הזמנה נוצרה",
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(withDiag({
+      success: true,
+      binaOrderId,
+      message: "הזמנה נוצרה",
+    })), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[bina-create-order] thrown:", msg);
-    return new Response(
-      JSON.stringify({ success: false, error: msg }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(withDiag({ success: false, error: msg })), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

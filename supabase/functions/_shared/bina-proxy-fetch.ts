@@ -14,15 +14,19 @@ export type FetchBinaViaQuotaGuardOptions = {
   maxAttempts?: number;
 };
 
-/** POST JSON to Bina (webfiles.binaw.com) via QuotaGuard using Deno native HTTP client proxy support. */
+const ALLOWED_BINA_HOSTS = new Set(["webfiles.binaw.com", "webapps.binaw.com"]);
+
+/** POST JSON to Bina (webfiles / webapps) via QuotaGuard using Deno native HTTP client proxy support. */
 export async function fetchBinaViaQuotaGuard(
   binaUrl: string,
   jsonBody: unknown,
   options?: FetchBinaViaQuotaGuardOptions,
 ): Promise<{ ok: boolean; status: number; text: string }> {
   const host = new URL(binaUrl).hostname;
-  if (host !== "webfiles.binaw.com") {
-    throw new Error(`fetchBinaViaQuotaGuard: unexpected host (${host}), expected webfiles.binaw.com`);
+  if (!ALLOWED_BINA_HOSTS.has(host)) {
+    throw new Error(
+      `fetchBinaViaQuotaGuard: unexpected host (${host}), expected one of: ${[...ALLOWED_BINA_HOSTS].join(", ")}`,
+    );
   }
 
   const proxyRaw = Deno.env.get("QUOTAGUARD_URL");

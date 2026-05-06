@@ -1,6 +1,6 @@
 import { fetchBinaViaQuotaGuard } from "../_shared/bina-proxy-fetch.ts";
 
-const BINA_ORDER_URL = "https://webapps.binaw.com/PostJsonDoc.aspx";
+const BINA_ORDER_URL = "https://webfiles.binaw.com/post/PostJsonDoc.aspx";
 const DOC_TYPE = 15;
 const DOC_TITLE_DEFAULT = "הזמנה מהפרינטוס";
 

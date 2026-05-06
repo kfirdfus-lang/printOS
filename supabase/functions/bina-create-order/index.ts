@@ -153,8 +153,25 @@ Deno.serve(async (req) => {
     })),
   };
 
-  console.log("[bina-create-order] dispatching to Bina", {
-    url: BINA_ORDER_URL,
+  const tokenTrimmed = binaToken.trim();
+  const payloadJson = JSON.stringify(binaRequest);
+  const payloadBytes = new TextEncoder().encode(payloadJson).length;
+
+  console.log("[bina-create-order] pre-send diagnostics", {
+    BINA_TOKEN_defined: typeof binaToken !== "undefined" && binaToken !== null,
+    BINA_TOKEN_typeof: typeof binaToken,
+    BINA_TOKEN_trimmed_length: tokenTrimmed.length,
+    BINA_TOKEN_first_5_chars: tokenTrimmed.slice(0, 5),
+    target_url_full: BINA_ORDER_URL,
+    body_json_string_length: payloadJson.length,
+    body_utf8_byte_length: payloadBytes,
+    requestId,
+    custId,
+    docTitle,
+    item_count: binaRequest.docItems.length,
+  });
+
+  console.log("[bina-create-order] dispatching to Bina (subset, no secrets)", {
     requestId,
     custId,
     docTitle,

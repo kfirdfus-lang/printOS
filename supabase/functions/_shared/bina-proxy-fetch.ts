@@ -58,10 +58,19 @@ export async function fetchBinaViaQuotaGuard(
       proxy: { url: proxyRaw.trim() },
     });
     try {
+      // Entire jsonBody is serialized as-is — no field filtering / token rewriting.
+      const serializedBody = JSON.stringify(jsonBody);
+      console.log("[bina] fetch body verbatim", {
+        attempt,
+        targetUrl: binaUrl,
+        serializedCharLength: serializedBody.length,
+        serializedByteLength: new TextEncoder().encode(serializedBody).length,
+      });
+
       const res = await fetch(binaUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(jsonBody),
+        body: serializedBody,
         signal: AbortSignal.timeout(timeoutMs),
         client,
       });

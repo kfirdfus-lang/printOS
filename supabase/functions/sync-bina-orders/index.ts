@@ -120,9 +120,10 @@ Deno.serve(async (req) => {
           continue
         }
 
+        // כולל משימות בארכיון — כדי שלא תיווצר כפילות אחרי ארכוב (במקום מחיקה).
         const { data: existing } = await supabase
           .from('tasks')
-          .select('id, deleted_at')
+          .select('id')
           .eq('bina_order_id', binaOrderId)
           .maybeSingle()
 

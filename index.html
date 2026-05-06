@@ -698,6 +698,7 @@ function App(){
   const [binaStatus,setBinaStatus]=useState("checking");
   const [binaLastCheckAt,setBinaLastCheckAt]=useState(null);
   const [allUsers,setAllUsers]=useState([]);
+  const [archivedTasks,setArchivedTasks]=useState([]);
   const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
   const BCF_DEFAULT=()=>({custName:"",custTz:"",custCity:"",custAddress:"",custGroup:"ישראל",custTel:"",custCel:"",custEmail:"",termsofPayment:"שוטף + 30",notes:""});
   const [bcf,setBcf]=useState(BCF_DEFAULT());
@@ -816,7 +817,7 @@ function App(){
     setLoading(true);
     try{
       const isA=cu.role==="admin";
-      const tp=isA?"tasks?order=created_at.desc":`tasks?order=created_at.desc`;
+      const tp="tasks?archived_at=is.null&order=created_at.desc";
       const [t,c,d]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([])]);
       setTasks(t);setClients(c);setDebt(d);
       sb("users?role=eq.worker&order=name.asc").then(setAllUsers).catch(()=>{});
@@ -830,6 +831,22 @@ function App(){
     const it=setInterval(checkBinaStatus,60000);
     return()=>clearInterval(it);
   },[]);
+
+  const loadArchive=async(u)=>{
+    const cu=u||user;
+    if(!cu||cu.role!=="admin")return;
+    try{
+      const a=await sb("tasks?archived_at=not.is.null&order=archived_at.desc");
+      setArchivedTasks(Array.isArray(a)?a:[]);
+    }catch(e){setArchivedTasks([]);}
+  };
+
+  useEffect(()=>{
+    if(tab==="archive"){
+      if(!user||user.role!=="admin"){setTab("dashboard");return;}
+      loadArchive();
+    }
+  },[tab,user]);
 
   const syncBina=async()=>{
     if(binaSyncing)return;
@@ -937,10 +954,31 @@ function App(){
     }catch{notify("שגיאה","#DC2626");}
   };
 
+  const archiveFmt=(iso)=>iso?new Date(iso).toLocaleString("he-IL",{dateStyle:"short",timeStyle:"short"}):"—";
+
+  const restoreArchived=async(id)=>{
+    try{
+      await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({archived_at:null})});
+      await load();await loadArchive();
+      notify("✅ המשימה הוחזרה ללוח (סטטוס: הושלם)");
+    }catch{notify("שגיאה","#DC2626");}
+  };
+
+  const purgeArchived=async(id)=>{
+    if(!window.confirm("למחוק לצמיתות מהמערכת? לא ניתן לשחזור."))return;
+    try{
+      await sb(`tasks?id=eq.${id}`,{method:"DELETE"});
+      setArchivedTasks(p=>p.filter(t=>t.id!==id));
+      notify("🗑️ נמחק לצמיתות");
+    }catch{notify("שגיאה","#DC2626");}
+  };
+
   const doEditTask=async()=>{
     if(!editTask||!editTask.title.trim())return;
     try{
-      await sb(`tasks?id=eq.${editTask.id}`,{method:"PATCH",body:JSON.stringify({title:editTask.title,dept:editTask.dept,priority:editTask.priority,client_name:editTask.client_name,assignee:editTask.assignee,due_date:editTask.due_date||null,notes:editTask.notes,status:editTask.status})});
+      const patch={title:editTask.title,dept:editTask.dept,priority:editTask.priority,client_name:editTask.client_name,assignee:editTask.assignee,due_date:editTask.due_date||null,notes:editTask.notes,status:editTask.status};
+      if(editTask.status==="הושלם")patch.completed_at=editTask.completed_at||(new Date().toISOString());
+      await sb(`tasks?id=eq.${editTask.id}`,{method:"PATCH",body:JSON.stringify(patch)});
       setTasks(p=>p.map(t=>t.id===editTask.id?{...t,...editTask}:t));
       setEditTask(null);
       notify("✅ משימה עודכנה");
@@ -949,7 +987,9 @@ function App(){
 
   const updStatus=async(id,s)=>{
     try{
-      await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({status:s})});
+      const patch={status:s};
+      if(s==="הושלם")patch.completed_at=(new Date().toISOString());
+      await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify(patch)});
       setTasks(p=>p.map(t=>t.id===id?{...t,status:s}:t));
       if(det?.id===id)setDet(p=>({...p,status:s}));
       const task=tasks.find(t=>t.id===id);
@@ -977,7 +1017,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
     {id:"delivery",ic:"🚚",lb:"משלוחים"},
-    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"debt",ic:"₪",lb:"גבייה"}]:[]),
+    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"debt",ic:"₪",lb:"גבייה"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -1271,6 +1311,40 @@ function App(){
 
       {/* DELIVERY REPORT */}
       {tab==="delivery"&&isA&&<DeliveryTab tasks={tasks}/>}
+
+      {/* ARCHIVE (admin) */}
+      {tab==="archive"&&isA&&<div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+          <div>
+            <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>📦 משימות שהושלמו</h1>
+            <p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>ארכיון — קריאה בלבד · {archivedTasks.length} משימות</p>
+          </div>
+          <button onClick={()=>loadArchive()} style={{padding:"8px 12px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↻ רענן</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {archivedTasks.map(t=><div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",boxShadow:"var(--shadow)",borderRight:`4px solid ${DEPT_COLORS[t.dept]||"var(--blue)"}`}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}</div>
+                <div style={{color:"var(--text3)",fontSize:12}}>{t.client_name||"—"}{" · "}{t.dept}</div>
+              </div>
+              <Badge status={t.status||"הושלם"}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8,marginBottom:12,fontSize:12,color:"var(--text2)"}}>
+              <div><span style={{color:"var(--text3)"}}>הושלמה: </span>{archiveFmt(t.completed_at||t.updated_at)}</div>
+              <div><span style={{color:"var(--text3)"}}>הועברה לארכיון: </span>{archiveFmt(t.archived_at)}</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button type="button" onClick={()=>restoreArchived(t.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>החזר לבורד</button>
+              <button type="button" onClick={()=>purgeArchived(t.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>מחק לצמיתות</button>
+            </div>
+          </div>)}
+          {archivedTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
+            <div style={{fontSize:36,marginBottom:10}}>📦</div>
+            <div style={{fontWeight:600,fontSize:14}}>אין משימות בארכיון</div>
+          </div>}
+        </div>
+      </div>}
     </div>
 
     {/* MODALS */}

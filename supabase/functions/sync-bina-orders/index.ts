@@ -45,6 +45,11 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const binaToken = Deno.env.get('BINA_TOKEN')!
+
+    if (!binaToken) {
+      throw new Error('BINA_TOKEN secret is not configured')
+    }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -54,6 +59,7 @@ Deno.serve(async (req) => {
     const toDate = todayStr
 
     const requestBody = {
+      tokenId: binaToken,
       docType: -15,
       fromDate: fromDate,
       toDate: toDate,

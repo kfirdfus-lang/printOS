@@ -62,8 +62,17 @@ Deno.serve(async (req) => {
     );
   }
 
+  const binaToken = Deno.env.get("BINA_TOKEN");
+  if (!binaToken?.trim()) {
+    return new Response(JSON.stringify({ error: "BINA_TOKEN secret is not configured" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const input = body as unknown as CustomerInput;
   const binaRequest = {
+    tokenId: binaToken,
     docType: DOC_TYPE,
     custName: input.custName.trim(),
     custCity: input.custCity.trim(),

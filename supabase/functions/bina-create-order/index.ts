@@ -94,7 +94,8 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
       ItemId: it.itemId,
       ItemDesc: it.description,
       ItemQty: it.quantity,
-      UnitPrice: String(it.unitPrice),
+      // בינה מתעלמים מ-docWithvat:0 - אנחנו ממירים למחיר כולל מע"מ (18%)
+      UnitPrice: String((Number(it.unitPrice) * 1.18).toFixed(4)),
       Unitcurrency: 'ILS',
       CurValue: 1,
       Discount: it.discount ?? 0,

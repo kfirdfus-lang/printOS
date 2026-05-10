@@ -83,7 +83,8 @@ Deno.serve(async (req) => {
         ItemId: (item.item_name || `item-${idx + 1}`).substring(0, 30),
         ItemDesc: (item.description || item.item_name || '').substring(0, 200),
         ItemQty: Number(item.quantity),
-        UnitPrice: Number(item.unit_price),
+        // בינה מתעלמים מ-docWithvat:0 - אנחנו ממירים למחיר כולל מע"מ (18%)
+        UnitPrice: Number((Number(item.unit_price) * 1.18).toFixed(4)),
         UnitCurrency: 'ILS',
         CurValue: 1,
         Discount: Number(item.discount_pct || 0),

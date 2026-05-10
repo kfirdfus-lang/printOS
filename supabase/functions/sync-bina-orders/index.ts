@@ -28,6 +28,21 @@ interface ClientRecord {
   bina_customer_id: string | null
 }
 
+function parseHebrewDateForDB(dateStr: unknown): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return null
+  const parts = dateStr.trim().split('/')
+  if (parts.length !== 3) return null
+  const [dd, mm, yyyy] = parts
+  if (!dd || !mm || !yyyy) return null
+  return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`
+}
+
+function num(v: unknown): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
 function normalizeName(name: string): string {
   if (!name) return ''
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -265,7 +280,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        const taskData: any = {
+        const o = order as Record<string, unknown>
+        const taskData: Record<string, unknown> = {
           title: taskTitle,
           dept: dept,
           status: 'חדש',
@@ -283,6 +299,11 @@ Deno.serve(async (req) => {
           bina_synced_at: new Date().toISOString(),
           source: 'bina',
           created_by: 'sync-bina',
+          total_amount: num(o.orderTotalAfterDiscount) ?? num(o.orderTotal),
+          total_inc_vat: num(o.orderTotalIncVat),
+          discount_amount: num(o.orderDiscount),
+          sales_agent: o.orderSalesMan ? String(o.orderSalesMan) : null,
+          bina_order_date: parseHebrewDateForDB(o.orderDate),
         }
 
         await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)

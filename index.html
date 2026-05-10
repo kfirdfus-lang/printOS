@@ -52,7 +52,7 @@ select option{background:#fff;color:var(--text)}
 input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.2)}}
 @media(max-width:768px){
   .sd{display:none!important}
   .sm{display:block!important}
@@ -1177,6 +1177,9 @@ function App(){
   const [binaLastCheckAt,setBinaLastCheckAt]=useState(null);
   const [allUsers,setAllUsers]=useState([]);
   const [archivedTasks,setArchivedTasks]=useState([]);
+  const [lastRefresh,setLastRefresh]=useState(Date.now());
+  const [refreshing,setRefreshing]=useState(false);
+  const loadRef=useRef(null);
   const [nt,setNt]=useState({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
   const BCF_DEFAULT=()=>({custName:"",custTz:"",custCity:"",custAddress:"",custGroup:"ישראל",custTel:"",custCel:"",custEmail:"",termsofPayment:"שוטף + 30",notes:""});
   const [bcf,setBcf]=useState(BCF_DEFAULT());
@@ -1254,7 +1257,7 @@ function App(){
         })});
         setBinaClientOpen(false);
         setBcf(BCF_DEFAULT());
-        await load();
+        await refreshAll();
         notify(`✅ הלקוח ${savedName} נוצר בהצלחה!\nקוד לקוח: ${code}`,"#16A34A");
       }else if(rc===-5||rc==="-5"){
         notify("❌ ת.ז./ח.פ. כבר קיים במערכת","#DC2626");
@@ -1307,6 +1310,51 @@ function App(){
     setLoading(false);
   };
 
+  loadRef.current=load;
+  const refreshAll=async()=>{
+    try{
+      setRefreshing(true);
+      await loadRef.current();
+      setLastRefresh(Date.now());
+    }catch(e){
+      console.warn("refresh failed",e);
+    }finally{
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(()=>{
+    let intervalId;
+    const startInterval=()=>{
+      if(intervalId)return;
+      intervalId=setInterval(()=>{
+        if(document.visibilityState==="visible"){
+          refreshAll();
+        }
+      },30000);
+    };
+    const stopInterval=()=>{
+      if(intervalId){
+        clearInterval(intervalId);
+        intervalId=null;
+      }
+    };
+    startInterval();
+    const onVisibilityChange=()=>{
+      if(document.visibilityState==="visible"){
+        refreshAll();
+        startInterval();
+      }else{
+        stopInterval();
+      }
+    };
+    document.addEventListener("visibilitychange",onVisibilityChange);
+    return()=>{
+      stopInterval();
+      document.removeEventListener("visibilitychange",onVisibilityChange);
+    };
+  },[]);
+
   useEffect(()=>{
     setBinaStatusGlobal("checking",null);
     checkBinaStatus();
@@ -1354,7 +1402,7 @@ function App(){
         }
       }else if(data.created>0){
         notify(`✅ נמצאו ${data.created} הזמנות חדשות מבינה`,"#16A34A");
-        await load();
+        await refreshAll();
       }else{
         notify("ℹ️ אין הזמנות חדשות בבינה","#0891B2");
       }
@@ -1387,7 +1435,7 @@ function App(){
         `משימה חדשה נוצרה במערכת PrintOS:\n\nכותרת: ${nt.title}\nמחלקה: ${nt.dept}\nלקוח: ${nt.client_name||"—"}\nאחראי: ${nt.assignee||"—"}\nעדיפות: ${nt.priority}\nתאריך יעד: ${nt.due_date||"—"}\nנוצר ע"י: ${user.name}`
       ).catch(()=>{});
       setNt({title:"",dept:DEPTS[0],priority:"בינונית",client_name:"",assignee:"",due_date:"",notes:"",status:"ממתין",address:"",phone:""});
-      setAddTask(false);await load();notify("✅ משימה נוספה");
+      setAddTask(false);await refreshAll();notify("✅ משימה נוספה");
     }catch{notify("שגיאה","#DC2626");}
   };
 
@@ -1441,7 +1489,7 @@ function App(){
   const restoreArchived=async(id)=>{
     try{
       await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify({archived_at:null})});
-      await load();await loadArchive();
+      await refreshAll();await loadArchive();
       notify("✅ המשימה הוחזרה ללוח (סטטוס: הושלם)");
     }catch{notify("שגיאה","#DC2626");}
   };
@@ -1488,6 +1536,7 @@ function App(){
         ).catch(()=>{});
       }
       notify(`עודכן: ${s}`);
+      await refreshAll();
     }catch{notify("שגיאה","#DC2626");}
   };
 
@@ -1513,7 +1562,7 @@ function App(){
     <div style={{padding:"20px 18px 16px",borderBottom:"1px solid var(--border)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#2563EB,#7C3AED)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🖨️</div>
-        <div><div style={{fontWeight:800,fontSize:15,color:"var(--text)"}}>PrintOS</div><div style={{fontSize:10,color:"var(--text3)"}}>ניהול בית דפוס</div></div>
+        <div><div style={{fontWeight:800,fontSize:15,color:"var(--text)",display:"flex",alignItems:"center"}}>PrintOS<span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",marginInlineStart:8,background:refreshing?"#3DB5B1":"#22c55e",opacity:refreshing?1:0.5,transition:"all 0.3s",animation:refreshing?"pulse 1s infinite":"none"}} title={refreshing?"מרענן...":"מעודכן"} /></div><div style={{fontSize:10,color:"var(--text3)"}}>ניהול בית דפוס</div></div>
       </div>
       <div title={binaStatusTooltip} style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:"var(--text2)",fontWeight:600}}>
         <span style={{width:12,height:12,borderRadius:"50%",background:binaStatusColor,display:"inline-block",animation:binaStatus==="checking"?"pulse 1s infinite":"none"}}/>
@@ -1706,7 +1755,7 @@ function App(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
           <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>{isA?"לוח משימות":user.dept}</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{visTasks.length} משימות</p></div>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>load()} style={{padding:"8px 12px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↻</button>
+            <button onClick={()=>refreshAll()} style={{padding:"8px 12px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↻</button>
             {isA&&<button onClick={()=>setAddTask(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ חדשה</button>}
             {!isA&&<button onClick={()=>setAddTask(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ חדשה</button>}
           </div>
@@ -1917,9 +1966,9 @@ function App(){
       </div>
     </Modal>
 
-    <CreateOrderModal open={orderModalOpen} onClose={()=>setOrderModalOpen(false)} onSuccess={()=>{load();}} clients={clients} sb={sb}/>
+    <CreateOrderModal open={orderModalOpen} onClose={()=>setOrderModalOpen(false)} onSuccess={()=>{refreshAll();}} clients={clients} sb={sb}/>
 
-    <CreateQuoteModal open={quoteModalOpen} onClose={()=>setQuoteModalOpen(false)} clients={clients} sb={sb}/>
+    <CreateQuoteModal open={quoteModalOpen} onClose={()=>setQuoteModalOpen(false)} onSuccess={()=>{refreshAll();}} clients={clients} sb={sb}/>
 
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
       {det&&<div>

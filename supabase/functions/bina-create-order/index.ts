@@ -1,24 +1,20 @@
-import { fetchBinaViaQuotaGuard } from "../_shared/bina-proxy-fetch.ts";
+// supabase/functions/bina-create-order/index.ts
+// יצירת הזמנה בבינה (docType 15)
+// משתמש באותו endpoint כמו create-customer שעובד
 
-const BINA_ORDER_URL = "https://webfiles.binaw.com/post/PostJsonDoc.aspx";
-const DOC_TYPE = 15;
-const DOC_TITLE_DEFAULT = "הזמנה מהפרינטוס";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type IncomingItem = {
-  itemId?: string;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  discount?: number;
-};
+// אותו endpoint כמו bina-create-customer שעובד
+const BINA_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx';
 
-type IncomingClient = {
+interface OrderClient {
   binaCustomerId: string | number;
   name: string;
   city: string;
@@ -26,173 +22,266 @@ type IncomingClient = {
   contactPerson: string;
   phone?: string;
   email?: string;
-};
-
-function isNonEmptyString(v: unknown): v is string {
-  return typeof v === "string" && v.trim().length > 0;
+  customerOrderId?: string;
 }
 
-function parseCustId(raw: unknown): number | null {
-  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
-    return Math.floor(raw);
-  }
-  if (typeof raw === "string") {
-    const t = raw.trim();
-    if (!t) return null;
-    const n = Number(t);
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
-  }
-  return null;
+interface OrderItem {
+  itemId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number;
 }
 
-function jsonErr(status: number, message: string) {
-  return new Response(JSON.stringify({ success: false, error: message }), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+interface OrderPayment {
+  payDate: string;
+  numberOfPayments: number;
+  firstPayment: number;
+  creditName: string;
+  creditDateEnd?: string;
+  creditNum?: string;
+  receiptNumber?: string;
 }
 
-function validate(body: Record<string, unknown>): string | null {
-  const client = body.client;
-  if (!client || typeof client !== "object") return "client is required";
-  const c = client as Record<string, unknown>;
-
-  const custId = parseCustId(c.binaCustomerId);
-  if (custId === null) return "client.binaCustomerId must be a positive integer";
-
-  if (!isNonEmptyString(c.name)) return "client.name is required";
-  if (!isNonEmptyString(c.city)) return "client.city is required";
-  if (!isNonEmptyString(c.address)) return "client.address is required";
-  if (!isNonEmptyString(c.contactPerson)) return "client.contactPerson is required";
-
-  const items = body.items;
-  if (!Array.isArray(items) || items.length === 0) return "items must contain at least one item";
-
-  for (let i = 0; i < items.length; i++) {
-    const raw = items[i];
-    if (!raw || typeof raw !== "object") return `items[${i}] is invalid`;
-    const it = raw as Record<string, unknown>;
-    if (!isNonEmptyString(it.description)) return `items[${i}].description is required`;
-
-    const qty = it.quantity;
-    if (typeof qty !== "number" || !Number.isInteger(qty) || qty <= 0) {
-      return `items[${i}].quantity must be a positive integer`;
-    }
-
-    const up = it.unitPrice;
-    if (typeof up !== "number" || !Number.isFinite(up) || up < 0) {
-      return `items[${i}].unitPrice must be a non-negative number`;
-    }
-  }
-
-  return null;
+interface CreateOrderRequest {
+  client: OrderClient;
+  items: OrderItem[];
+  title?: string;
+  remark?: string;
+  status?: string;
+  payment?: OrderPayment;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+interface BinaResponse {
+  ResCode: number;
+  ResMsg: string;
+  docId?: number;
+  docIdPayment?: number;
+}
+
+// ---------- Helpers ----------
+
+function buildBinaPayload(req: CreateOrderRequest, token: string) {
+  const requestId = Math.floor(Math.random() * 2_000_000_000);
+
+  const custIdNum = typeof req.client.binaCustomerId === 'number'
+    ? req.client.binaCustomerId
+    : parseInt(String(req.client.binaCustomerId), 10);
+
+  if (!custIdNum || Number.isNaN(custIdNum)) {
+    throw new Error('binaCustomerId חייב להיות מספר תקין');
   }
 
-  if (req.method !== "POST") {
-    return jsonErr(405, "Method not allowed; use POST");
-  }
-
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonErr(400, "Invalid JSON body");
-  }
-
-  const v = validate(body);
-  if (v) return jsonErr(400, v);
-
-  const token = Deno.env.get("BINA_TOKEN")?.trim();
-  if (!token) return jsonErr(500, "BINA_TOKEN secret is not configured");
-
-  const clientRaw = body.client as Record<string, unknown>;
-  const custId = parseCustId(clientRaw.binaCustomerId)!;
-  const client = clientRaw as unknown as IncomingClient;
-  const items = body.items as IncomingItem[];
-
-  const titleRaw = typeof body.title === "string" ? body.title.trim() : "";
-  const remarkRaw = typeof body.remark === "string" ? body.remark.trim() : "";
-
-  const binaPayload = {
+  const payload: Record<string, unknown> = {
     tokenId: token,
-    requestId: Date.now(),
-    docType: DOC_TYPE,
-    docWithvat: 1,
-    docTitle: titleRaw || DOC_TITLE_DEFAULT,
-    docStatus: "חדש",
-    docRemark: remarkRaw,
+    requestId,
+    docType: 15,
+    docWithvat: 0,
+    docTitle: req.title || 'הזמנה חדשה',
+    docStatus: req.status || 'חדשה',
+    docRemark: req.remark || '',
     Cust: {
-      custId,
-      custName: client.name.trim().substring(0, 120),
-      custCity: client.city.trim().substring(0, 80),
-      custAddress: client.address.trim().substring(0, 200),
-      custIshKheser: client.contactPerson.trim().substring(0, 120),
-      custTel: typeof client.phone === "string" ? client.phone.trim().substring(0, 40) : "",
-      custEmail: typeof client.email === "string" ? client.email.trim().substring(0, 120) : "",
+      custId: custIdNum,
+      custName: req.client.name,
+      custCity: req.client.city,
+      custAddress: req.client.address,
+      custIshKheser: req.client.contactPerson,
+      custTel: req.client.phone || '',
+      custEmail: req.client.email || '',
+      custOrderId: req.client.customerOrderId || '',
     },
-    docItems: items.map((it, idx) => {
-      const idPart = typeof it.itemId === "string" && it.itemId.trim()
-        ? it.itemId.trim()
-        : `line-${idx + 1}`;
-      const disc =
-        typeof it.discount === "number" && Number.isFinite(it.discount) ? it.discount : 0;
-      return {
-        ItemId: idPart,
-        ItemDesc: it.description.trim().substring(0, 240),
-        ItemQty: Math.floor(it.quantity),
-        UnitPrice: String(it.unitPrice),
-        Unitcurrency: "ILS",
-        CurValue: 1,
-        Discount: disc,
-      };
-    }),
+    docItems: req.items.map((it) => ({
+      ItemId: it.itemId,
+      ItemDesc: it.description,
+      ItemQty: it.quantity,
+      UnitPrice: String(it.unitPrice),
+      Unitcurrency: 'ILS',
+      CurValue: 1,
+      Discount: it.discount ?? 0,
+    })),
   };
 
+  if (req.payment) {
+    payload.Payments = {
+      PayDate: req.payment.payDate,
+      NumberOfPayments: req.payment.numberOfPayments,
+      FirstPayment: req.payment.firstPayment,
+      CreditName: req.payment.creditName,
+      CreditDateEnd: req.payment.creditDateEnd || '',
+      CreditNum: req.payment.creditNum || '',
+      ReceiptNumber: req.payment.receiptNumber || '',
+    };
+  }
+
+  return payload;
+}
+
+function validateRequest(req: CreateOrderRequest): string | null {
+  if (!req.client) return 'חסר אובייקט client';
+  if (!req.client.binaCustomerId) return 'חסר binaCustomerId';
+  if (!req.client.name) return 'חסר שם לקוח';
+  if (!req.client.city) return 'חסרה עיר';
+  if (!req.client.address) return 'חסרה כתובת';
+  if (!req.client.contactPerson) return 'חסר איש קשר (custIshKheser - שדה חובה בבינה)';
+  if (!Array.isArray(req.items) || req.items.length === 0) return 'חסרים פריטים';
+
+  for (let i = 0; i < req.items.length; i++) {
+    const it = req.items[i];
+    if (!it.itemId) return `פריט ${i + 1}: חסר itemId`;
+    if (!it.description) return `פריט ${i + 1}: חסר תיאור`;
+    if (!it.quantity || it.quantity <= 0) return `פריט ${i + 1}: כמות לא תקינה`;
+    if (it.unitPrice == null || it.unitPrice < 0) return `פריט ${i + 1}: מחיר לא תקין`;
+  }
+
+  return null;
+}
+
+/** בינה מחזירים לפעמים array ולפעמים object - נורמליזציה לאובייקט */
+function extractBinaResponse(text: string): BinaResponse | null {
   try {
-    const res = await fetchBinaViaQuotaGuard(BINA_ORDER_URL, binaPayload);
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.length > 0 ? parsed[0] as BinaResponse : null;
+    }
+    return parsed as BinaResponse;
+  } catch {
+    return null;
+  }
+}
 
-    if (!res.ok) {
-      return jsonErr(502, `Bina HTTP ${res.status}`);
+// ---------- Main handler ----------
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'POST only' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    const token = Deno.env.get('BINA_TOKEN');
+    if (!token?.trim()) {
+      return new Response(
+        JSON.stringify({ error: 'BINA_TOKEN לא מוגדר ב-Supabase Secrets' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(res.text);
-    } catch {
-      return jsonErr(502, "Bina returned invalid JSON");
-    }
+    const body = (await req.json()) as CreateOrderRequest;
 
-    const responseObj = Array.isArray(parsed) ? parsed[0] : parsed;
-    const ro = responseObj as Record<string, unknown> | null;
-
-    if (!ro || ro.ResCode === undefined) {
-      return jsonErr(502, "Unexpected Bina response shape");
-    }
-
-    const rc = ro.ResCode;
-    if (rc !== 0 && rc !== "0") {
-      const errText = String(ro.ResMsg ?? ro.ResMsgHe ?? "Unknown error");
-      return new Response(JSON.stringify({ success: false, error: errText }), {
+    const validationError = validateRequest(body);
+    if (validationError) {
+      return new Response(JSON.stringify({ error: validationError }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const docId = ro.docId ?? ro.DocId;
+    // טוקן נשלח as-is, כמו ב-bina-create-customer שעובד
+    const payload = buildBinaPayload(body, token.trim());
+
+    // לוג בלי הטוקן
+    const { tokenId: _, ...payloadForLog } = payload as { tokenId: string };
+    console.log('[bina-create-order] שולח לבינה:', JSON.stringify(payloadForLog));
+
+    const result = await fetchBinaViaQuotaGuard(BINA_URL, payload);
+
+    const sanitizedPreview = result.text.slice(0, 500).replace(/U22g\w+/g, '[TOKEN_REDACTED]')
+    console.log('[bina-create-order] תגובה מבינה:', {
+      status: result.status,
+      ok: result.ok,
+      bodyPreview: sanitizedPreview,
+    });
+
+    if (!result.ok) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `בינה החזירו HTTP ${result.status}`,
+          binaResponse: result.text.slice(0, 500),
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const binaData = extractBinaResponse(result.text);
+
+    if (!binaData) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'תגובה לא-JSON או ריקה מבינה',
+          rawResponse: result.text.slice(0, 500),
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (binaData.ResCode !== 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `בינה דחו: ${binaData.ResMsg || 'ללא הודעה'}`,
+          resCode: binaData.ResCode,
+          fullResponse: binaData,
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // הצלחה - יוצרים task מקושר
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    let taskId: string | null = null;
+    if (supabaseUrl && supabaseKey && binaData.docId) {
+      try {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        const { data: task, error: taskErr } = await supabase
+          .from('tasks')
+          .insert({
+            title: body.title || `הזמנה ${binaData.docId}`,
+            client_name: body.client.name,
+            status: 'חדש',
+            dept: 'כללי',
+            priority: 'בינונית',
+            source: 'manual',
+            bina_order_id: String(binaData.docId),
+            notes: body.remark || '',
+          })
+          .select('id')
+          .single();
+
+        if (!taskErr && task) {
+          taskId = task.id;
+        } else if (taskErr) {
+          console.error('[bina-create-order] שגיאה ביצירת task:', taskErr);
+        }
+      } catch (e) {
+        console.error('[bina-create-order] חריגה ביצירת task:', e);
+      }
+    }
+
     return new Response(
-      JSON.stringify({ success: true, binaOrderId: docId }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+      JSON.stringify({
+        success: true,
+        binaOrderId: binaData.docId,
+        binaPaymentId: binaData.docIdPayment,
+        taskId,
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return jsonErr(500, msg);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[bina-create-order] חריגה כללית:', msg);
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });

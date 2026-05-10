@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts'
 
 // ⚠️ Endpoint שונה ליצירה: PostJsonDoc.aspx (לא V2!)
-const BINA_CREATE_URL = 'https://webfiles.binaw.com/post/PostJsonDoc.aspx'
+const BINA_CREATE_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
       tokenId: binaToken,
       requestId: requestId,
       docType: 14,  // הצעת מחיר
-      docWithVat: 1,
+      docWithVat: 0,
       docTitle: quote.title.substring(0, 100),
       
       // פרטי לקוח — תת-אובייקט
@@ -75,6 +75,7 @@ Deno.serve(async (req) => {
         custCity: (quote.bina_cust_city || quote.bina_cust_address || 'לא צוין').substring(0, 50),
         custAddress: (quote.bina_cust_address || 'לא צוין').substring(0, 100),
         custTel: (quote.bina_cust_phone || '').substring(0, 20),
+        custIshKheser: quote.contact_person || '',
       },
       
       // פריטים — שם השדה הוא docItems!
@@ -89,11 +90,14 @@ Deno.serve(async (req) => {
       })),
     }
 
-    console.log('Sending to Bina:', JSON.stringify(binaRequest, null, 2))
+    const { tokenId: _, ...safeRequest } = binaRequest
+    console.log('Sending to Bina:', JSON.stringify(safeRequest, null, 2))
 
     const binaResponse = await fetchBinaViaQuotaGuard(BINA_CREATE_URL, binaRequest)
     const responseText = binaResponse.text
-    console.log('Bina response:', responseText)
+    // סינון הטוקן מהתגובה למקרה שבינה מחזירים אותו בשגיאות SQL
+    const sanitizedResponse = responseText.replace(/U22g\w+/g, '[TOKEN_REDACTED]')
+    console.log('Bina response:', sanitizedResponse)
 
     if (!binaResponse.ok) {
       throw new Error(`Bina HTTP error: ${binaResponse.status} - ${responseText}`)

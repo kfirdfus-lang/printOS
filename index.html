@@ -702,10 +702,13 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
   },[open]);
   if(!open)return null;
   const filteredClients=(clients||[]).filter(c=>{
-    if(!c.bina_customer_id)return false;
     if(!clientSearch.trim())return true;
     const q=clientSearch.toLowerCase().trim();
-    return (c.name||"").toLowerCase().includes(q)||(c.phone||"").includes(q)||String(c.bina_customer_id).includes(q);
+    return (
+      (c.name||"").toLowerCase().includes(q)||
+      (c.phone||"").includes(q)||
+      String(c.bina_customer_id||"").includes(q)
+    );
   }).slice(0,50);
   const itemsTotal=items.reduce((sum,it)=>{
     const qty=Number(it.quantity)||0;
@@ -773,10 +776,40 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
     <h3 style={{marginTop:0,marginBottom:16}}>👤 בחירת לקוח</h3>
     <input type="text" placeholder="🔍 חיפוש לפי שם, טלפון, או קוד בינה..." value={clientSearch} onChange={e=>setClientSearch(e.target.value)} style={inputStyle}/>
     <div style={{marginTop:12,maxHeight:"calc(95vh - 280px)",overflowY:"auto"}}>
-      {filteredClients.length===0?<div style={{padding:20,textAlign:"center",color:"var(--text3)"}}>{clientSearch?"לא נמצאו לקוחות":"אין לקוחות עם קוד בינה"}</div>:
-      filteredClients.map(c=><div key={c.id} onClick={()=>{setSelectedClient(c);setStep(2);}} style={{padding:14,marginBottom:8,border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",background:"var(--bg2)"}}>
-        <div style={{fontWeight:600,fontSize:15}}>{c.name||"ללא שם"}</div>
-        <div style={{fontSize:13,color:"var(--text2)",marginTop:4}}>📞 {c.phone||"—"} · 🆔 {c.bina_customer_id}</div>
+      {filteredClients.length===0?<div style={{padding:20,textAlign:"center",color:"var(--text3)"}}>{clientSearch?"לא נמצאו לקוחות":"אין לקוחות ברשימה"}</div>:
+      filteredClients.map(c=><div
+        key={c.id}
+        onClick={()=>{
+          if(c.bina_customer_id){
+            setSelectedClient(c);
+            setStep(2);
+          }else{
+            const confirm=window.confirm(`הלקוח "${c.name||"ללא שם"}" לא מקושר לבינה.\n\nכדי ליצור הזמנה צריך קודם ליצור אותו בבינה.\n\nלפתוח את מסך יצירת לקוח חדש?`);
+            if(confirm){
+              onClose();
+              if(window.openBinaClient)window.openBinaClient();
+            }
+          }
+        }}
+        style={{
+          padding:14,marginBottom:8,border:"1px solid #eee",borderRadius:8,cursor:"pointer",
+          background:c.bina_customer_id?"#f0fdf4":"#fefce8",
+          borderRight:c.bina_customer_id?"4px solid #22c55e":"4px solid #eab308",
+        }}
+      >
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontWeight:600,fontSize:15}}>{c.name||"ללא שם"}</div>
+          <span style={{
+            fontSize:11,padding:"2px 8px",borderRadius:12,
+            background:c.bina_customer_id?"#22c55e":"#eab308",
+            color:"#fff",fontWeight:600,
+          }}>
+            {c.bina_customer_id?"✓ בבינה":"⚠ לא בבינה"}
+          </span>
+        </div>
+        <div style={{fontSize:13,color:"#666",marginTop:4}}>
+          📞 {c.phone||"—"} {c.bina_customer_id?`· 🆔 ${c.bina_customer_id}`:""}
+        </div>
       </div>)}
     </div>
   </div>;
@@ -868,6 +901,10 @@ function App(){
 
   const bcfDigits=s=>String(s||"").replace(/\D/g,"");
   const openBinaClientModal=()=>{setBcf(BCF_DEFAULT());setBcfErr({});setBinaClientOpen(true);};
+  useEffect(()=>{
+    window.openBinaClient=()=>setBinaClientOpen(true);
+    return()=>{delete window.openBinaClient;};
+  },[]);
   const validateBcf=()=>{
     const er={};
     const t=s=>String(s||"").trim();

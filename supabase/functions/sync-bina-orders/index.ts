@@ -20,6 +20,115 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+interface ClientRecord {
+  id: string
+  name: string
+  phone: string | null
+  address: string | null
+  bina_customer_id: string | null
+}
+
+function normalizeName(name: string): string {
+  if (!name) return ''
+  return name.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+async function loadClientMaps(supabase: ReturnType<typeof createClient>): Promise<{
+  linkedByBinaId: Map<string, ClientRecord>
+  unlinkedByName: Map<string, ClientRecord>
+}> {
+  const linkedByBinaId = new Map<string, ClientRecord>()
+  const unlinkedByName = new Map<string, ClientRecord>()
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, phone, address, bina_customer_id')
+
+  if (error) {
+    console.error('[sync-bina-orders] failed to preload clients:', error.message)
+    return { linkedByBinaId, unlinkedByName }
+  }
+
+  for (const c of data || []) {
+    const row = c as ClientRecord
+    if (row.bina_customer_id) {
+      linkedByBinaId.set(String(row.bina_customer_id), row)
+    } else {
+      const nn = normalizeName(row.name || '')
+      if (nn) unlinkedByName.set(nn, row)
+    }
+  }
+  return { linkedByBinaId, unlinkedByName }
+}
+
+/** Upsert לקוח בטבלה — כשלים רק נרשמים ללוג; לא זורק. */
+async function ensureClientFromOrder(
+  order: Record<string, unknown>,
+  supabase: ReturnType<typeof createClient>,
+  linkedByBinaId: Map<string, ClientRecord>,
+  unlinkedByName: Map<string, ClientRecord>,
+): Promise<void> {
+  const custIdRaw = order.custId
+  if (custIdRaw === undefined || custIdRaw === null || String(custIdRaw).trim() === '') return
+
+  const binaIdStr = String(custIdRaw)
+  if (linkedByBinaId.has(binaIdStr)) return
+
+  const addressParts: string[] = []
+  if (order.custAddress) addressParts.push(String(order.custAddress))
+  if (order.custCity) addressParts.push(String(order.custCity))
+  const fullAddress = addressParts.length > 0 ? addressParts.join(', ') : null
+
+  const custNameTrim = String(order.custName || '').trim()
+  const nameKey = normalizeName(custNameTrim)
+  const existingUnlinked = nameKey ? unlinkedByName.get(nameKey) : undefined
+
+  try {
+    if (existingUnlinked) {
+      const updates: Record<string, unknown> = { bina_customer_id: binaIdStr }
+      if (!existingUnlinked.address && fullAddress) updates.address = fullAddress
+
+      const { error: updErr } = await supabase
+        .from('clients')
+        .update(updates)
+        .eq('id', existingUnlinked.id)
+
+      if (updErr) {
+        console.error(`[sync-bina-orders] client update failed (${custNameTrim || binaIdStr}):`, updErr.message)
+        return
+      }
+
+      unlinkedByName.delete(nameKey)
+      linkedByBinaId.set(binaIdStr, {
+        ...existingUnlinked,
+        bina_customer_id: binaIdStr,
+        address: fullAddress ?? existingUnlinked.address,
+      })
+      return
+    }
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from('clients')
+      .insert({
+        name: custNameTrim || `לקוח ${binaIdStr}`,
+        address: fullAddress,
+        bina_customer_id: binaIdStr,
+        notes: 'נוצר אוטומטית מסנכרון בינה',
+      })
+      .select('id, name, phone, address, bina_customer_id')
+      .single()
+
+    if (insertErr) {
+      console.error(`[sync-bina-orders] client insert failed (bina ${binaIdStr}):`, insertErr.message)
+      return
+    }
+
+    linkedByBinaId.set(binaIdStr, inserted as ClientRecord)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[sync-bina-orders] ensureClientFromOrder:', msg)
+  }
+}
+
 function extractDept(title: string): { dept: string, cleanTitle: string } {
   if (!title) return { dept: DEFAULT_DEPT, cleanTitle: '' }
 
@@ -110,6 +219,8 @@ Deno.serve(async (req) => {
     let errors = 0
     const errorDetails: string[] = []
 
+    const { linkedByBinaId, unlinkedByName } = await loadClientMaps(supabase)
+
     for (const order of orders) {
       try {
         const binaOrderId = order.orderId
@@ -173,6 +284,8 @@ Deno.serve(async (req) => {
           source: 'bina',
           created_by: 'sync-bina',
         }
+
+        await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
 
         const { error: insertError } = await supabase
           .from('tasks')

@@ -1856,6 +1856,483 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
   );
 }
 
+function QuotesDashboard({allQuotes,allTasks,isA,sb,onQuotesReload}) {
+  const [period, setPeriod] = useState('month');
+  const [refreshing, setRefreshing] = useState(false);
+
+  if (!isA) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // ---------- איחוד שמות סוכנים ----------
+  const normalizeAgent = (name) => {
+    if (!name) return null;
+    const trimmed = String(name).trim();
+    if (/^כפיר/.test(trimmed)) return 'כפיר';
+    return trimmed;
+  };
+
+  // ---------- סינון: רק הצעות "חדשות" (לא קודמות) ----------
+  const trackedQuotes = (allQuotes || []).filter(q => 
+    q.auto_status && q.auto_status !== 'קודמת'
+  );
+
+  // ---------- סינון לפי תקופה ----------
+  const ranges = {
+    month: new Date(today.getFullYear(), today.getMonth(), 1),
+    quarter: new Date(today.getFullYear(), today.getMonth() - 3, 1),
+    year: new Date(today.getFullYear(), 0, 1),
+  };
+  const fromDate = ranges[period];
+
+  const quotesInRange = trackedQuotes.filter(q => {
+    const created = new Date(q.created_at);
+    return created >= fromDate;
+  });
+
+  // ---------- חלוקה לפי סטטוסים ----------
+  const byStatus = {
+    waiting: quotesInRange.filter(q => q.auto_status === 'ממתינה'),
+    stuck: quotesInRange.filter(q => q.auto_status === 'תקועה'),
+    closed: quotesInRange.filter(q => q.auto_status === 'נסגרה'),
+    expired: quotesInRange.filter(q => q.auto_status === 'פגת תוקף'),
+  };
+
+  // ---------- חישובים פיננסיים ----------
+  const sumAmount = (arr) => arr.reduce((s, q) => s + Number(q.total_amount || 0), 0);
+
+  const moneyClosed = sumAmount(byStatus.closed);
+  const moneyActive = sumAmount(byStatus.waiting) + sumAmount(byStatus.stuck);
+  const moneyLost = sumAmount(byStatus.expired);
+  const moneyTotal = moneyClosed + moneyActive + moneyLost;
+
+  // ---------- שיעור סגירה ----------
+  const totalQuotes = quotesInRange.length;
+  const closedQuotes = byStatus.closed.length;
+  const closingRate = totalQuotes > 0 ? Math.round((closedQuotes / totalQuotes) * 100) : 0;
+
+  // ---------- "דורש פעולה" - הצעות תקועות + ממתינות 3+ ימים ----------
+  const needsAction = [...byStatus.stuck, ...byStatus.waiting.filter(q => {
+    const days = (Date.now() - new Date(q.created_at).getTime()) / 86400000;
+    return days >= 3;
+  })].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  // ---------- ביצועי סוכנים ----------
+  const agentsData = (() => {
+    const map = new Map();
+    for (const q of quotesInRange) {
+      const agent = normalizeAgent(q.sales_agent);
+      if (!agent) continue;
+      if (!map.has(agent)) {
+        map.set(agent, {
+          name: agent,
+          total: 0,
+          closed: 0,
+          revenueClosed: 0,
+          revenueLost: 0,
+        });
+      }
+      const data = map.get(agent);
+      data.total += 1;
+      if (q.auto_status === 'נסגרה') {
+        data.closed += 1;
+        data.revenueClosed += Number(q.total_amount || 0);
+      } else if (q.auto_status === 'פגת תוקף') {
+        data.revenueLost += Number(q.total_amount || 0);
+      }
+    }
+    return Array.from(map.values()).map(a => ({
+      ...a,
+      closingRate: a.total > 0 ? Math.round((a.closed / a.total) * 100) : 0,
+    })).sort((a, b) => b.closingRate - a.closingRate);
+  })();
+
+  // ---------- ביצועי לקוחות ----------
+  const clientsData = (() => {
+    const map = new Map();
+    for (const q of quotesInRange) {
+      const key = q.bina_cust_id || q.bina_cust_name || 'unknown';
+      const name = q.bina_cust_name || `לקוח ${key}`;
+      if (!map.has(String(key))) {
+        map.set(String(key), { id: key, name, total: 0, closed: 0, revenue: 0 });
+      }
+      const data = map.get(String(key));
+      data.total += 1;
+      if (q.auto_status === 'נסגרה') {
+        data.closed += 1;
+        data.revenue += Number(q.total_amount || 0);
+      }
+    }
+    return Array.from(map.values())
+      .filter(c => c.total >= 1)
+      .map(c => ({ ...c, closingRate: Math.round((c.closed / c.total) * 100) }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+  })();
+
+  // ---------- מגמה חודשית ----------
+  const monthlyTrend = (() => {
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const next = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
+      const monthQuotes = trackedQuotes.filter(q => {
+        const c = new Date(q.created_at);
+        return c >= d && c < next;
+      });
+      const closedCount = monthQuotes.filter(q => q.auto_status === 'נסגרה').length;
+      const totalCount = monthQuotes.length;
+      months.push({
+        label: d.toLocaleDateString('he-IL', { month: 'short', year: '2-digit' }),
+        total: totalCount,
+        closed: closedCount,
+        rate: totalCount > 0 ? Math.round((closedCount / totalCount) * 100) : 0,
+      });
+    }
+    return months;
+  })();
+
+  const maxMonthly = Math.max(...monthlyTrend.map(m => m.total), 1);
+
+  // ---------- פעולות ----------
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const { error } = await supabaseClient.functions.invoke("update-quotes-status", { body: {} });
+      if (error) throw error;
+      await new Promise((r) => setTimeout(r, 600));
+      if (typeof onQuotesReload === "function") await onQuotesReload();
+    } catch (e) {
+      alert("שגיאה ברענון: " + (e?.message || String(e)));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ---------- פורמטים ----------
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmtPct = (n) => `${Math.round(n)}%`;
+  const periodLabels = { month: 'החודש', quarter: '3 חודשים', year: 'השנה' };
+  const formatDate = (d) => new Date(d).toLocaleDateString('he-IL');
+  const daysAgo = (dateStr) => {
+    const days = (Date.now() - new Date(dateStr).getTime()) / 86400000;
+    return Math.floor(days);
+  };
+
+  // ---------- סטיילים ----------
+  const wrapStyle = { direction: 'rtl', padding: 16, background: '#f8fafa', minHeight:"calc(100vh - 56px)" };
+  const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 };
+  const titleStyle = { fontSize: 24, fontWeight: 800, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 10 };
+  const periodTabsStyle = { display: 'flex', gap: 6, background: '#fff', padding: 4, borderRadius: 10, border: '1px solid #e5e7eb' };
+  const tabStyle = (active) => ({
+    padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+    background: active ? '#9333ea' : 'transparent', color: active ? '#fff' : '#6b7280',
+    border: 'none', fontFamily: 'inherit', transition: 'all 0.2s',
+  });
+  
+  const actionCardStyle = {
+    background: needsAction.length > 0 
+      ? 'linear-gradient(135deg, #fef2f2 0%, #fff7ed 100%)'
+      : '#f0fdf4',
+    border: `1px solid ${needsAction.length > 0 ? '#fecaca' : '#bbf7d0'}`,
+    padding: 20, borderRadius: 16, marginBottom: 20,
+    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+  };
+  
+  const kpisRow = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 };
+  const kpiCard = (color, bg) => ({ background: bg, padding: 16, borderRadius: 12, border: `1px solid ${color}30` });
+  const kpiValue = (color) => ({ fontSize: 28, fontWeight: 800, color, lineHeight: 1.1, marginBottom: 4 });
+  const kpiLabel = { fontSize: 12, color: '#6b7280', fontWeight: 600 };
+  
+  const chartCard = { background: '#fff', padding: 20, borderRadius: 12, marginBottom: 16, border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
+  const chartTitle = { fontSize: 16, fontWeight: 700, color: '#1E3A52', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 };
+  const chartGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 };
+
+  return (
+    <div style={wrapStyle}>
+      <div style={headerStyle}>
+        <div style={titleStyle}>
+          📋 דשבורד הצעות מחיר
+          <span style={{ fontSize: 14, color: '#9333ea', fontWeight: 600 }}>({periodLabels[period]})</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button type="button" onClick={handleRefresh} disabled={refreshing} style={{
+            padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: '#fff', color: '#9333ea', border: '1px solid #e5e7eb',
+            cursor: refreshing ? 'wait' : 'pointer', fontFamily: 'inherit',
+            opacity: refreshing ? 0.6 : 1,
+          }}>
+            {refreshing ? '⏳ מרענן...' : '🔄 רענן סטטוסים'}
+          </button>
+          <div style={periodTabsStyle}>
+            <button type="button" onClick={() => setPeriod('month')} style={tabStyle(period === 'month')}>החודש</button>
+            <button type="button" onClick={() => setPeriod('quarter')} style={tabStyle(period === 'quarter')}>3 חודשים</button>
+            <button type="button" onClick={() => setPeriod('year')} style={tabStyle(period === 'year')}>השנה</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* 🔥 דורש פעולה */}
+      {/* ============================================================ */}
+      <div style={actionCardStyle}>
+        <div style={{
+          fontSize: 18, fontWeight: 800, color: '#1E3A52',
+          marginBottom: needsAction.length > 0 ? 12 : 0,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          {needsAction.length > 0 ? '🔥' : '✅'} דורש פעולה
+          {needsAction.length > 0 && (
+            <span style={{
+              background: '#dc2626', color: '#fff',
+              padding: '2px 10px', borderRadius: 12,
+              fontSize: 13, fontWeight: 700,
+            }}>
+              {needsAction.length}
+            </span>
+          )}
+        </div>
+        
+        {needsAction.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#16a34a' }}>
+            🎉 כל ההצעות מטופלות. אין הצעות שדורשות תשומת לב כרגע.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {needsAction.slice(0, 8).map(q => {
+              const days = daysAgo(q.created_at);
+              const isStuck = q.auto_status === 'תקועה';
+              return (
+                <div key={q.id} style={{
+                  background: '#fff', padding: 12, borderRadius: 8,
+                  border: `1px solid ${isStuck ? '#fca5a5' : '#fcd34d'}`,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  flexWrap: 'wrap', gap: 8,
+                }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontWeight: 700, color: '#1E3A52', fontSize: 14 }}>
+                      {q.bina_doc_id ? `#${q.bina_doc_id} - ` : ''}{q.title || 'ללא כותרת'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      👤 {q.bina_cust_name || 'לא ידוע'}
+                      {q.sales_agent && ` · 🎯 ${normalizeAgent(q.sales_agent)}`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    {q.total_amount > 0 && (
+                      <span style={{ fontWeight: 700, color: '#1E3A52', fontSize: 14 }}>
+                        {fmtCurrency(q.total_amount)}
+                      </span>
+                    )}
+                    <span style={{
+                      background: isStuck ? '#dc2626' : '#f59e0b',
+                      color: '#fff', padding: '4px 10px', borderRadius: 12,
+                      fontSize: 11, fontWeight: 700,
+                    }}>
+                      {isStuck ? `🔴 ${days} ימים` : `🟡 ${days} ימים`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {needsAction.length > 8 && (
+              <div style={{ textAlign: 'center', padding: 8, color: '#6b7280', fontSize: 12 }}>
+                ועוד {needsAction.length - 8} הצעות שדורשות פעולה...
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ============================================================ */}
+      {/* KPIs */}
+      {/* ============================================================ */}
+      <div style={kpisRow}>
+        <div style={kpiCard('#22c55e', '#f0fdf4')}>
+          <div style={kpiValue('#22c55e')}>{fmtPct(closingRate)}</div>
+          <div style={kpiLabel}>🎯 שיעור סגירה</div>
+        </div>
+        <div style={kpiCard('#9333ea', '#faf5ff')}>
+          <div style={kpiValue('#9333ea')}>{totalQuotes}</div>
+          <div style={kpiLabel}>📋 סה"כ הצעות</div>
+        </div>
+        <div style={kpiCard('#22c55e', '#f0fdf4')}>
+          <div style={kpiValue('#22c55e')}>{fmtCurrency(moneyClosed)}</div>
+          <div style={kpiLabel}>💰 נסגר</div>
+        </div>
+        <div style={kpiCard('#f59e0b', '#fffbeb')}>
+          <div style={kpiValue('#f59e0b')}>{fmtCurrency(moneyActive)}</div>
+          <div style={kpiLabel}>⏳ פעיל בדיון</div>
+        </div>
+        <div style={kpiCard('#ef4444', '#fef2f2')}>
+          <div style={kpiValue('#ef4444')}>{fmtCurrency(moneyLost)}</div>
+          <div style={kpiLabel}>💸 אבד</div>
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* פילוח לפי סטטוס */}
+      {/* ============================================================ */}
+      <div style={chartCard}>
+        <div style={chartTitle}>📊 פילוח הצעות לפי סטטוס</div>
+        <div style={{ display: 'flex', gap: 4, height: 40, borderRadius: 8, overflow: 'hidden' }}>
+          {[
+            { key: 'closed', label: '🟢 נסגרו', count: byStatus.closed.length, color: '#22c55e' },
+            { key: 'waiting', label: '🟡 ממתינות', count: byStatus.waiting.length, color: '#f59e0b' },
+            { key: 'stuck', label: '🔴 תקועות', count: byStatus.stuck.length, color: '#dc2626' },
+            { key: 'expired', label: '⏰ פגות', count: byStatus.expired.length, color: '#9ca3af' },
+          ].map(s => {
+            const pct = totalQuotes > 0 ? (s.count / totalQuotes) * 100 : 0;
+            if (pct === 0) return null;
+            return (
+              <div key={s.key} style={{
+                flex: pct, background: s.color, color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 700, minWidth: 60,
+              }} title={`${s.label}: ${s.count} (${Math.round(pct)}%)`}>
+                {s.count}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12, fontSize: 12 }}>
+          {[
+            { label: '🟢 נסגרו', count: byStatus.closed.length, color: '#22c55e' },
+            { label: '🟡 ממתינות', count: byStatus.waiting.length, color: '#f59e0b' },
+            { label: '🔴 תקועות', count: byStatus.stuck.length, color: '#dc2626' },
+            { label: '⏰ פגות תוקף', count: byStatus.expired.length, color: '#9ca3af' },
+          ].map((s, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color }} />
+              <span style={{ color: '#6b7280' }}>{s.label}: <strong style={{ color: '#1E3A52' }}>{s.count}</strong></span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* גרפים בגריד */}
+      {/* ============================================================ */}
+      <div style={chartGrid}>
+        {/* ביצועי סוכנים */}
+        <div style={chartCard}>
+          <div style={chartTitle}>🏆 שיעור סגירה לפי סוכן</div>
+          {agentsData.length === 0 ? (
+            <div style={{ color: '#9ca3af', textAlign: 'center', padding: 20 }}>אין נתונים</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {agentsData.map((a, idx) => (
+                <div key={a.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, color: '#1E3A52' }}>
+                      {idx === 0 ? '🥇 ' : idx === 1 ? '🥈 ' : idx === 2 ? '🥉 ' : `${idx + 1}. `}{a.name}
+                    </span>
+                    <span style={{ fontWeight: 700, color: a.closingRate >= 50 ? '#22c55e' : '#f59e0b' }}>
+                      {fmtPct(a.closingRate)}
+                    </span>
+                  </div>
+                  <div style={{ width: '100%', height: 8, background: '#f1f5f9', borderRadius: 999, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${a.closingRate}%`, height: '100%',
+                      background: a.closingRate >= 50 
+                        ? 'linear-gradient(90deg, #22c55e, #16a34a)'
+                        : 'linear-gradient(90deg, #f59e0b, #d97706)',
+                      borderRadius: 999, transition: 'width 0.5s ease',
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                    {a.closed}/{a.total} הצעות · נסגר {fmtCurrency(a.revenueClosed)}
+                    {a.revenueLost > 0 && ` · אבד ${fmtCurrency(a.revenueLost)}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* לקוחות */}
+        <div style={chartCard}>
+          <div style={chartTitle}>👥 שיעור סגירה לפי לקוח</div>
+          {clientsData.length === 0 ? (
+            <div style={{ color: '#9ca3af', textAlign: 'center', padding: 20 }}>אין נתונים</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {clientsData.map((c) => (
+                <div key={c.id} style={{ paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                    <span style={{ fontWeight: 600, color: '#1E3A52' }}>
+                      {c.name.length > 25 ? c.name.slice(0, 25) + '...' : c.name}
+                    </span>
+                    <span style={{
+                      background: c.closingRate >= 50 ? '#dcfce7' : c.closingRate > 0 ? '#fef3c7' : '#fee2e2',
+                      color: c.closingRate >= 50 ? '#15803d' : c.closingRate > 0 ? '#a16207' : '#b91c1c',
+                      padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700,
+                    }}>
+                      {fmtPct(c.closingRate)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                    {c.closed}/{c.total} הצעות נסגרו
+                    {c.revenue > 0 && ` · ${fmtCurrency(c.revenue)}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* מגמה חודשית */}
+        <div style={chartCard}>
+          <div style={chartTitle}>📈 מגמה חודשית</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 180, padding: '0 4px' }}>
+            {monthlyTrend.map((m, idx) => {
+              const heightPct = maxMonthly > 0 ? (m.total / maxMonthly) * 100 : 0;
+              const closedHeight = m.total > 0 ? (m.closed / m.total) * 100 : 0;
+              return (
+                <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4, fontWeight: 600 }}>
+                    {m.total > 0 ? `${m.rate}%` : ''}
+                  </div>
+                  <div style={{
+                    width: '100%', height: `${heightPct}%`, minHeight: m.total > 0 ? 4 : 0,
+                    background: '#f3e8ff', borderRadius: '6px 6px 0 0', position: 'relative',
+                    transition: 'height 0.5s ease',
+                  }} title={`${m.label}: ${m.closed}/${m.total} (${m.rate}%)`}>
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      height: `${closedHeight}%`,
+                      background: 'linear-gradient(180deg, #22c55e, #16a34a)',
+                      borderRadius: '0 0 0 0',
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 500, marginTop: 6, textAlign: 'center' }}>
+                    {m.label}<br/>
+                    <span style={{ fontSize: 9 }}>{m.closed}/{m.total}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 12, fontSize: 11, color: '#6b7280' }}>
+            <span><span style={{ width: 10, height: 10, background: '#22c55e', display: 'inline-block', marginInlineEnd: 4 }} /> נסגרו</span>
+            <span><span style={{ width: 10, height: 10, background: '#f3e8ff', display: 'inline-block', marginInlineEnd: 4 }} /> סה"כ</span>
+          </div>
+        </div>
+      </div>
+
+      {totalQuotes === 0 && (
+        <div style={{
+          background: '#fff', padding: 40, borderRadius: 12, textAlign: 'center',
+          color: '#9ca3af', border: '1px dashed #e5e7eb', marginTop: 20,
+        }}>
+          📋 עדיין אין הצעות מחיר חדשות.<br/>
+          <small>הצעות חדשות שייצור יופיעו כאן אוטומטית.</small>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── MAIN APP ──
 function App(){
@@ -1865,6 +2342,8 @@ function App(){
   const [debt,setDebt]=useState([]);
   const [tab,setTab]=useState("dashboard");
   const [showSales,setShowSales]=useState(false);
+  const [showQuotes,setShowQuotes]=useState(false);
+  const [quotes,setQuotes]=useState([]);
   const [mob,setMob]=useState(false);
   const [addTask,setAddTask]=useState(false);
   const [binaClientOpen,setBinaClientOpen]=useState(false);
@@ -2008,14 +2487,22 @@ function App(){
     try{
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,d]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([])]);
+      const [t,c,d,q]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([]),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([])]);
       setTasks(t);setClients(c);setDebt(d);
+      if(isA)setQuotes(Array.isArray(q)?q:[]);
       sb("users?role=eq.worker&order=name.asc").then(setAllUsers).catch(()=>{});
     }catch(e){notify("שגיאה בטעינה","#DC2626");}
     setLoading(false);
   };
 
   loadRef.current=load;
+  const reloadQuotes=async()=>{
+    const cu=user;if(!cu||cu.role!=="admin")return;
+    try{
+      const q=await sb("quotes?order=created_at.desc&limit=500");
+      setQuotes(Array.isArray(q)?q:[]);
+    }catch(e){setQuotes([]);}
+  };
   const refreshAll=async()=>{
     try{
       setRefreshing(true);
@@ -2087,6 +2574,7 @@ function App(){
     if(tab==="sales"&&(!user||user.role!=="admin")){
       setTab("dashboard");
       setShowSales(false);
+      setShowQuotes(false);
     }
   },[tab,user]);
 
@@ -2301,10 +2789,15 @@ function App(){
 
     {/* Nav */}
     <nav style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
-      {navs.map(n=><button key={n.id} onClick={()=>{setTab(n.id);setMob(false);if(n.id==="sales")setShowSales(true);else setShowSales(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:tab===n.id?"var(--blue-light)":"transparent",color:tab===n.id?"var(--blue)":"var(--text2)",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit",transition:"all 0.15s"}}>
+      {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);setMob(false);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);}else{setShowSales(false);setShowQuotes(false);}}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:tab===n.id?"var(--blue-light)":"transparent",color:tab===n.id?"var(--blue)":"var(--text2)",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit",transition:"all 0.15s"}}>
         <span style={{fontSize:15}}>{n.ic}</span>{n.lb}
         {tab===n.id&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
       </button>)}
+
+      {isA&&<button type="button" onClick={()=>{setShowQuotes(true);setShowSales(false);setTab("sales");setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:showQuotes&&tab==="sales"?"var(--blue-light)":"transparent",color:showQuotes&&tab==="sales"?"var(--blue)":"var(--text2)",fontWeight:showQuotes&&tab==="sales"?700:500,fontSize:13,marginBottom:2,marginTop:6,fontFamily:"inherit",transition:"all 0.15s"}}>
+        <span style={{fontSize:15}}>📋</span>דשבורד הצעות
+        {showQuotes&&tab==="sales"&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
+      </button>}
 
       {isA&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
         <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.06em",marginBottom:8,paddingRight:4}}>מחלקות</div>
@@ -2312,7 +2805,7 @@ function App(){
           const color=DEPT_COLORS[dept]||"#2563EB";
           const count=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
           const isActive=tab==="tasks"&&(user.role==="worker"?user.dept===dept:deptFilter===dept);
-          return<button key={dept} onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);setShowSales(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
+          return<button key={dept} type="button" onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);setShowSales(false);setShowQuotes(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
             <span style={{fontSize:12,fontWeight:isActive?700:400,color:isActive?color:"var(--text2)",flex:1,textAlign:"right"}}>{dept}</span>
             {count>0&&<span style={{background:color,color:"#fff",borderRadius:20,padding:"1px 7px",fontSize:10,fontWeight:700,flexShrink:0}}>{count}</span>}
@@ -2352,7 +2845,7 @@ function App(){
         {tab!=="dashboard"&&<><span style={{color:"var(--text3)"}}>›</span><span style={{fontSize:13,color:"var(--text2)",fontWeight:600}}>{navs.find(n=>n.id===tab)?.lb}</span></>}
       </div>
       <div style={{display:"flex",gap:8}}>
-        {tab!=="dashboard"&&<button onClick={()=>{setTab("dashboard");setShowSales(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text2)",cursor:"pointer",padding:"5px 10px",fontSize:12,fontFamily:"inherit"}}>🏠</button>}
+        {tab!=="dashboard"&&<button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text2)",cursor:"pointer",padding:"5px 10px",fontSize:12,fontFamily:"inherit"}}>🏠</button>}
         <button onClick={()=>setMob(true)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text)",cursor:"pointer",padding:"5px 10px",fontSize:16}}>☰</button>
       </div>
     </div>
@@ -2360,7 +2853,7 @@ function App(){
     {/* Mobile bottom nav */}
     <div className="bn" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:150,background:"#fff",borderTop:"1px solid var(--border)",boxShadow:"0 -2px 8px rgba(0,0,0,0.06)"}}>
       <div style={{display:"flex",justifyContent:"space-around",padding:"6px 0 8px"}}>
-        {navs.map(n=><button key={n.id} onClick={()=>{setTab(n.id);if(n.id==="sales")setShowSales(true);else setShowSales(false);}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 10px",color:tab===n.id?"var(--blue)":"var(--text3)",fontFamily:"inherit"}}>
+        {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);}else{setShowSales(false);setShowQuotes(false);}}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 10px",color:tab===n.id?"var(--blue)":"var(--text3)",fontFamily:"inherit"}}>
           <span style={{fontSize:18}}>{n.ic}</span>
           <span style={{fontSize:10,fontWeight:600}}>{n.lb}</span>
         </button>)}
@@ -2371,13 +2864,14 @@ function App(){
     </div>
 
     {/* Main content */}
-    <div className="ma" style={{marginRight:"var(--sidebar)",padding:tab==="sales"&&isA&&showSales?"0":"28px 32px 40px"}}>
+    <div className="ma" style={{marginRight:"var(--sidebar)",padding:(showQuotes&&isA)||(tab==="sales"&&isA&&showSales)?"0":"28px 32px 40px"}}>
 
-      {tab==="sales"&&isA&&showSales?<SalesDashboard allTasks={[...tasks,...archivedTasks]} isA={isA} DEPT_COLORS={DEPT_COLORS} onClose={()=>{setTab("dashboard");setShowSales(false);}}/>:<>
+      {showQuotes&&isA?<QuotesDashboard allQuotes={quotes} allTasks={tasks} isA={isA} sb={sb} onQuotesReload={reloadQuotes}/>:
+      tab==="sales"&&isA&&showSales?<SalesDashboard allTasks={[...tasks,...archivedTasks]} isA={isA} DEPT_COLORS={DEPT_COLORS} onClose={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);}}/>:<>
 
       {/* Breadcrumb */}
       {tab!=="dashboard"&&tab!=="sales"&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
-        <button onClick={()=>{setTab("dashboard");setShowSales(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text2)",cursor:"pointer",padding:"5px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>🏠 דשבורד</button>
+        <button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text2)",cursor:"pointer",padding:"5px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>🏠 דשבורד</button>
         <span style={{color:"var(--text3)"}}>›</span>
         <span style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{navs.find(n=>n.id===tab)?.lb}</span>
       </div>}

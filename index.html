@@ -687,6 +687,8 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
   const [title,setTitle]=useState("");
   const [remark,setRemark]=useState("");
   const [dept,setDept]=useState("כללי");
+  const [agent,setAgent]=useState("");
+  const [contactName,setContactName]=useState("");
   useEffect(()=>{
     if(open){
       setStep(1);
@@ -696,6 +698,8 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
       setTitle("");
       setRemark("");
       setDept("כללי");
+      setAgent("");
+      setContactName("");
       setError(null);
       setSubmitting(false);
     }
@@ -729,7 +733,7 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
           name:selectedClient.name||"ללא שם",
           city:selectedClient.address||"ללא",
           address:selectedClient.address||"ללא",
-          contactPerson:selectedClient.name||"ללא",
+          contactPerson:(contactName||"").trim()||selectedClient.name||"ללא",
           phone:selectedClient.phone||"",
           email:selectedClient.email||"",
         },
@@ -748,10 +752,16 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
       let result=data;
       if(typeof data==="string"){try{result=JSON.parse(data)}catch{result=null}}
       if(!result||result.success!==true)throw new Error(result?.error||"שגיאה לא ידועה");
-      if(result.taskId&&dept!=="כללי"){
-        try{
-          await sb(`tasks?id=eq.${result.taskId}`,{method:"PATCH",body:JSON.stringify({dept})});
-        }catch(e){console.warn("Failed to update dept:",e)}
+      if(result.taskId){
+        const taskPatch={};
+        if(dept!=="כללי")taskPatch.dept=dept;
+        const ag=(agent||"").trim();
+        if(ag)taskPatch.assignee=ag;
+        if(Object.keys(taskPatch).length){
+          try{
+            await sb(`tasks?id=eq.${result.taskId}`,{method:"PATCH",body:JSON.stringify(taskPatch)});
+          }catch(e){console.warn("Failed to update task (dept/assignee):",e)}
+        }
       }
       if(onSuccess)onSuccess(result);
       window.alert(`✅ נוצרה הזמנה #${result.binaOrderId} בבינה!`);
@@ -835,8 +845,17 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
   </div>;
   const renderStep3=()=><div>
     <h3 style={{marginTop:0,marginBottom:16}}>📝 פרטים נוספים</h3>
-    <label style={labelStyle}>כותרת ההזמנה (לא חובה)</label>
-    <input type="text" placeholder={`הזמנה ל${selectedClient?.name||"לקוח"}`} value={title} onChange={e=>setTitle(e.target.value)} style={{...inputStyle,marginBottom:14}}/>
+    <label style={labelStyle}>סוכן</label>
+    <select value={agent} onChange={e=>setAgent(e.target.value)} style={{...inputStyle,marginBottom:14}}>
+      <option value="">בחר סוכן...</option>
+      <option value="כפיר">כפיר</option>
+      <option value="נטלי">נטלי</option>
+      <option value="ברק">ברק</option>
+    </select>
+    <label style={labelStyle}>לידי (שם איש קשר)</label>
+    <input type="text" placeholder="שם איש הקשר" value={contactName} onChange={e=>setContactName(e.target.value)} style={{...inputStyle,marginBottom:14}}/>
+    <label style={{...labelStyle,fontSize:15,color:"var(--text)"}}>כותרת ההזמנה</label>
+    <input type="text" placeholder="לדוגמה: כרטיסי ביקור 350 גרם, 2 צדדים, 100 יחידות" value={title} onChange={e=>setTitle(e.target.value)} style={{...inputStyle,marginBottom:14,fontWeight:600,fontSize:16}}/>
     <label style={labelStyle}>מחלקה</label>
     <select value={dept} onChange={e=>setDept(e.target.value)} style={{...inputStyle,marginBottom:14}}>
       <option value="כללי">כללי</option>
@@ -877,6 +896,8 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
   const [selectedClient,setSelectedClient]=useState(null);
   const [items,setItems]=useState([{description:"",quantity:1,unitPrice:0,discount:0}]);
   const [title,setTitle]=useState("");
+  const [agent,setAgent]=useState("");
+  const [contactName,setContactName]=useState("");
   useEffect(()=>{
     if(open){
       setStep(1);
@@ -884,6 +905,8 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
       setSelectedClient(null);
       setItems([{description:"",quantity:1,unitPrice:0,discount:0}]);
       setTitle("");
+      setAgent("");
+      setContactName("");
       setError(null);
       setSubmitting(false);
     }
@@ -918,6 +941,8 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
         bina_cust_city:(selectedClient.address||"").split(",")[0]?.trim()||selectedClient.address||"",
         bina_cust_address:selectedClient.address||"",
         bina_cust_phone:selectedClient.phone||"",
+        contact_person:(contactName||"").trim(),
+        sales_agent:agent||null,
         status:"טיוטה",
       };
 
@@ -1021,8 +1046,17 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
 
   const renderStep3=()=><div>
     <h3 style={{marginTop:0,marginBottom:16}}>📝 פרטים אחרונים</h3>
-    <label style={labelStyle}>כותרת ההצעה (לא חובה)</label>
-    <input type="text" placeholder={`הצעה ל${selectedClient?.name||"לקוח"}`} value={title} onChange={e=>setTitle(e.target.value)} style={{...inputStyle,marginBottom:14}}/>
+    <label style={labelStyle}>סוכן</label>
+    <select value={agent} onChange={e=>setAgent(e.target.value)} style={{...inputStyle,marginBottom:14}}>
+      <option value="">בחר סוכן...</option>
+      <option value="כפיר">כפיר</option>
+      <option value="נטלי">נטלי</option>
+      <option value="ברק">ברק</option>
+    </select>
+    <label style={labelStyle}>לידי (שם איש קשר)</label>
+    <input type="text" placeholder="שם איש הקשר" value={contactName} onChange={e=>setContactName(e.target.value)} style={{...inputStyle,marginBottom:14}}/>
+    <label style={{...labelStyle,fontSize:15,color:"var(--text)"}}>כותרת ההצעה</label>
+    <input type="text" placeholder="לדוגמה: כרטיסי ביקור 350 גרם, 2 צדדים, 100 יחידות" value={title} onChange={e=>setTitle(e.target.value)} style={{...inputStyle,marginBottom:14,fontWeight:600,fontSize:16}}/>
     <div style={{marginTop:16,padding:14,background:purpleLight,borderRadius:10,fontSize:14,color:"var(--text)"}}>
       <div><strong>📋 סיכום הצעה:</strong></div>
       <div style={{marginTop:6}}>👤 {selectedClient?.name}</div>

@@ -677,6 +677,165 @@ function DeliveryTab({tasks}){
   </div>;
 }
 
+function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
+  const [step,setStep]=useState(1);
+  const [submitting,setSubmitting]=useState(false);
+  const [error,setError]=useState(null);
+  const [clientSearch,setClientSearch]=useState("");
+  const [selectedClient,setSelectedClient]=useState(null);
+  const [items,setItems]=useState([{description:"",quantity:1,unitPrice:0,discount:0}]);
+  const [title,setTitle]=useState("");
+  const [remark,setRemark]=useState("");
+  const [dept,setDept]=useState("כללי");
+  useEffect(()=>{
+    if(open){
+      setStep(1);
+      setClientSearch("");
+      setSelectedClient(null);
+      setItems([{description:"",quantity:1,unitPrice:0,discount:0}]);
+      setTitle("");
+      setRemark("");
+      setDept("כללי");
+      setError(null);
+      setSubmitting(false);
+    }
+  },[open]);
+  if(!open)return null;
+  const filteredClients=(clients||[]).filter(c=>{
+    if(!c.bina_customer_id)return false;
+    if(!clientSearch.trim())return true;
+    const q=clientSearch.toLowerCase().trim();
+    return (c.name||"").toLowerCase().includes(q)||(c.phone||"").includes(q)||String(c.bina_customer_id).includes(q);
+  }).slice(0,50);
+  const itemsTotal=items.reduce((sum,it)=>{
+    const qty=Number(it.quantity)||0;
+    const price=Number(it.unitPrice)||0;
+    const disc=Number(it.discount)||0;
+    return sum+qty*price*(1-disc/100);
+  },0);
+  const addItem=()=>{setItems([...items,{description:"",quantity:1,unitPrice:0,discount:0}]);};
+  const removeItem=(idx)=>{if(items.length===1)return;setItems(items.filter((_,i)=>i!==idx));};
+  const updateItem=(idx,field,value)=>{const ni=[...items];ni[idx]={...ni[idx],[field]:value};setItems(ni);};
+  const handleSubmit=async()=>{
+    setSubmitting(true);
+    setError(null);
+    try{
+      const payload={
+        client:{
+          binaCustomerId:String(selectedClient.bina_customer_id),
+          name:selectedClient.name||"ללא שם",
+          city:selectedClient.address||"ללא",
+          address:selectedClient.address||"ללא",
+          contactPerson:selectedClient.name||"ללא",
+          phone:selectedClient.phone||"",
+          email:selectedClient.email||"",
+        },
+        items:items.map((it,idx)=>({
+          itemId:`LINE-${idx+1}`,
+          description:it.description||`פריט ${idx+1}`,
+          quantity:Number(it.quantity)||1,
+          unitPrice:Number(it.unitPrice)||0,
+          discount:Number(it.discount)||0,
+        })),
+        title:title||`הזמנה ל${selectedClient.name||"לקוח"}`,
+        remark:remark||"",
+      };
+      const {data,error:invE}=await supabaseClient.functions.invoke("bina-create-order",{body:payload});
+      if(invE)throw new Error(invE.message);
+      let result=data;
+      if(typeof data==="string"){try{result=JSON.parse(data)}catch{result=null}}
+      if(!result||result.success!==true)throw new Error(result?.error||"שגיאה לא ידועה");
+      if(result.taskId&&dept!=="כללי"){
+        try{
+          await sb(`tasks?id=eq.${result.taskId}`,{method:"PATCH",body:JSON.stringify({dept})});
+        }catch(e){console.warn("Failed to update dept:",e)}
+      }
+      if(onSuccess)onSuccess(result);
+      window.alert(`✅ נוצרה הזמנה #${result.binaOrderId} בבינה!`);
+      onClose();
+    }catch(err){
+      setError(err.message||String(err));
+    }finally{
+      setSubmitting(false);
+    }
+  };
+  const overlayStyle={position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0};
+  const modalStyle={width:"100%",maxWidth:600,maxHeight:"95vh",background:"#fff",borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",boxShadow:"0 -4px 24px rgba(0,0,0,0.2)",overflow:"hidden"};
+  const headerStyle={padding:"16px 20px",borderBottom:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--bg2)"};
+  const bodyStyle={flex:1,overflowY:"auto",padding:20,direction:"rtl"};
+  const footerStyle={padding:16,borderTop:"1px solid #eee",background:"var(--bg2)",display:"flex",gap:8};
+  const labelStyle={display:"block",fontSize:14,fontWeight:600,marginBottom:6,color:"var(--text)"};
+  const inputStyle={width:"100%",padding:"12px 14px",fontSize:16,border:"1px solid var(--border)",borderRadius:10,boxSizing:"border-box",fontFamily:"inherit",direction:"rtl",background:"var(--bg2)",color:"var(--text)"};
+  const btnPrimary={flex:1,padding:"14px 20px",fontSize:16,fontWeight:600,background:"var(--blue)",color:"#fff",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"};
+  const btnSecondary={flex:1,padding:"14px 20px",fontSize:16,background:"#fff",color:"var(--text2)",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",fontFamily:"inherit"};
+  const btnDanger={padding:"8px 12px",fontSize:14,background:"var(--red)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"};
+  const renderStep1=()=><div>
+    <h3 style={{marginTop:0,marginBottom:16}}>👤 בחירת לקוח</h3>
+    <input type="text" placeholder="🔍 חיפוש לפי שם, טלפון, או קוד בינה..." value={clientSearch} onChange={e=>setClientSearch(e.target.value)} style={inputStyle}/>
+    <div style={{marginTop:12,maxHeight:"calc(95vh - 280px)",overflowY:"auto"}}>
+      {filteredClients.length===0?<div style={{padding:20,textAlign:"center",color:"var(--text3)"}}>{clientSearch?"לא נמצאו לקוחות":"אין לקוחות עם קוד בינה"}</div>:
+      filteredClients.map(c=><div key={c.id} onClick={()=>{setSelectedClient(c);setStep(2);}} style={{padding:14,marginBottom:8,border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",background:"var(--bg2)"}}>
+        <div style={{fontWeight:600,fontSize:15}}>{c.name||"ללא שם"}</div>
+        <div style={{fontSize:13,color:"var(--text2)",marginTop:4}}>📞 {c.phone||"—"} · 🆔 {c.bina_customer_id}</div>
+      </div>)}
+    </div>
+  </div>;
+  const renderStep2=()=><div>
+    <h3 style={{marginTop:0,marginBottom:4}}>📦 פריטים</h3>
+    <div style={{fontSize:13,color:"var(--text2)",marginBottom:16}}>לקוח: {selectedClient?.name}</div>
+    {items.map((it,idx)=><div key={idx} style={{padding:12,marginBottom:12,background:"var(--bg2)",borderRadius:10,border:"1px solid var(--border)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <strong style={{fontSize:14}}>פריט {idx+1}</strong>
+        {items.length>1&&<button type="button" onClick={()=>removeItem(idx)} style={btnDanger}>🗑️</button>}
+      </div>
+      <label style={labelStyle}>תיאור</label>
+      <input type="text" placeholder="לדוגמה: כרטיסי ביקור 350 גרם..." value={it.description} onChange={e=>updateItem(idx,"description",e.target.value)} style={{...inputStyle,marginBottom:10}}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+        <div><label style={labelStyle}>כמות</label><input type="number" inputMode="numeric" value={it.quantity} onChange={e=>updateItem(idx,"quantity",e.target.value)} style={inputStyle}/></div>
+        <div><label style={labelStyle}>מחיר ₪</label><input type="number" inputMode="decimal" step="0.01" value={it.unitPrice} onChange={e=>updateItem(idx,"unitPrice",e.target.value)} style={inputStyle}/></div>
+        <div><label style={labelStyle}>הנחה %</label><input type="number" inputMode="numeric" value={it.discount} onChange={e=>updateItem(idx,"discount",e.target.value)} style={inputStyle}/></div>
+      </div>
+      <div style={{marginTop:8,fontSize:14,textAlign:"left",color:"var(--blue)",fontWeight:600}}>₪{((Number(it.quantity)||0)*(Number(it.unitPrice)||0)*(1-(Number(it.discount)||0)/100)).toFixed(2)}</div>
+    </div>)}
+    <button type="button" onClick={addItem} style={{width:"100%",padding:14,fontSize:15,background:"#fff",border:"2px dashed var(--blue)",color:"var(--blue)",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>➕ הוסף פריט</button>
+    <div style={{marginTop:16,padding:14,background:"var(--blue-light)",borderRadius:10,fontSize:16,fontWeight:600,textAlign:"center",color:"var(--blue)"}}>{`סה"כ (לפני מע"מ): ₪${itemsTotal.toFixed(2)}`}</div>
+  </div>;
+  const renderStep3=()=><div>
+    <h3 style={{marginTop:0,marginBottom:16}}>📝 פרטים נוספים</h3>
+    <label style={labelStyle}>כותרת ההזמנה (לא חובה)</label>
+    <input type="text" placeholder={`הזמנה ל${selectedClient?.name||"לקוח"}`} value={title} onChange={e=>setTitle(e.target.value)} style={{...inputStyle,marginBottom:14}}/>
+    <label style={labelStyle}>מחלקה</label>
+    <select value={dept} onChange={e=>setDept(e.target.value)} style={{...inputStyle,marginBottom:14}}>
+      <option value="כללי">כללי</option>
+      {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
+    </select>
+    <label style={labelStyle}>הערות (לא חובה)</label>
+    <textarea placeholder="הערות נוספות, הוראות מיוחדות..." value={remark} onChange={e=>setRemark(e.target.value)} rows={3} style={{...inputStyle,fontFamily:"inherit",resize:"vertical"}}/>
+    <div style={{marginTop:16,padding:14,background:"var(--amber-light)",borderRadius:10,fontSize:14,color:"var(--text)"}}>
+      <div><strong>📋 סיכום:</strong></div>
+      <div>👤 {selectedClient?.name}</div>
+      <div>📦 {items.length} פריטים</div>
+      <div>{`💰 ₪${itemsTotal.toFixed(2)} (לפני מע"מ)`}</div>
+    </div>
+    {error&&<div style={{marginTop:12,padding:12,background:"var(--red-light)",color:"var(--red)",borderRadius:10,fontSize:14}}>❌ {error}</div>}
+  </div>;
+  return<div style={overlayStyle} onClick={onClose}>
+    <div style={modalStyle} onClick={e=>e.stopPropagation()}>
+      <div style={headerStyle}>
+        <strong style={{fontSize:17}}>➕ הזמנה חדשה ({step}/3)</strong>
+        <button type="button" onClick={onClose} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:"var(--text2)",fontFamily:"inherit"}}>✕</button>
+      </div>
+      <div style={bodyStyle}>{step===1&&renderStep1()}{step===2&&renderStep2()}{step===3&&renderStep3()}</div>
+      <div style={footerStyle}>
+        {step>1&&<button type="button" onClick={()=>setStep(step-1)} disabled={submitting} style={btnSecondary}>← חזור</button>}
+        {step===1&&<button type="button" onClick={onClose} style={btnSecondary}>ביטול</button>}
+        {step===2&&<button type="button" onClick={()=>setStep(3)} style={btnPrimary}>המשך ←</button>}
+        {step===3&&<button type="button" onClick={handleSubmit} disabled={submitting||!selectedClient} style={{...btnPrimary,opacity:submitting?0.6:1}}>{submitting?"⏳ שולח...":"🚀 שלח לבינה"}</button>}
+      </div>
+    </div>
+  </div>;
+}
+
 // ── MAIN APP ──
 function App(){
   const [user,setUser]=useState(null);
@@ -687,6 +846,7 @@ function App(){
   const [mob,setMob]=useState(false);
   const [addTask,setAddTask]=useState(false);
   const [binaClientOpen,setBinaClientOpen]=useState(false);
+  const [orderModalOpen,setOrderModalOpen]=useState(false);
   const [binaClientSaving,setBinaClientSaving]=useState(false);
   const [editTask,setEditTask]=useState(null);
   const [det,setDet]=useState(null);
@@ -1076,6 +1236,7 @@ function App(){
       {isA&&<button onClick={()=>{setAddTask(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ משימה חדשה</button>}
       {isA&&<button onClick={syncBina} disabled={binaSyncing} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:binaSyncing?"#f1f5f9":"#fff",color:"var(--text)",fontWeight:600,fontSize:12,cursor:binaSyncing?"wait":"pointer",fontFamily:"inherit",opacity:binaSyncing?0.7:1}}>{binaSyncing?"🔄 מושך...":"🔄 משוך מבינה"}</button>}
       {isA&&<button onClick={()=>{openBinaClientModal();setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--green)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>➕ לקוח חדש</button>}
+      {isA&&<button onClick={()=>{setOrderModalOpen(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--green)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>📋 הזמנה חדשה</button>}
     </div>
   </div>;
 
@@ -1432,6 +1593,8 @@ function App(){
         </div>
       </div>
     </Modal>
+
+    <CreateOrderModal open={orderModalOpen} onClose={()=>setOrderModalOpen(false)} onSuccess={()=>{load();}} clients={clients} sb={sb}/>
 
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
       {det&&<div>

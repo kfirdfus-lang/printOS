@@ -763,8 +763,59 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
           }catch(e){console.warn("Failed to update task (dept/assignee):",e)}
         }
       }
+      try{
+        const addrStr=selectedClient.address||"";
+        const cityPart=(addrStr.split(",")[0]||"").trim();
+        const orderRow={
+          bina_doc_id:Number(result.binaOrderId),
+          title:title||`הזמנה ל${selectedClient.name||"לקוח"}`,
+          bina_cust_id:parseInt(String(selectedClient.bina_customer_id),10),
+          bina_cust_name:selectedClient.name||"",
+          bina_cust_address:addrStr||null,
+          bina_cust_city:cityPart||null,
+          bina_cust_phone:selectedClient.phone||null,
+          bina_cust_email:selectedClient.email||null,
+          contact_person:(contactName||"").trim()||null,
+          sales_agent:(agent||"").trim()||null,
+          remark:remark||"",
+          status:"נשלחה",
+          task_id:result.taskId||null,
+        };
+        const ordRes=await sb("orders",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(orderRow)});
+        const ord=Array.isArray(ordRes)?ordRes[0]:ordRes;
+        if(ord?.id){
+          const oItems=items.map((it,idx)=>({
+            order_id:ord.id,
+            line_number:idx+1,
+            description:it.description||`פריט ${idx+1}`,
+            quantity:Number(it.quantity)||1,
+            unit_price:Number(it.unitPrice)||0,
+            discount_pct:Number(it.discount)||0,
+          }));
+          await sb("order_items",{method:"POST",body:JSON.stringify(oItems)});
+        }
+      }catch(e){console.warn("[CreateOrderModal] orders DB save failed:",e);}
       if(onSuccess)onSuccess(result);
-      window.alert(`✅ נוצרה הזמנה #${result.binaOrderId} בבינה!`);
+      const orderTitleUi=title||`הזמנה ל${selectedClient.name||"לקוח"}`;
+      const showPDF=window.confirm(`✅ נוצרה הזמנה #${result.binaOrderId} בבינה!\n\nלפתוח PDF לתצוגה/הדפסה?`);
+      if(showPDF&&typeof window.openDocumentPDF==="function"){
+        window.openDocumentPDF({
+          docType:"order",
+          binaDocId:result.binaOrderId,
+          title:orderTitleUi,
+          client:{
+            name:selectedClient.name,
+            address:selectedClient.address,
+            phone:selectedClient.phone,
+            email:selectedClient.email||"",
+            contactPerson:(contactName||"").trim()||selectedClient.name,
+          },
+          items:items.map(it=>({description:it.description,quantity:Number(it.quantity)||1,unitPrice:Number(it.unitPrice)||0,discount:Number(it.discount)||0})),
+          agent:(agent||"").trim(),
+          createdAt:new Date().toISOString(),
+          remark:remark||"",
+        });
+      }
       onClose();
     }catch(err){
       setError(err.message||String(err));
@@ -970,7 +1021,26 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
       if(!result||result.success!==true)throw new Error(result?.error||result?.binaMessage||"שגיאה בשליחה לבינה");
 
       if(onSuccess)onSuccess(result);
-      window.alert(`✅ נוצרה הצעת מחיר #${result.binaDocId} בבינה!`);
+      const quoteTitleUi=quoteTitle;
+      const showPDF=window.confirm(`✅ נוצרה הצעת מחיר #${result.binaDocId} בבינה!\n\nלפתוח PDF לתצוגה/הדפסה?`);
+      if(showPDF&&typeof window.openDocumentPDF==="function"){
+        window.openDocumentPDF({
+          docType:"quote",
+          binaDocId:result.binaDocId,
+          title:quoteTitleUi,
+          client:{
+            name:selectedClient.name,
+            address:selectedClient.address,
+            phone:selectedClient.phone,
+            email:selectedClient.email||"",
+            contactPerson:(contactName||"").trim()||selectedClient.name,
+          },
+          items:items.map(it=>({description:it.description,quantity:Number(it.quantity)||1,unitPrice:Number(it.unitPrice)||0,discount:Number(it.discount)||0})),
+          agent:(agent||"").trim(),
+          createdAt:new Date().toISOString(),
+          remark:"",
+        });
+      }
       onClose();
     }catch(err){
       setError(err.message||String(err));
@@ -1933,6 +2003,191 @@ function App(){
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+<script>
+// Embedded before </body> in index.html — window.openDocumentPDF
+window.openDocumentPDF = function(doc) {
+  // doc = { docType, binaDocId, title, client, items, agent, createdAt, remark }
+
+  function escapeHtml(unsafe) {
+    return String(unsafe || '')
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  const isQuote = doc.docType === 'quote';
+  const docTypeText = isQuote ? 'הצעת מחיר' : 'הזמנת עבודה';
+  const docTypeShort = isQuote ? 'הצעה' : 'הזמנה';
+
+  const subtotal = (doc.items || []).reduce(function (sum, it) {
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const disc = Number(it.discount) || 0;
+    return sum + (qty * price * (1 - disc / 100));
+  }, 0);
+  const VAT_RATE = 0.18;
+  const vat = subtotal * VAT_RATE;
+  const total = subtotal + vat;
+
+  const formatDate = function (dateStr) {
+    const d = dateStr ? new Date(dateStr) : new Date();
+    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+  };
+  const formatCurrency = function (n) {
+    return '₪' + Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const today = formatDate(doc.createdAt);
+  const validUntil = (function () {
+    const d = doc.createdAt ? new Date(doc.createdAt) : new Date();
+    d.setDate(d.getDate() + 30);
+    return formatDate(d);
+  })();
+
+  const itemsRows = (doc.items || []).map(function (it, idx) {
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const disc = Number(it.discount) || 0;
+    const lineTotal = qty * price * (1 - disc / 100);
+    return '<tr>' +
+      '<td class="num line-num">' + (idx + 1) + '</td>' +
+      '<td class="desc">' + escapeHtml(it.description || '') + '</td>' +
+      '<td class="num">' + qty + '</td>' +
+      '<td class="amount">' + formatCurrency(price) + '</td>' +
+      '<td class="num">' + (disc > 0 ? disc + '%' : '—') + '</td>' +
+      '<td class="amount">' + formatCurrency(lineTotal) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  const html = '<!DOCTYPE html>\n' +
+'<html lang="he" dir="rtl">\n' +
+'<head>\n' +
+'<meta charset="UTF-8">\n' +
+'<title>' + docTypeText + ' #' + doc.binaDocId + '</title>\n' +
+'<style>\n' +
+'  * { box-sizing: border-box; margin: 0; padding: 0; }\n' +
+'  body { font-family: \'Heebo\', \'Segoe UI\', Arial, sans-serif; color: #1E3A52; background: #f5f5f5; direction: rtl; line-height: 1.5; padding: 20px; }\n' +
+'  .page { max-width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 40px 50px; box-shadow: 0 2px 16px rgba(0,0,0,0.1); position: relative; }\n' +
+'  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #3DB5B1; padding-bottom: 24px; margin-bottom: 32px; }\n' +
+'  .logo-text { font-size: 28px; font-weight: 900; color: #1E3A52; letter-spacing: 2px; }\n' +
+'  .logo-sub { font-size: 13px; color: #3DB5B1; font-weight: 600; margin-top: 2px; }\n' +
+'  .doc-title-area { text-align: left; }\n' +
+'  .doc-type-label { font-size: 11px; color: #3DB5B1; text-transform: uppercase; letter-spacing: 3px; font-weight: 700; margin-bottom: 4px; }\n' +
+'  .doc-title-num { font-size: 32px; font-weight: 800; color: #1E3A52; line-height: 1; }\n' +
+'  .doc-num-prefix { font-size: 22px; color: #3DB5B1; font-weight: 600; }\n' +
+'  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; padding: 20px; background: #f8fafa; border-radius: 8px; border-right: 4px solid #3DB5B1; }\n' +
+'  .meta-block { font-size: 13px; }\n' +
+'  .meta-label { color: #3DB5B1; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }\n' +
+'  .meta-value { color: #1E3A52; font-weight: 600; font-size: 14px; }\n' +
+'  .meta-sub { color: #6b7280; font-size: 12px; margin-top: 2px; }\n' +
+'  .work-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 24px; padding: 16px 20px; background: linear-gradient(135deg, #3DB5B1 0%, #1E3A52 100%); border-radius: 8px; }\n' +
+'  .items { width: 100%; border-collapse: collapse; margin-bottom: 32px; font-size: 13px; }\n' +
+'  .items thead th { background: #1E3A52; color: #fff; padding: 12px 14px; text-align: right; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }\n' +
+'  .items tbody td { padding: 14px; border-bottom: 1px solid #e5e7eb; color: #1E3A52; }\n' +
+'  .items tbody tr:last-child td { border-bottom: 2px solid #3DB5B1; }\n' +
+'  .items tbody tr:nth-child(even) { background: #f8fafa; }\n' +
+'  .items td.num { text-align: center; font-variant-numeric: tabular-nums; }\n' +
+'  .items td.amount { text-align: left; font-weight: 600; font-variant-numeric: tabular-nums; }\n' +
+'  .items td.desc { font-weight: 500; }\n' +
+'  .items .line-num { color: #6b7280; font-weight: 700; }\n' +
+'  .totals { display: flex; justify-content: flex-end; margin-bottom: 32px; }\n' +
+'  .totals-table { min-width: 320px; border-collapse: collapse; }\n' +
+'  .totals-table tr td { padding: 8px 16px; font-size: 14px; color: #1E3A52; }\n' +
+'  .totals-table tr td:first-child { text-align: right; color: #6b7280; }\n' +
+'  .totals-table tr td:last-child { text-align: left; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 120px; }\n' +
+'  .totals-table tr.vat td { border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; }\n' +
+'  .totals-table tr.grand td { padding-top: 16px; font-size: 22px; font-weight: 800; color: #1E3A52; }\n' +
+'  .totals-table tr.grand td:last-child { color: #3DB5B1; }\n' +
+'  .remark { background: #fffbeb; border-right: 4px solid #f59e0b; padding: 14px 18px; border-radius: 8px; margin-bottom: 32px; font-size: 13px; color: #78350f; }\n' +
+'  .remark-label { font-weight: 700; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }\n' +
+'  .validity { text-align: center; padding: 12px; background: #f0fdfa; border: 1px dashed #3DB5B1; border-radius: 8px; margin-bottom: 32px; color: #1E3A52; font-size: 13px; font-weight: 600; }\n' +
+'  .footer { border-top: 2px solid #3DB5B1; padding-top: 20px; margin-top: 40px; text-align: center; color: #6b7280; font-size: 12px; line-height: 1.8; }\n' +
+'  .footer-name { font-weight: 700; color: #1E3A52; font-size: 14px; margin-bottom: 4px; }\n' +
+'  .footer-divider { color: #3DB5B1; margin: 0 8px; }\n' +
+'  @media print { body { background: #fff; padding: 0; } .page { box-shadow: none; padding: 20mm; } .no-print { display: none !important; } }\n' +
+'  .toolbar { position: fixed; top: 16px; left: 16px; background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; gap: 8px; z-index: 1000; }\n' +
+'  .btn { padding: 10px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }\n' +
+'  .btn-print { background: #3DB5B1; color: #fff; }\n' +
+'  .btn-close { background: #e5e7eb; color: #1E3A52; }\n' +
+'</style>\n' +
+'</head>\n' +
+'<body>\n' +
+'<div class="toolbar no-print">\n' +
+'  <button class="btn btn-print" onclick="window.print()">🖨️ הדפס / שמור כ-PDF</button>\n' +
+'  <button class="btn btn-close" onclick="window.close()">✕ סגור</button>\n' +
+'</div>\n' +
+'<div class="page">\n' +
+'  <div class="header">\n' +
+'    <div>\n' +
+'      <div class="logo-text">NATALIE</div>\n' +
+'      <div class="logo-sub">פתרונות הדפסה</div>\n' +
+'    </div>\n' +
+'    <div class="doc-title-area">\n' +
+'      <div class="doc-type-label">' + docTypeText + '</div>\n' +
+'      <div class="doc-title-num"><span class="doc-num-prefix">#</span>' + doc.binaDocId + '</div>\n' +
+'    </div>\n' +
+'  </div>\n' +
+'  <div class="meta">\n' +
+'    <div class="meta-block">\n' +
+'      <div class="meta-label">לכבוד</div>\n' +
+'      <div class="meta-value">' + escapeHtml((doc.client && doc.client.name) || '—') + '</div>\n' +
+(doc.client && doc.client.contactPerson ? '      <div class="meta-sub">לידי: ' + escapeHtml(doc.client.contactPerson) + '</div>\n' : '') +
+(doc.client && doc.client.phone ? '      <div class="meta-sub">📞 ' + escapeHtml(doc.client.phone) + '</div>\n' : '') +
+(doc.client && doc.client.email ? '      <div class="meta-sub">✉ ' + escapeHtml(doc.client.email) + '</div>\n' : '') +
+(doc.client && doc.client.address ? '      <div class="meta-sub">📍 ' + escapeHtml(doc.client.address) + '</div>\n' : '') +
+'    </div>\n' +
+'    <div class="meta-block">\n' +
+'      <div class="meta-label">פרטי המסמך</div>\n' +
+'      <div class="meta-value">תאריך: ' + today + '</div>\n' +
+(doc.agent ? '      <div class="meta-sub">סוכן: ' + escapeHtml(doc.agent) + '</div>\n' : '') +
+'      <div class="meta-sub">מספר ' + docTypeShort + ': #' + doc.binaDocId + '</div>\n' +
+'    </div>\n' +
+'  </div>\n' +
+(doc.title ? '  <div class="work-title">' + escapeHtml(doc.title) + '</div>\n' : '') +
+'  <table class="items">\n' +
+'    <thead>\n' +
+'      <tr>\n' +
+'        <th style="width:40px">#</th>\n' +
+'        <th>תיאור הפריט</th>\n' +
+'        <th style="width:80px">כמות</th>\n' +
+'        <th style="width:100px">מחיר ליחידה</th>\n' +
+'        <th style="width:80px">הנחה %</th>\n' +
+'        <th style="width:120px">סה&quot;כ</th>\n' +
+'      </tr>\n' +
+'    </thead>\n' +
+'    <tbody>\n' +
+itemsRows +
+'    </tbody>\n' +
+'  </table>\n' +
+'  <div class="totals">\n' +
+'    <table class="totals-table">\n' +
+'      <tr class="subtotal"><td>סה&quot;כ לפני מע&quot;מ:</td><td>' + formatCurrency(subtotal) + '</td></tr>\n' +
+'      <tr class="vat"><td>מע&quot;מ 18%:</td><td>' + formatCurrency(vat) + '</td></tr>\n' +
+'      <tr class="grand"><td>סה&quot;כ לתשלום:</td><td>' + formatCurrency(total) + '</td></tr>\n' +
+'    </table>\n' +
+'  </div>\n' +
+(doc.remark ? '  <div class="remark"><div class="remark-label">הערות:</div><div>' + escapeHtml(doc.remark) + '</div></div>\n' : '') +
+(isQuote ? '  <div class="validity">⏰ הצעה זו תקפה עד תאריך ' + validUntil + ' (30 יום מיום ההצעה)</div>\n' : '') +
+'  <div class="footer">\n' +
+'    <div class="footer-name">נטלי פתרונות הדפסה בע&quot;מ</div>\n' +
+'    <div><span>ח.פ. 517205332</span><span class="footer-divider">|</span><span>שד\' הר ציון 104, תל אביב</span><span class="footer-divider">|</span><span>03-6815703</span></div>\n' +
+'  </div>\n' +
+'</div>\n' +
+'</body>\n' +
+'</html>';
+
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  if (!win) {
+    alert('הדפדפן חסם פתיחת חלון. אנא אשר חלונות קופצים לאתר זה.');
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+};
+
 </script>
 </body>
 </html>

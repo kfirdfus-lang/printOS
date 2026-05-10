@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
       tokenId: binaToken,
       requestId: requestId,
       docType: 14,  // הצעת מחיר
-      docWithVat: 0,
+      docWithvat: 0,
       docTitle: quote.title.substring(0, 100),
       
       // פרטי לקוח — תת-אובייקט

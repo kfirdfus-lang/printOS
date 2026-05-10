@@ -1153,6 +1153,106 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
   </div>;
 }
 
+function DepartmentDashboard({user,allTasks,isA,deptFilter}){
+  const targetDept=isA?(deptFilter==="all"?null:deptFilter):user.dept;
+  const tasks=(allTasks||[]).filter(t=>{
+    if(!targetDept)return true;
+    return t.dept===targetDept;
+  });
+  const today=new Date();
+  today.setHours(0,0,0,0);
+  const todayMs=today.getTime();
+  const yesterdayMs=todayMs-86400000;
+  const weekStartMs=todayMs-(today.getDay()*86400000);
+  const openTasks=tasks.filter(t=>!t.archived_at&&t.status!=="הושלם"&&t.status!=="הושלמה");
+  const urgentTasks=openTasks.filter(t=>{
+    if(t.priority==="גבוהה"||t.priority==="דחוף")return true;
+    if(t.due_date){
+      const due=new Date(t.due_date).getTime();
+      return due<=todayMs+86400000;
+    }
+    return false;
+  });
+  const completedToday=tasks.filter(t=>{
+    if(!t.completed_at)return false;
+    const c=new Date(t.completed_at).getTime();
+    return c>=todayMs;
+  });
+  const completedYesterday=tasks.filter(t=>{
+    if(!t.completed_at)return false;
+    const c=new Date(t.completed_at).getTime();
+    return c>=yesterdayMs&&c<todayMs;
+  });
+  const completedThisWeek=tasks.filter(t=>{
+    if(!t.completed_at)return false;
+    const c=new Date(t.completed_at).getTime();
+    return c>=weekStartMs;
+  });
+  const todayChange=completedYesterday.length===0?null:Math.round(((completedToday.length-completedYesterday.length)/completedYesterday.length)*100);
+  const dailyTarget=Math.max(5,Math.ceil(openTasks.length*0.6));
+  const progressPct=Math.min(100,Math.round((completedToday.length/dailyTarget)*100));
+  const hour=new Date().getHours();
+  let greeting="שלום";
+  let greetingEmoji="👋";
+  if(hour<12){greeting="בוקר טוב";greetingEmoji="☀️";}
+  else if(hour<17){greeting="צהריים טובים";greetingEmoji="🌤️";}
+  else if(hour<21){greeting="ערב טוב";greetingEmoji="🌆";}
+  else{greeting="לילה טוב";greetingEmoji="🌙";}
+  const deptColor=targetDept?(DEPT_COLORS[targetDept]||"#3DB5B1"):"#3DB5B1";
+  const displayName=isA?(targetDept?`מחלקת ${targetDept}`:"כל המחלקות"):`מחלקת ${user.dept}`;
+  const cardStyle={background:"linear-gradient(135deg, #fff 0%, #fafbfc 100%)",border:"1px solid var(--border)",borderRadius:16,padding:20,marginBottom:16,boxShadow:"0 2px 12px rgba(0,0,0,0.04)",direction:"rtl"};
+  const headerStyle={display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:12,borderBottom:"1px solid var(--border)"};
+  const greetingStyle={fontSize:18,fontWeight:700,color:"var(--text)"};
+  const subtitleStyle={fontSize:13,color:deptColor,fontWeight:600,marginTop:2};
+  const metricsGrid={display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(110px, 1fr))",gap:8,marginBottom:16};
+  const metricBox=(color,bg)=>({padding:"14px 12px",borderRadius:12,background:bg,border:`1px solid ${color}30`,textAlign:"center"});
+  const metricValue=(color)=>({fontSize:24,fontWeight:800,color:color,lineHeight:1.1});
+  const metricLabel={fontSize:11,color:"var(--text3)",marginTop:4,fontWeight:600};
+  const progressBarOuter={width:"100%",height:10,background:"#f1f5f9",borderRadius:999,overflow:"hidden",marginTop:6};
+  const progressBarInner={width:`${progressPct}%`,height:"100%",background:`linear-gradient(90deg, ${deptColor}, ${deptColor}dd)`,transition:"width 0.5s ease",borderRadius:999};
+  return<div style={cardStyle}>
+    <div style={headerStyle}>
+      <div>
+        <div style={greetingStyle}>{greetingEmoji} {greeting}, {user.name}!</div>
+        <div style={subtitleStyle}>📍 {displayName}</div>
+      </div>
+      <div style={{width:48,height:48,borderRadius:"50%",background:deptColor,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18}}>{user.initials||user.name?.[0]}</div>
+    </div>
+    <div style={metricsGrid}>
+      <div style={metricBox("#3b82f6","#eff6ff")}>
+        <div style={metricValue("#3b82f6")}>{openTasks.length}</div>
+        <div style={metricLabel}>פתוחות</div>
+      </div>
+      <div style={metricBox("#ef4444","#fef2f2")}>
+        <div style={metricValue("#ef4444")}>{urgentTasks.length}</div>
+        <div style={metricLabel}>דחופות 🚨</div>
+      </div>
+      <div style={metricBox("#22c55e","#f0fdf4")}>
+        <div style={metricValue("#22c55e")}>{completedToday.length}</div>
+        <div style={metricLabel}>הושלמו היום</div>
+      </div>
+      <div style={metricBox(todayChange===null?"#6b7280":(todayChange>=0?"#22c55e":"#f59e0b"),todayChange===null?"#f9fafb":(todayChange>=0?"#f0fdf4":"#fffbeb"))}>
+        <div style={metricValue(todayChange===null?"#6b7280":(todayChange>=0?"#22c55e":"#f59e0b"))}>{todayChange===null?"—":`${todayChange>=0?"+":""}${todayChange}%`}</div>
+        <div style={metricLabel}>מאתמול</div>
+      </div>
+    </div>
+    <div style={{marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}>
+        <span style={{fontWeight:600,color:"var(--text)"}}>📊 התקדמות יומית</span>
+        <span style={{color:deptColor,fontWeight:700}}>{completedToday.length} / {dailyTarget} ({progressPct}%)</span>
+      </div>
+      <div style={progressBarOuter}>
+        <div style={progressBarInner}/>
+      </div>
+    </div>
+    <div style={{marginTop:12,padding:12,background:`${deptColor}10`,borderRadius:10,fontSize:13,color:"var(--text)",display:"flex",alignItems:"center",gap:8}}>
+      <span style={{fontSize:18}}>🏆</span>
+      <span>השבוע סיימתם <strong style={{color:deptColor}}>{completedThisWeek.length}</strong> משימות</span>
+      {completedThisWeek.length>=30&&<span style={{marginInlineStart:"auto",fontSize:12,fontWeight:700,color:deptColor}}>🔥 שיא מצוין!</span>}
+    </div>
+  </div>;
+}
+
 // ── MAIN APP ──
 function App(){
   const [user,setUser]=useState(null);
@@ -1169,7 +1269,7 @@ function App(){
   const [editTask,setEditTask]=useState(null);
   const [det,setDet]=useState(null);
   const [showChat,setShowChat]=useState(false);
-  const [deptFilter,setDeptFilter]=useState("הכל");
+  const [deptFilter,setDeptFilter]=useState("all");
   const [notif,setNotif]=useState(null);
   const [loading,setLoading]=useState(false);
   const [binaSyncing,setBinaSyncing]=useState(false);
@@ -1414,8 +1514,9 @@ function App(){
 
 
   const isA=user?.role==="admin";
-  const visTasks=(deptFilter!=="הכל")?tasks.filter(t=>t.dept===deptFilter):tasks;
-  const byS=s=>tasks.filter(t=>t.status===s).length;
+  const boardTasks=user?.role==="worker"?tasks.filter(t=>t.dept===user.dept):(deptFilter==="all"?tasks:tasks.filter(t=>t.dept===deptFilter));
+  const visTasks=boardTasks;
+  const byS=s=>boardTasks.filter(t=>t.status===s).length;
   const totD=debt.reduce((s,d)=>s+Number(d.amount),0);
   const ovD=debt.filter(d=>d.status==="באיחור").reduce((s,d)=>s+Number(d.amount),0);
 
@@ -1592,7 +1693,7 @@ function App(){
         {DEPTS.map(dept=>{
           const color=DEPT_COLORS[dept]||"#2563EB";
           const count=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
-          const isActive=tab==="tasks"&&deptFilter===dept;
+          const isActive=tab==="tasks"&&(user.role==="worker"?user.dept===dept:deptFilter===dept);
           return<button key={dept} onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
             <span style={{fontSize:12,fontWeight:isActive?700:400,color:isActive?color:"var(--text2)",flex:1,textAlign:"right"}}>{dept}</span>
@@ -1663,6 +1764,11 @@ function App(){
 
       {/* DASHBOARD */}
       {tab==="dashboard"&&<div>
+        <DepartmentDashboard user={user} allTasks={tasks} isA={isA} deptFilter={deptFilter}/>
+        {isA&&<div style={{display:"flex",gap:8,padding:"12px 0",overflowX:"auto",flexWrap:"wrap"}}>
+          <button type="button" onClick={()=>setDeptFilter("all")} style={{padding:"8px 16px",borderRadius:20,border:"1px solid var(--border)",background:deptFilter==="all"?"var(--blue)":"#fff",color:deptFilter==="all"?"#fff":"var(--text)",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}}>🏠 כל המחלקות</button>
+          {DEPTS.map(d=><button type="button" key={d} onClick={()=>setDeptFilter(d)} style={{padding:"8px 16px",borderRadius:20,border:"1px solid var(--border)",background:deptFilter===d?(DEPT_COLORS[d]||"var(--blue)"):"#fff",color:deptFilter===d?"#fff":"var(--text)",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}}>{d}</button>)}
+        </div>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,flexWrap:"wrap",gap:12}}>
           <div>
             <h1 style={{fontSize:24,fontWeight:900,color:"var(--text)",margin:0}}>שלום, {user.name.split(" ")[0]} 👋</h1>
@@ -1715,8 +1821,8 @@ function App(){
 
           <Card>
             <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:16}}>🏭 עומס מחלקות</div>
-            {(isA?DEPTS:[user.dept]).map((dept,i)=>{
-              const dt=tasks.filter(t=>t.dept===dept);
+            {(isA?(deptFilter==="all"?DEPTS:[deptFilter]):[user.dept]).map((dept,i)=>{
+              const dt=boardTasks.filter(t=>t.dept===dept);
               const done=dt.filter(t=>t.status==="הושלם").length;
               const pct=dt.length?Math.round((done/dt.length)*100):0;
               const color=DEPT_COLORS[dept]||"#2563EB";
@@ -1738,7 +1844,7 @@ function App(){
             <div style={{fontWeight:700,fontSize:14,color:"var(--text)"}}>📋 משימות אחרונות</div>
             <button onClick={()=>setTab("tasks")} style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>הכל ←</button>
           </div>
-          {tasks.slice(0,5).map(t=><div key={t.id} onClick={()=>setDet(t)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid var(--border)",cursor:"pointer"}}>
+          {boardTasks.slice(0,5).map(t=><div key={t.id} onClick={()=>setDet(t)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid var(--border)",cursor:"pointer"}}>
             <div style={{width:4,height:36,borderRadius:4,background:DEPT_COLORS[t.dept]||"var(--blue)",flexShrink:0}}/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:600,fontSize:13,color:"var(--text)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>
@@ -1746,7 +1852,7 @@ function App(){
             </div>
             <Badge status={t.status}/>
           </div>)}
-          {tasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)",fontSize:13}}>אין משימות עדיין 🚀</div>}
+          {boardTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)",fontSize:13}}>אין משימות עדיין 🚀</div>}
         </Card>
       </div>}
 
@@ -1761,9 +1867,10 @@ function App(){
           </div>
         </div>
 
-        <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
-          {["הכל",...DEPTS].map(d=><button key={d} onClick={()=>setDeptFilter(d)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--border)"}`,background:deptFilter===d?`${DEPT_COLORS[d]||"#2563EB"}10`:"#fff",color:deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--text2)",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{d}</button>)}
-        </div>
+        {isA&&<div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+          <button type="button" onClick={()=>setDeptFilter("all")} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${deptFilter==="all"?"var(--blue)":"var(--border)"}`,background:deptFilter==="all"?"var(--blue-light)":"#fff",color:deptFilter==="all"?"var(--blue)":"var(--text2)",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>הכל</button>
+          {DEPTS.map(d=><button type="button" key={d} onClick={()=>setDeptFilter(d)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--border)"}`,background:deptFilter===d?`${DEPT_COLORS[d]||"#2563EB"}10`:"#fff",color:deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--text2)",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{d}</button>)}
+        </div>}
 
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {visTasks.map(t=><div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${DEPT_COLORS[t.dept]||"var(--blue)"}`}} onClick={()=>setDet(t)}>

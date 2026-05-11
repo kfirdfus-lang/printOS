@@ -177,21 +177,27 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // חלון יום אספקה אחד בלבד: היום (YYYY-MM-DD). הזמנות חדשות מקבלות תאריך אספקה של היום — מצמצם נפח תשובה מבינה.
-    const todayStr = new Date().toISOString().split('T')[0]
-    const fromDate = todayStr
-    const toDate = todayStr
+    // טווח תאריכי אספקה: 7 ימים אחורה עד 30 ימים קדימה (YYYY-MM-DD) — כדי לתפוס הזמנות שנכנסו בערב למועד מחר וכו׳.
+    const fromDate = new Date()
+    fromDate.setDate(fromDate.getDate() - 7)
+    const toDate = new Date()
+    toDate.setDate(toDate.getDate() + 30)
+
+    const fromStr = fromDate.toISOString().split('T')[0]
+    const toStr = toDate.toISOString().split('T')[0]
 
     const requestBody = {
       tokenId: binaToken,
       docType: -15,
-      fromDate: fromDate,
-      toDate: toDate,
+      fromDate: fromStr,
+      toDate: toStr,
     }
 
     console.log(
-      '[sync-bina-orders] מסנכרנים יום אספקה אחד בלבד (fromDate=toDate=היום, פורמט YYYY-MM-DD):',
-      fromDate,
+      '[sync-bina-orders] מסנכרנים טווח אספקה (from=-7d, to=+30d, YYYY-MM-DD):',
+      fromStr,
+      '→',
+      toStr,
       '| שליחה לבינה:',
       JSON.stringify(requestBody),
     )
@@ -332,7 +338,7 @@ Deno.serve(async (req) => {
         skipped,
         errors,
         errorDetails: errors > 0 ? errorDetails : undefined,
-        dateRange: { from: fromDate, to: toDate },
+        dateRange: { from: fromStr, to: toStr },
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

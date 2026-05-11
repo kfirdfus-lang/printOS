@@ -3309,12 +3309,6 @@ function PrintReport({ data, onClose }) {
 
 function openPrintWindow(data) {
   const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
-  const formatDate = (d) => {
-    if (!d) return '';
-    const date = d instanceof Date ? d : new Date(d);
-    if (isNaN(date.getTime())) return '';
-    return date.toLocaleDateString('he-IL');
-  };
 
   const clients = data.type === 'month' ? data.data.clients : data.data.clients;
   const total = data.type === 'month' ? data.data.total : data.data.grandTotal;
@@ -3517,7 +3511,7 @@ function openPrintWindow(data) {
     <div class="title-box">
       <div class="title-tag">דוח גבייה</div>
       <div class="title-main">${data.title || ''}</div>
-      <div class="title-date">הופק: ${formatDate(new Date())}</div>
+      <div class="title-date">הופק: ${new Date().toLocaleDateString('he-IL')}</div>
     </div>
   </div>
 
@@ -3536,10 +3530,10 @@ function openPrintWindow(data) {
         <tr>
           <td class="center" style="color:#6b7280;">${idx + 1}</td>
           <td>
-            <div class="client-name">${String(c.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-            ${(c.contact_name || c.phone) ? `<div class="contact-info">${String(c.contact_name || '—').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')} ${c.phone ? '| ' + String(c.phone).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''}</div>` : ''}
+            <div class="client-name">${c.name}</div>
+            ${(c.contact_name || c.phone) ? `<div class="contact-info">${c.contact_name || '—'} ${c.phone ? '| ' + c.phone : ''}</div>` : ''}
           </td>
-          <td class="center" style="font-size:11px;">${String(c.payment_terms || '—').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</td>
+          <td class="center" style="font-size:11px;">${c.payment_terms || '—'}</td>
           <td>
             <div class="invoices-list">
               <strong>${c.invoices.length} חשבוניות:</strong><br/>

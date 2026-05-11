@@ -2335,7 +2335,7 @@ function QuotesDashboard({allQuotes,allTasks,isA,sb,onQuotesReload}) {
 
 const DEBT_ACTION_TYPES = {
   called: { emoji: '📞', label: 'התקשרתי', color: '#3b82f6' },
-  email_sent: { emoji: '📧', label: 'מייל', color: '#8b5cf6' },
+  email_sent: { emoji: '📧', label: 'שלח מייל', color: '#8b5cf6' },
   whatsapp_sent: { emoji: '💬', label: 'וואטסאפ', color: '#22c55e' },
   promised_to_pay: { emoji: '🤝', label: 'הבטיח לשלם', color: '#f59e0b' },
   paid_credit: { emoji: '💳', label: 'שולם אשראי', color: '#10b981' },
@@ -2347,124 +2347,163 @@ const DEBT_ACTION_TYPES = {
 
 function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtReload, collectorName }) {
   const [refreshing, setRefreshing] = useState(false);
-  const [actionModal, setActionModal] = useState(null); // { customer, type }
   const [actions, setActions] = useState([]);
-  const [actionsLoaded, setActionsLoaded] = useState(false);
+  const [actionModal, setActionModal] = useState(null);
+  const [emailModal, setEmailModal] = useState(null);
+  const [printMonth, setPrintMonth] = useState(null);
 
   if (!isA) return null;
 
-  // טעינת פעולות מעקב
   useEffect(() => {
     if (!sb) return;
     sb('debt_actions?order=created_at.desc&limit=500')
-      .then(data => {
-        setActions(data || []);
-        setActionsLoaded(true);
-      })
-      .catch(() => setActionsLoaded(true));
+      .then(data => setActions(data || []))
+      .catch(() => setActions([]));
   }, [sb]);
 
-  // ---------- עיבוד נתונים ----------
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
 
-  // קבוצת חשבוניות לפי לקוח
-  const debtsByClient = useMemo(() => {
+  // ---------- בניית מבנה הנתונים ----------
+  const clientsMap = useMemo(() => {
+    const map = new Map();
+    for (const c of (allClients || [])) {
+      if (c.bina_customer_id) {
+        map.set(String(c.bina_customer_id), c);
+      }
+    }
+    return map;
+  }, [allClients]);
+
+  // קיבוץ חשבוניות לפי לקוח + תוספת נתונים
+  const clientsWithInvoices = useMemo(() => {
     const map = new Map();
     for (const d of (debtSnapshots || [])) {
       if (!d.bina_customer_id || !d.doc_balance || d.doc_balance <= 0) continue;
       const key = String(d.bina_customer_id);
+      const client = clientsMap.get(key);
+      
       if (!map.has(key)) {
-        const client = (allClients || []).find(c => 
-          String(c.bina_customer_id) === key
-        );
         map.set(key, {
           bina_customer_id: key,
+          name: client?.name || d.customer_name || `לקוח #${key}`,
           client_name: client?.name || d.customer_name || `לקוח #${key}`,
-          client_id: client?.id || null,
+          payment_terms: client?.payment_terms || '',
+          contact_name: client?.contact_name || '',
           phone: client?.phone || '',
           email: client?.email || '',
+          collection_email_primary: client?.collection_email_primary || '',
+          collection_email_secondary: client?.collection_email_secondary || '',
+          client_id: client?.id || null,
           total_debt: 0,
           invoices: [],
-          oldest_due_date: null,
-          max_days_overdue: 0,
         });
       }
       const c = map.get(key);
-      c.total_debt += Number(d.doc_balance);
       c.invoices.push(d);
-      if (d.days_overdue && d.days_overdue > c.max_days_overdue) {
-        c.max_days_overdue = d.days_overdue;
-      }
-      if (d.doc_payment_date && (!c.oldest_due_date || d.doc_payment_date < c.oldest_due_date)) {
-        c.oldest_due_date = d.doc_payment_date;
-      }
+      c.total_debt += Number(d.doc_balance);
     }
+    
+    // מיון חשבוניות בכל לקוח
+    for (const c of map.values()) {
+      c.invoices.sort((a, b) => {
+        const ta = a.doc_payment_date ? new Date(a.doc_payment_date).getTime() : 0;
+        const tb = b.doc_payment_date ? new Date(b.doc_payment_date).getTime() : 0;
+        return ta - tb;
+      });
+    }
+    
     return Array.from(map.values());
-  }, [debtSnapshots, allClients]);
+  }, [debtSnapshots, clientsMap]);
 
-  // פעולה אחרונה לכל לקוח
-  const lastActionByClient = useMemo(() => {
-    const map = new Map();
-    for (const a of actions) {
-      const key = String(a.bina_customer_id);
-      if (!map.has(key)) {
-        map.set(key, a);
+  // ---------- קטגוריזציה של חשבוניות ----------
+  const categorizeInvoice = (inv) => {
+    if (!inv.doc_payment_date) return { type: "future", daysAway: 99999 };
+    const dueDate = new Date(inv.doc_payment_date);
+    if (Number.isNaN(dueDate.getTime())) return { type: "future", daysAway: 99999 };
+    dueDate.setHours(0, 0, 0, 0);
+    const dueMs = dueDate.getTime();
+    const daysFromToday = Math.floor((dueMs - todayMs) / 86400000);
+    
+    if (daysFromToday < 0) return { type: 'overdue', month: dueDate, daysOverdue: -daysFromToday };
+    if (daysFromToday <= 7) return { type: 'thisWeek', daysAway: daysFromToday };
+    if (daysFromToday <= 30) return { type: 'thisMonth', daysAway: daysFromToday };
+    if (daysFromToday <= 90) return { type: 'soon', daysAway: daysFromToday };
+    return { type: 'future', daysAway: daysFromToday };
+  };
+
+  // קיבוץ עבר - לפי חודש
+  const overdueByMonth = useMemo(() => {
+    const map = new Map(); // monthKey -> { label, year, month, invoices, total }
+    
+    for (const client of clientsWithInvoices) {
+      for (const inv of client.invoices) {
+        const cat = categorizeInvoice(inv);
+        if (cat.type !== 'overdue') continue;
+        
+        const monthKey = `${cat.month.getFullYear()}-${String(cat.month.getMonth() + 1).padStart(2, '0')}`;
+        if (!map.has(monthKey)) {
+          map.set(monthKey, {
+            key: monthKey,
+            label: cat.month.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' }),
+            year: cat.month.getFullYear(),
+            month: cat.month.getMonth(),
+            invoices: [],
+            total: 0,
+            sortKey: cat.month.getTime(),
+          });
+        }
+        const m = map.get(monthKey);
+        m.invoices.push({ ...inv, client, daysOverdue: cat.daysOverdue });
+        m.total += Number(inv.doc_balance);
       }
     }
-    return map;
-  }, [actions]);
+    
+    return Array.from(map.values()).sort((a, b) => a.sortKey - b.sortKey);
+  }, [clientsWithInvoices]);
+
+  // השבוע / החודש / בקרוב
+  const thisWeekInvoices = useMemo(() => {
+    const list = [];
+    for (const client of clientsWithInvoices) {
+      for (const inv of client.invoices) {
+        const cat = categorizeInvoice(inv);
+        if (cat.type === 'thisWeek') list.push({ ...inv, client, daysAway: cat.daysAway });
+      }
+    }
+    return list.sort((a, b) => a.daysAway - b.daysAway);
+  }, [clientsWithInvoices]);
+
+  const thisMonthInvoices = useMemo(() => {
+    const list = [];
+    for (const client of clientsWithInvoices) {
+      for (const inv of client.invoices) {
+        const cat = categorizeInvoice(inv);
+        if (cat.type === 'thisMonth') list.push({ ...inv, client, daysAway: cat.daysAway });
+      }
+    }
+    return list.sort((a, b) => a.daysAway - b.daysAway);
+  }, [clientsWithInvoices]);
+
+  const soonInvoices = useMemo(() => {
+    const list = [];
+    for (const client of clientsWithInvoices) {
+      for (const inv of client.invoices) {
+        const cat = categorizeInvoice(inv);
+        if (cat.type === 'soon') list.push({ ...inv, client, daysAway: cat.daysAway });
+      }
+    }
+    return list.sort((a, b) => a.daysAway - b.daysAway);
+  }, [clientsWithInvoices]);
 
   // ---------- KPIs ----------
-  const totalDebt = debtsByClient.reduce((s, c) => s + c.total_debt, 0);
-  const totalOverdue = debtsByClient
-    .filter(c => c.max_days_overdue > 0)
-    .reduce((s, c) => s + c.total_debt, 0);
-  const totalClients = debtsByClient.length;
-  const oldestDebt = Math.max(...debtsByClient.map(c => c.max_days_overdue), 0);
+  const totalOverdue = overdueByMonth.reduce((s, m) => s + m.total, 0);
+  const totalThisWeek = thisWeekInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
+  const totalThisMonth = thisMonthInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
+  const totalClients = clientsWithInvoices.length;
 
-  // ---------- חלוקה לפי טווחי גיל ----------
-  const ageRanges = [
-    { label: '0-30 ימים', min: 0, max: 30, color: '#22c55e' },
-    { label: '31-60 ימים', min: 31, max: 60, color: '#f59e0b' },
-    { label: '61-90 ימים', min: 61, max: 90, color: '#f97316' },
-    { label: '90+ ימים', min: 91, max: 9999, color: '#dc2626' },
-  ];
-
-  const ageData = ageRanges.map(r => {
-    const inRange = debtsByClient.filter(c => 
-      c.max_days_overdue >= r.min && c.max_days_overdue <= r.max
-    );
-    return {
-      ...r,
-      count: inRange.length,
-      amount: inRange.reduce((s, c) => s + c.total_debt, 0),
-    };
-  });
-
-  // ---------- "צריך פעולה דחופה" ----------
-  const urgentClients = debtsByClient
-    .filter(c => c.max_days_overdue >= 60)
-    .sort((a, b) => b.total_debt - a.total_debt);
-
-  const mediumClients = debtsByClient
-    .filter(c => c.max_days_overdue >= 30 && c.max_days_overdue < 60)
-    .sort((a, b) => b.total_debt - a.total_debt);
-
-  const recentClients = debtsByClient
-    .filter(c => c.max_days_overdue < 30)
-    .sort((a, b) => b.total_debt - a.total_debt);
-
-  // ---------- תזכורות שצריכות לקבל ----------
-  const todayStr = today.toISOString().split('T')[0];
-  const pendingReminders = actions.filter(a => 
-    a.action_type === 'promised_to_pay' && 
-    !a.is_resolved && 
-    a.remind_at && 
-    a.remind_at <= todayStr
-  );
-
-  // ---------- רענון ידני ----------
+  // ---------- פעולות ----------
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -2479,16 +2518,49 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     }
   };
 
-  // ---------- פתיחת בינה ----------
-  const openInBina = (binaId) => {
-    alert(`פתח בבינה את לקוח #${binaId}\n\n(בעתיד נחבר ישירות לבינה)`);
+  const handleSendEmail = (client, emailType) => {
+    // אם אין מייל - לפתוח דיאלוג להוסיף מייל
+    if (!client.collection_email_primary) {
+      setEmailModal({ client, mode: 'addEmail', pendingType: emailType });
+      return;
+    }
+    setEmailModal({ client, mode: 'confirmSend', emailType });
+  };
+
+  const sendEmail = async (client, emailType) => {
+    try {
+      const { data, error } = await supabaseClient.functions.invoke("send-collection-email", {
+        body: {
+          bina_customer_id: client.bina_customer_id,
+          email_type: emailType,
+          invoices: client.invoices.map((inv) => ({
+            doc_num: inv.doc_num,
+            doc_balance: inv.doc_balance,
+            doc_date: inv.doc_date,
+            doc_payment_date: inv.doc_payment_date,
+            days_overdue: inv.days_overdue || 0,
+          })),
+        },
+      });
+      if (error) throw error;
+      if (!data || !data.success) {
+        alert("❌ שגיאה: " + (data && data.error ? data.error : "לא ידוע"));
+        return false;
+      }
+      alert("✅ נשלח ל-" + data.sent_to.join(", ") + "\nסכום: ₪" + Number(data.total_amount).toLocaleString("he-IL"));
+      return true;
+    } catch (e) {
+      alert("שגיאה: " + (e && e.message ? e.message : String(e)));
+      return false;
+    }
+  };
+
+  const printMonthlyReport = (month) => {
+    setPrintMonth(month);
   };
 
   // ---------- פורמטים ----------
-  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { 
-    minimumFractionDigits: 0, maximumFractionDigits: 0 
-  })}`;
-  const fmtPct = (n) => `${Math.round(n)}%`;
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
 
   // ---------- סטיילים ----------
@@ -2498,265 +2570,187 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
 
   const kpisRow = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 };
   const kpiCard = (color, bg) => ({ background: bg, padding: 16, borderRadius: 12, border: `1px solid ${color}30` });
-  const kpiValue = (color) => ({ fontSize: 28, fontWeight: 800, color, lineHeight: 1.1, marginBottom: 4 });
+  const kpiValue = (color) => ({ fontSize: 26, fontWeight: 800, color, lineHeight: 1.1, marginBottom: 4 });
   const kpiLabel = { fontSize: 12, color: '#6b7280', fontWeight: 600 };
 
-  const sectionCard = { background: '#fff', padding: 20, borderRadius: 12, marginBottom: 16, border: '1px solid #e5e7eb' };
-  const sectionTitle = { fontSize: 16, fontWeight: 700, color: '#1E3A52', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 };
-
-  const clientCard = (urgency) => ({
-    background: '#fff',
-    border: `1px solid ${urgency === 'urgent' ? '#fecaca' : urgency === 'medium' ? '#fcd34d' : '#e5e7eb'}`,
-    borderRightWidth: 4,
-    borderRightColor: urgency === 'urgent' ? '#dc2626' : urgency === 'medium' ? '#f59e0b' : '#22c55e',
-    padding: 14,
-    marginBottom: 10,
-    borderRadius: 10,
+  const sectionCard = { background: '#fff', padding: 0, borderRadius: 12, marginBottom: 16, border: '1px solid #e5e7eb', overflow: 'hidden' };
+  const sectionHeaderStyle = (bg, color) => ({
+    padding: '16px 20px', background: bg, color: color || '#1E3A52',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    fontSize: 15, fontWeight: 700, gap: 10,
   });
 
-  const actionBtnStyle = (color) => ({
-    padding: '6px 10px',
-    border: `1px solid ${color}40`,
-    borderRadius: 6,
-    background: '#fff',
-    color: color,
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 600,
-    fontFamily: 'inherit',
-    transition: 'all 0.15s',
-  });
-
-  const renderClientCard = (client, urgency) => {
-    const lastAction = lastActionByClient.get(client.bina_customer_id);
+  // ---------- רינדור חשבונית בודדת ----------
+  const renderInvoiceRow = (inv) => {
+    const client = inv.client;
+    const isOverdue = inv.daysOverdue > 0;
     
     return (
-      <div key={client.bina_customer_id} style={clientCard(urgency)}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#1E3A52', marginBottom: 4 }}>
-              {client.client_name}
-              {client.client_name.startsWith('לקוח #') && (
-                <span style={{ marginInlineStart: 8, fontSize: 11, color: '#f59e0b', fontWeight: 500 }}>
-                  ⚠️ שם זמני
+      <div key={`${client.bina_customer_id}-${inv.doc_num}`} style={{
+        padding: 14, borderBottom: '1px solid #f1f5f9',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52' }}>
+              {client.name}
+              {client.payment_terms && (
+                <span style={{ marginInlineStart: 8, fontSize: 11, color: '#6b7280', fontWeight: 500 }}>
+                  ({client.payment_terms})
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>
-              {client.invoices.length} חשבוניות פתוחות
-              {client.phone && ` · 📞 ${client.phone}`}
-              {client.oldest_due_date && ` · 📅 פירעון: ${formatDate(client.oldest_due_date)}`}
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
+              חשבונית #{inv.doc_num} · הוצאה {formatDate(inv.doc_date)} · פירעון {formatDate(inv.doc_payment_date)}
+              {isOverdue && (
+                <span style={{ marginInlineStart: 8, color: '#dc2626', fontWeight: 700 }}>
+                  · איחור {inv.daysOverdue} ימים
+                </span>
+              )}
+              {!isOverdue && inv.daysAway !== undefined && (
+                <span style={{ marginInlineStart: 8, color: inv.daysAway <= 7 ? '#f59e0b' : '#3b82f6', fontWeight: 600 }}>
+                  · בעוד {inv.daysAway} ימים
+                </span>
+              )}
             </div>
           </div>
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#1E3A52' }}>
-              {fmtCurrency(client.total_debt)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#1E3A52' }}>
+              {fmtCurrency(inv.doc_balance)}
             </div>
-            {client.max_days_overdue > 0 && (
-              <div style={{
-                display: 'inline-block',
-                marginTop: 4,
-                padding: '2px 10px',
-                borderRadius: 12,
-                fontSize: 11,
-                fontWeight: 700,
-                background: urgency === 'urgent' ? '#fef2f2' : urgency === 'medium' ? '#fffbeb' : '#f0fdf4',
-                color: urgency === 'urgent' ? '#dc2626' : urgency === 'medium' ? '#a16207' : '#15803d',
-              }}>
-                {client.max_days_overdue} ימים באיחור
-              </div>
-            )}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => setActionModal({ customer: client, type: 'called' })}
+                title="התקשרתי" style={miniBtn('#3b82f6')}>📞</button>
+              <button onClick={() => handleSendEmail(client, isOverdue ? 'inquiry' : 'reminder')}
+                title={isOverdue ? 'בקש בירור' : 'תזכורת'} style={miniBtn(isOverdue ? '#dc2626' : '#8b5cf6')}>📧</button>
+              <button onClick={() => setActionModal({ customer: client, type: 'promised_to_pay' })}
+                title="הבטיח לשלם" style={miniBtn('#f59e0b')}>🤝</button>
+              <button onClick={() => setActionModal({ customer: client, type: 'paid_transfer' })}
+                title="שולם" style={miniBtn('#10b981')}>💰</button>
+            </div>
           </div>
-        </div>
-
-        {/* פעולה אחרונה */}
-        {lastAction && (
-          <div style={{
-            background: '#f9fafb', padding: 8, borderRadius: 6, marginBottom: 10,
-            fontSize: 12, color: '#4b5563',
-          }}>
-            {DEBT_ACTION_TYPES[lastAction.action_type]?.emoji} 
-            <strong> {DEBT_ACTION_TYPES[lastAction.action_type]?.label}</strong>
-            {' · '}{formatDate(lastAction.created_at)}
-            {lastAction.notes && ` · ${lastAction.notes}`}
-            {lastAction.promised_date && ` · הבטיח: ${formatDate(lastAction.promised_date)}`}
-          </div>
-        )}
-
-        {/* כפתורי פעולה */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {Object.entries(DEBT_ACTION_TYPES).map(([type, info]) => (
-            <button
-              key={type}
-              onClick={() => setActionModal({ customer: client, type })}
-              style={actionBtnStyle(info.color)}
-              title={info.label}
-            >
-              {info.emoji}
-            </button>
-          ))}
-          <button
-            onClick={() => openInBina(client.bina_customer_id)}
-            style={{ ...actionBtnStyle('#6366f1'), marginInlineStart: 'auto' }}
-            title="פתח בבינה"
-          >
-            🔗 #{client.bina_customer_id}
-          </button>
         </div>
       </div>
     );
   };
 
+  const miniBtn = (color) => ({
+    padding: '6px 10px', border: `1px solid ${color}40`,
+    borderRadius: 6, background: '#fff', color, cursor: 'pointer',
+    fontSize: 13, fontFamily: 'inherit', transition: 'all 0.15s',
+  });
+
   // ---------- Render ----------
   return (
     <div style={wrapStyle}>
       <div style={headerStyle}>
-        <div style={titleStyle}>
-          💰 דשבורד גבייה
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button onClick={handleRefresh} disabled={refreshing} style={{
-            padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-            background: '#fff', color: '#3DB5B1', border: '1px solid #e5e7eb',
-            cursor: refreshing ? 'wait' : 'pointer', fontFamily: 'inherit',
-            opacity: refreshing ? 0.6 : 1,
-          }}>
-            {refreshing ? '⏳ מרענן...' : '🔄 רענן דוח חייבים'}
-          </button>
-        </div>
-      </div>
-
-      {/* תזכורות */}
-      {pendingReminders.length > 0 && (
-        <div style={{
-          background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-          padding: 16, borderRadius: 12, marginBottom: 16,
-          border: '2px solid #f59e0b',
+        <div style={titleStyle}>💰 דשבורד גבייה</div>
+        <button onClick={handleRefresh} disabled={refreshing} style={{
+          padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+          background: '#fff', color: '#3DB5B1', border: '1px solid #e5e7eb',
+          cursor: refreshing ? 'wait' : 'pointer', fontFamily: 'inherit',
+          opacity: refreshing ? 0.6 : 1,
         }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
-            ⏰ תזכורות לפעולה ({pendingReminders.length})
-          </div>
-          {pendingReminders.slice(0, 5).map(r => (
-            <div key={r.id} style={{ fontSize: 13, marginBottom: 4 }}>
-              <strong>{r.client_name || `לקוח #${r.bina_customer_id}`}</strong>
-              {' - '}הבטיח לשלם ב-{formatDate(r.promised_date)}
-              {r.promised_amount && ` (${fmtCurrency(r.promised_amount)})`}
-              {' · '}<span style={{ color: '#dc2626' }}>תזכורת מ-{formatDate(r.remind_at)}</span>
-            </div>
-          ))}
-        </div>
-      )}
+          {refreshing ? '⏳ מרענן...' : '🔄 רענן דוח'}
+        </button>
+      </div>
 
       {/* KPIs */}
       <div style={kpisRow}>
         <div style={kpiCard('#dc2626', '#fef2f2')}>
-          <div style={kpiValue('#dc2626')}>{fmtCurrency(totalDebt)}</div>
-          <div style={kpiLabel}>💰 חוב פתוח כולל</div>
+          <div style={kpiValue('#dc2626')}>{fmtCurrency(totalOverdue)}</div>
+          <div style={kpiLabel}>🔥 חוב בעבר (לתשלום עכשיו)</div>
         </div>
         <div style={kpiCard('#f59e0b', '#fffbeb')}>
-          <div style={kpiValue('#f59e0b')}>{fmtCurrency(totalOverdue)}</div>
-          <div style={kpiLabel}>🔴 חוב באיחור</div>
+          <div style={kpiValue('#f59e0b')}>{fmtCurrency(totalThisWeek)}</div>
+          <div style={kpiLabel}>📅 השבוע (7 ימים)</div>
         </div>
         <div style={kpiCard('#3b82f6', '#eff6ff')}>
-          <div style={kpiValue('#3b82f6')}>{totalClients}</div>
-          <div style={kpiLabel}>👥 לקוחות חייבים</div>
+          <div style={kpiValue('#3b82f6')}>{fmtCurrency(totalThisMonth)}</div>
+          <div style={kpiLabel}>📆 החודש (30 ימים)</div>
         </div>
         <div style={kpiCard('#9333ea', '#faf5ff')}>
-          <div style={kpiValue('#9333ea')}>{oldestDebt}</div>
-          <div style={kpiLabel}>⏰ החוב הוותיק ביותר (ימים)</div>
+          <div style={kpiValue('#9333ea')}>{totalClients}</div>
+          <div style={kpiLabel}>👥 לקוחות חייבים</div>
         </div>
       </div>
 
-      {/* חלוקה לפי גיל */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>📊 חלוקה לפי גיל החוב</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {ageData.map((r, idx) => {
-            const pct = totalDebt > 0 ? (r.amount / totalDebt) * 100 : 0;
-            return (
-              <div key={idx}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13 }}>
-                  <span style={{ fontWeight: 600, color: '#1E3A52' }}>
-                    {r.label} ({r.count} לקוחות)
+      {/* קטגוריית עבר - לפי חודשים */}
+      {overdueByMonth.length > 0 && (
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#dc2626', margin: '24px 0 12px' }}>
+            🔥 דחוף - חוב באיחור (לפי חודש פירעון)
+          </h3>
+          {overdueByMonth.map(month => (
+            <details key={month.key} style={sectionCard} open={overdueByMonth.indexOf(month) < 2}>
+              <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #fef2f2, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>📅 {month.label}</span>
+                  <span style={{ background: '#dc2626', color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>
+                    {month.invoices.length} חשבוניות
                   </span>
-                  <span style={{ fontWeight: 700, color: r.color }}>
-                    {fmtCurrency(r.amount)} ({fmtPct(pct)})
-                  </span>
+                  <span style={{ color: '#dc2626', fontWeight: 700 }}>{fmtCurrency(month.total)}</span>
                 </div>
-                <div style={{ width: '100%', height: 10, background: '#f1f5f9', borderRadius: 999, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${pct}%`, height: '100%',
-                    background: `linear-gradient(90deg, ${r.color}, ${r.color}dd)`,
-                    transition: 'width 0.5s ease',
-                  }} />
-                </div>
+                <button onClick={(e) => { e.preventDefault(); printMonthlyReport(month); }} 
+                  style={{ padding: '6px 12px', background: '#fff', border: '1px solid #dc2626', borderRadius: 6, color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  🖨️ הדפס רשימה
+                </button>
+              </summary>
+              <div>
+                {month.invoices.map(renderInvoiceRow)}
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* דורש פעולה דחופה (60+ ימים) */}
-      {urgentClients.length > 0 && (
-        <div style={sectionCard}>
-          <div style={sectionTitle}>
-            🔥 דורש פעולה דחופה (חוב 60+ ימים)
-            <span style={{
-              background: '#dc2626', color: '#fff',
-              padding: '2px 10px', borderRadius: 12,
-              fontSize: 13, fontWeight: 700, marginInlineStart: 8,
-            }}>
-              {urgentClients.length}
-            </span>
-          </div>
-          {urgentClients.map(c => renderClientCard(c, 'urgent'))}
+            </details>
+          ))}
         </div>
       )}
 
-      {/* רמה בינונית (30-60 ימים) */}
-      {mediumClients.length > 0 && (
-        <div style={sectionCard}>
-          <div style={sectionTitle}>
-            ⚠️ לב לפעולה (חוב 30-60 ימים)
-            <span style={{
-              background: '#f59e0b', color: '#fff',
-              padding: '2px 10px', borderRadius: 12,
-              fontSize: 13, fontWeight: 700, marginInlineStart: 8,
-            }}>
-              {mediumClients.length}
-            </span>
+      {/* השבוע */}
+      {thisWeekInvoices.length > 0 && (
+        <div>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', margin: '24px 0 12px' }}>
+            📅 השבוע - 7 ימים הקרובים
+          </h3>
+          <div style={sectionCard}>
+            <div style={sectionHeaderStyle('linear-gradient(135deg, #fffbeb, #fff)')}>
+              <span>{thisWeekInvoices.length} חשבוניות לפירעון</span>
+              <span style={{ color: '#f59e0b', fontWeight: 700 }}>{fmtCurrency(totalThisWeek)}</span>
+            </div>
+            {thisWeekInvoices.map(renderInvoiceRow)}
           </div>
-          {mediumClients.map(c => renderClientCard(c, 'medium'))}
         </div>
       )}
 
-      {/* חדש (0-30 ימים) */}
-      {recentClients.length > 0 && (
-        <details style={sectionCard}>
-          <summary style={{ ...sectionTitle, cursor: 'pointer' }}>
-            🟢 חוב חדש (0-30 ימים)
-            <span style={{
-              background: '#22c55e', color: '#fff',
-              padding: '2px 10px', borderRadius: 12,
-              fontSize: 13, fontWeight: 700, marginInlineStart: 8,
-            }}>
-              {recentClients.length}
+      {/* החודש */}
+      {thisMonthInvoices.length > 0 && (
+        <details style={{ ...sectionCard, marginTop: 24 }}>
+          <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #eff6ff, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
+            <span style={{ fontSize: 16, fontWeight: 700 }}>📆 החודש (8-30 ימים)</span>
+            <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ color: '#3b82f6' }}>{thisMonthInvoices.length} חשבוניות</span>
+              <span style={{ color: '#3b82f6', fontWeight: 700 }}>{fmtCurrency(totalThisMonth)}</span>
             </span>
           </summary>
-          <div style={{ marginTop: 12 }}>
-            {recentClients.map(c => renderClientCard(c, 'recent'))}
-          </div>
+          <div>{thisMonthInvoices.map(renderInvoiceRow)}</div>
         </details>
       )}
 
-      {totalClients === 0 && (
-        <div style={{ ...sectionCard, textAlign: 'center', padding: 40, color: '#9ca3af', border: '1px dashed #e5e7eb' }}>
-          🎉 אין לקוחות חייבים כרגע!<br/>
-          <small>הנתונים מתעדכנים אוטומטית כל לילה.</small>
+      {/* בקרוב */}
+      {soonInvoices.length > 0 && (
+        <details style={{ ...sectionCard, marginTop: 12 }}>
+          <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #f0fdf4, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
+            <span style={{ fontSize: 16, fontWeight: 700 }}>🟢 בקרוב (30-90 ימים)</span>
+            <span style={{ color: '#22c55e' }}>{soonInvoices.length} חשבוניות · {fmtCurrency(soonInvoices.reduce((s,i)=>s+Number(i.doc_balance),0))}</span>
+          </summary>
+          <div>{soonInvoices.map(renderInvoiceRow)}</div>
+        </details>
+      )}
+
+      {clientsWithInvoices.length === 0 && (
+        <div style={{ background: '#fff', padding: 40, borderRadius: 12, textAlign: 'center', color: '#9ca3af', border: '1px dashed #e5e7eb' }}>
+          🎉 אין לקוחות חייבים כרגע!
         </div>
       )}
 
-      {/* Modal לפעולה */}
+      {/* Modals */}
       {actionModal && (
         <DebtActionModal
           customer={actionModal.customer}
@@ -2770,13 +2764,257 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
           collectorName={collectorName}
         />
       )}
+
+      {emailModal && (
+        <EmailModal
+          client={emailModal.client}
+          mode={emailModal.mode}
+          emailType={emailModal.emailType}
+          pendingType={emailModal.pendingType}
+          onClose={() => setEmailModal(null)}
+          onSendEmail={sendEmail}
+          onSaveAndSend={async (emails, typeToSend) => {
+            // שמירת מיילים ב-DB
+            await sb(`clients?id=eq.${emailModal.client.client_id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                collection_email_primary: emails.primary,
+                collection_email_secondary: emails.secondary || null,
+              }),
+            });
+            // עדכון מקומי
+            emailModal.client.collection_email_primary = emails.primary;
+            emailModal.client.collection_email_secondary = emails.secondary;
+            // שליחה
+            if (typeToSend) {
+              await sendEmail(emailModal.client, typeToSend);
+            }
+            setEmailModal(null);
+            if (onDebtReload) onDebtReload();
+          }}
+          sb={sb}
+        />
+      )}
+
+      {printMonth && (
+        <MonthlyPrintReport month={printMonth} onClose={() => setPrintMonth(null)} />
+      )}
     </div>
   );
 }
 
 // ========================================
-// Modal לרישום פעולת מעקב
+// Modal לניהול מיילים + שליחה
 // ========================================
+function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail, onSaveAndSend, sb }) {
+  const [primary, setPrimary] = useState(client.collection_email_primary || '');
+  const [secondary, setSecondary] = useState(client.collection_email_secondary || '');
+  const [saving, setSaving] = useState(false);
+
+  const isAddMode = mode === 'addEmail';
+  const isConfirmMode = mode === 'confirmSend';
+
+  const overlayStyle = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+    zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  };
+  const modalStyle = {
+    background: '#fff', borderRadius: 16, maxWidth: 500, width: '100%',
+    direction: 'rtl', overflow: 'hidden',
+  };
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', fontSize: 14,
+    border: '1px solid #e5e7eb', borderRadius: 8, fontFamily: 'inherit',
+    boxSizing: 'border-box', marginBottom: 12, direction: 'ltr', textAlign: 'left',
+  };
+  const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 };
+
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={modalStyle} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', background: '#faf5ff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#1E3A52' }}>
+                {isAddMode ? '➕ הוסף מייל לגבייה' : '📧 אישור שליחה'}
+              </div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{client.name}</div>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#9ca3af' }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          {isAddMode && (
+            <>
+              <div style={{ background: '#fffbeb', padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: '#78350f' }}>
+                ⚠️ אין כתובת מייל לגבייה ללקוח זה. הוסף וננסה לשלוח שוב.
+              </div>
+              <label style={labelStyle}>📧 מייל ראשי לגבייה *</label>
+              <input type="email" value={primary} onChange={e => setPrimary(e.target.value)}
+                placeholder="primary@company.com" style={inputStyle} />
+              
+              <label style={labelStyle}>📧 מייל נוסף (אופציונלי)</label>
+              <input type="email" value={secondary} onChange={e => setSecondary(e.target.value)}
+                placeholder="secondary@company.com" style={inputStyle} />
+              
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                💾 כתובות אלה יישמרו ויהיו זמינות גם בעתיד
+              </div>
+            </>
+          )}
+
+          {isConfirmMode && (
+            <>
+              <p style={{ fontSize: 14, color: '#1E3A52', lineHeight: 1.7 }}>
+                האם לשלוח <strong>{emailType === 'inquiry' ? 'בקשת בירור' : 'תזכורת תשלום'}</strong> עם <strong>{client.invoices.length} חשבוניות</strong>?
+              </p>
+              <div style={{ background: '#f0fdfa', padding: 12, borderRadius: 8, marginTop: 12, fontSize: 13 }}>
+                <strong>נמענים:</strong><br/>
+                📧 {client.collection_email_primary}
+                {client.collection_email_secondary && <><br/>📧 {client.collection_email_secondary}</>}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: 16, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} disabled={saving} style={{
+            padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+            background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb',
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>ביטול</button>
+          <button onClick={async () => {
+            setSaving(true);
+            if (isAddMode) {
+              if (!primary) { alert('חובה למלא לפחות מייל ראשי'); setSaving(false); return; }
+              await onSaveAndSend({ primary, secondary }, pendingType);
+            } else {
+              await onSendEmail(client, emailType);
+              onClose();
+            }
+            setSaving(false);
+          }} disabled={saving} style={{
+            padding: '10px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700,
+            background: emailType === 'inquiry' ? '#dc2626' : '#3DB5B1', color: '#fff', border: 'none',
+            cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit',
+            opacity: saving ? 0.6 : 1,
+          }}>
+            {saving ? '⏳ שולח...' : (isAddMode ? '💾 שמור ושלח' : '📤 שלח')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// הדפסת רשימה חודשית
+// ========================================
+function MonthlyPrintReport({ month, onClose }) {
+  useEffect(() => {
+    // אוטופן של חלון הדפסה
+    setTimeout(() => {
+      window.print();
+    }, 300);
+  }, []);
+
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2 })}`;
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
+
+  const overlayStyle = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    zIndex: 10000, overflow: 'auto', padding: '20px',
+  };
+
+  return (
+    <>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #monthly-print-area, #monthly-print-area * { visibility: visible; }
+          #monthly-print-area { position: absolute; left: 0; top: 0; width: 100%; }
+          .no-print-btn { display: none !important; }
+        }
+      `}</style>
+      <div style={overlayStyle} className="no-print-btn" onClick={onClose}>
+        <div onClick={e => e.stopPropagation()} style={{
+          background: '#fff', maxWidth: 900, margin: '0 auto', borderRadius: 8,
+          direction: 'rtl', padding: 0, overflow: 'hidden',
+        }}>
+          <div style={{ padding: 12, background: '#1E3A52', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="no-print-btn">
+            <span style={{ fontWeight: 700 }}>תצוגה לפני הדפסה</span>
+            <div>
+              <button onClick={() => window.print()} style={{
+                padding: '6px 14px', borderRadius: 6, background: '#3DB5B1', color: '#fff',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, marginInlineEnd: 8,
+              }}>🖨️ הדפס</button>
+              <button onClick={onClose} style={{
+                padding: '6px 14px', borderRadius: 6, background: '#fff', color: '#1E3A52',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+              }}>✕ סגור</button>
+            </div>
+          </div>
+          
+          <div id="monthly-print-area" style={{ padding: '30px 40px', fontFamily: 'Arial, sans-serif' }}>
+            <div style={{ borderBottom: '3px solid #3DB5B1', paddingBottom: 16, marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: '#1E3A52', letterSpacing: 2 }}>NATALIE</div>
+                <div style={{ fontSize: 13, color: '#3DB5B1', fontWeight: 600 }}>פתרונות הדפסה</div>
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 11, color: '#3DB5B1', textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>רשימת גבייה</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: '#1E3A52' }}>{month.label}</div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>הופק: {new Date().toLocaleDateString('he-IL')}</div>
+              </div>
+            </div>
+            
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#1E3A52', color: '#fff' }}>
+                  <th style={{ padding: 10, textAlign: 'center' }}>#</th>
+                  <th style={{ padding: 10, textAlign: 'right' }}>לקוח</th>
+                  <th style={{ padding: 10, textAlign: 'center' }}>חשבונית</th>
+                  <th style={{ padding: 10, textAlign: 'center' }}>פירעון</th>
+                  <th style={{ padding: 10, textAlign: 'center' }}>איחור</th>
+                  <th style={{ padding: 10, textAlign: 'right' }}>איש קשר / טלפון</th>
+                  <th style={{ padding: 10, textAlign: 'left' }}>סכום</th>
+                </tr>
+              </thead>
+              <tbody>
+                {month.invoices.map((inv, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', background: idx % 2 ? '#f8fafa' : '#fff' }}>
+                    <td style={{ padding: 10, textAlign: 'center', color: '#6b7280' }}>{idx + 1}</td>
+                    <td style={{ padding: 10, fontWeight: 600, color: '#1E3A52' }}>
+                      {inv.client.name}
+                      {inv.client.payment_terms && <div style={{ fontSize: 10, color: '#6b7280' }}>{inv.client.payment_terms}</div>}
+                    </td>
+                    <td style={{ padding: 10, textAlign: 'center' }}>#{inv.doc_num}</td>
+                    <td style={{ padding: 10, textAlign: 'center' }}>{formatDate(inv.doc_payment_date)}</td>
+                    <td style={{ padding: 10, textAlign: 'center', color: '#dc2626', fontWeight: 700 }}>{inv.daysOverdue} ימים</td>
+                    <td style={{ padding: 10, fontSize: 11, color: '#6b7280' }}>
+                      {inv.client.contact_name || '—'}<br/>{inv.client.phone || ''}
+                    </td>
+                    <td style={{ padding: 10, textAlign: 'left', fontWeight: 700, color: '#1E3A52' }}>{fmtCurrency(inv.doc_balance)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: '#3DB5B1', color: '#fff', fontWeight: 700 }}>
+                  <td colSpan="6" style={{ padding: 14, textAlign: 'right', fontSize: 14 }}>סה"כ {month.invoices.length} חשבוניות:</td>
+                  <td style={{ padding: 14, textAlign: 'left', fontSize: 16 }}>{fmtCurrency(month.total)}</td>
+                </tr>
+              </tbody>
+            </table>
+            
+            <div style={{ marginTop: 30, paddingTop: 16, borderTop: '2px solid #3DB5B1', textAlign: 'center', color: '#6b7280', fontSize: 11 }}>
+              <strong style={{ color: '#1E3A52' }}>נטלי פתרונות הדפסה בע"מ</strong> | ח.פ. 517205332 | שד' הר ציון 104, תל אביב | 03-6815703
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collectorName }) {
   const info = DEBT_ACTION_TYPES[actionType];
   const [notes, setNotes] = useState('');
@@ -3084,7 +3322,7 @@ function App(){
     try{
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,d,q,ds]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([]),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null)]);
+      const [t,c,d,q,ds]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary&order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([]),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null)]);
       setTasks(t);setClients(c);setDebt(d);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);

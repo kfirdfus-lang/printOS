@@ -3102,7 +3102,7 @@ function MonthlyPrintReport({ month, onClose }) {
                       {inv.client.payment_terms && <div style={{ fontSize: 10, color: '#6b7280' }}>{inv.client.payment_terms}</div>}
                     </td>
                     <td style={{ padding: 10, textAlign: 'center' }}>#{inv.doc_num}</td>
-                    <td style={{ padding: 10, textAlign: 'center' }}>{formatDate(inv.doc_payment_date)}</td>
+                    <td style={{ padding: 10, textAlign: 'center' }}>{formatDate(inv.calculated_due_date || inv.doc_payment_date)}</td>
                     <td style={{ padding: 10, textAlign: 'center', color: '#dc2626', fontWeight: 700 }}>{inv.daysOverdue} ימים</td>
                     <td style={{ padding: 10, fontSize: 11, color: '#6b7280' }}>
                       {inv.client.contact_name || '—'}<br/>{inv.client.phone || ''}

@@ -2345,6 +2345,116 @@ const DEBT_ACTION_TYPES = {
   debt_lost: { emoji: '❌', label: 'חוב אבוד', color: '#dc2626' },
 };
 
+// ============================================================
+// 🎯 חישוב תאריך פירעון לפי תנאי תשלום
+// ============================================================
+function endOfMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function calculateDueDate(invoiceDate, paymentTerms) {
+  if (!invoiceDate || !paymentTerms) return null;
+  
+  const invDate = invoiceDate instanceof Date ? invoiceDate : new Date(invoiceDate);
+  if (isNaN(invDate.getTime())) return null;
+  
+  // נורמליזציה של תנאי התשלום
+  const pt = String(paymentTerms).replace(/\s/g, '').replace('שוטף+', '').trim();
+  
+  // תנאים מיידיים - יום ההוצאה
+  const immediateTerms = [
+    'אשראי', 'מיידי', 'תשלוםמידבהוצאתהחשבונית',
+    'העברהבהוצאתהחשבונית', "צ'קבהוצאתהחשבונית",
+    'תשלוםבהוצאתהחשבונית'
+  ];
+  if (immediateTerms.includes(pt)) {
+    return new Date(invDate);
+  }
+  
+  const n = parseInt(pt, 10);
+  if (isNaN(n)) return null;
+  
+  // שוטף = סוף החודש של החשבונית
+  const endInvMonth = endOfMonth(invDate);
+  
+  const fullMonths = Math.floor(n / 30);
+  const remainder = n % 30;
+  
+  if (remainder === 0) {
+    // 30, 60, 90, 120 → היום האחרון של החודש המתאים
+    const year = endInvMonth.getFullYear();
+    let month = endInvMonth.getMonth() + fullMonths;
+    let yearAdj = year;
+    while (month > 11) { month -= 12; yearAdj += 1; }
+    return endOfMonth(new Date(yearAdj, month, 1));
+  } else {
+    // יש שארית - נחשב יום גולמי ואז נתעגל
+    const rawDate = new Date(endInvMonth);
+    rawDate.setDate(rawDate.getDate() + n);
+    
+    const rightDigit = n % 10;
+    let day;
+    
+    if (rightDigit === 5) {
+      day = 15;
+    } else if (rightDigit === 0) {
+      // 100 → היום ה-10
+      day = remainder;
+    } else {
+      day = rightDigit;
+    }
+    
+    const result = new Date(rawDate.getFullYear(), rawDate.getMonth(), day);
+    // אם היום לא קיים בחודש (לדוגמה 30 בפברואר) → לוקחים את היום האחרון
+    if (result.getMonth() !== rawDate.getMonth()) {
+      return endOfMonth(rawDate);
+    }
+    return result;
+  }
+}
+
+// ============================================================
+// 📊 ייצוא Excel/CSV
+// ============================================================
+function exportMonthToCSV(month) {
+  const fmtCurrency = (n) => Number(n || 0).toFixed(2);
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
+  
+  // BOM ל-UTF-8 כדי שעברית תעבוד באקסל
+  let csv = '\uFEFF';
+  csv += 'מס,לקוח,תנאי תשלום,חשבונית,תאריך הוצאה,תאריך פירעון,ימי איחור,איש קשר,טלפון,סכום\n';
+  
+  month.invoices.forEach((inv, idx) => {
+    const client = inv.client;
+    const row = [
+      idx + 1,
+      `"${client.name.replace(/"/g, '""')}"`,
+      `"${client.payment_terms || ''}"`,
+      `#${inv.doc_num}`,
+      formatDate(inv.doc_date),
+      formatDate(inv.calculated_due_date),
+      inv.daysOverdue || 0,
+      `"${client.contact_name || ''}"`,
+      `"${client.phone || ''}"`,
+      fmtCurrency(inv.doc_balance),
+    ];
+    csv += row.join(',') + '\n';
+  });
+  
+  csv += `\n,,,,,,,,,סה״כ:,${fmtCurrency(month.total)}\n`;
+  
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `רשימת_גביה_${month.label.replace(/\s+/g, '_')}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
 function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtReload, collectorName }) {
   const [refreshing, setRefreshing] = useState(false);
   const [actions, setActions] = useState([]);
@@ -2365,7 +2475,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
   today.setHours(0, 0, 0, 0);
   const todayMs = today.getTime();
 
-  // ---------- בניית מבנה הנתונים ----------
+  // מפת לקוחות
   const clientsMap = useMemo(() => {
     const map = new Map();
     for (const c of (allClients || [])) {
@@ -2376,7 +2486,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return map;
   }, [allClients]);
 
-  // קיבוץ חשבוניות לפי לקוח + תוספת נתונים
+  // בניית רשימת הלקוחות עם חשבוניות + חישוב תאריך פירעון נכון
   const clientsWithInvoices = useMemo(() => {
     const map = new Map();
     for (const d of (debtSnapshots || [])) {
@@ -2401,27 +2511,36 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         });
       }
       const c = map.get(key);
-      c.invoices.push(d);
+      
+      // 🎯 חישוב תאריך פירעון לפי תנאי תשלום מטבלת clients (לא מבינה!)
+      const calculatedDueDate = c.payment_terms 
+        ? calculateDueDate(d.doc_date, c.payment_terms)
+        : (d.doc_payment_date ? new Date(d.doc_payment_date) : null);
+      
+      c.invoices.push({ 
+        ...d, 
+        calculated_due_date: calculatedDueDate 
+      });
       c.total_debt += Number(d.doc_balance);
     }
     
-    // מיון חשבוניות בכל לקוח
+    // מיון חשבוניות בכל לקוח לפי תאריך פירעון מחושב
     for (const c of map.values()) {
       c.invoices.sort((a, b) => {
-        const ta = a.doc_payment_date ? new Date(a.doc_payment_date).getTime() : 0;
-        const tb = b.doc_payment_date ? new Date(b.doc_payment_date).getTime() : 0;
-        return ta - tb;
+        const da = a.calculated_due_date ? a.calculated_due_date.getTime() : 0;
+        const db = b.calculated_due_date ? b.calculated_due_date.getTime() : 0;
+        return da - db;
       });
     }
     
     return Array.from(map.values());
   }, [debtSnapshots, clientsMap]);
 
-  // ---------- קטגוריזציה של חשבוניות ----------
+  // קטגוריזציה לפי תאריך הפירעון המחושב
   const categorizeInvoice = (inv) => {
-    if (!inv.doc_payment_date) return { type: "future", daysAway: 99999 };
-    const dueDate = new Date(inv.doc_payment_date);
-    if (Number.isNaN(dueDate.getTime())) return { type: "future", daysAway: 99999 };
+    if (!inv.calculated_due_date) return { type: 'future', daysAway: 999 };
+    
+    const dueDate = new Date(inv.calculated_due_date);
     dueDate.setHours(0, 0, 0, 0);
     const dueMs = dueDate.getTime();
     const daysFromToday = Math.floor((dueMs - todayMs) / 86400000);
@@ -2433,9 +2552,9 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return { type: 'future', daysAway: daysFromToday };
   };
 
-  // קיבוץ עבר - לפי חודש
+  // קיבוץ עבר לפי חודש פירעון מחושב
   const overdueByMonth = useMemo(() => {
-    const map = new Map(); // monthKey -> { label, year, month, invoices, total }
+    const map = new Map();
     
     for (const client of clientsWithInvoices) {
       for (const inv of client.invoices) {
@@ -2463,7 +2582,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return Array.from(map.values()).sort((a, b) => a.sortKey - b.sortKey);
   }, [clientsWithInvoices]);
 
-  // השבוע / החודש / בקרוב
   const thisWeekInvoices = useMemo(() => {
     const list = [];
     for (const client of clientsWithInvoices) {
@@ -2497,29 +2615,26 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return list.sort((a, b) => a.daysAway - b.daysAway);
   }, [clientsWithInvoices]);
 
-  // ---------- KPIs ----------
   const totalOverdue = overdueByMonth.reduce((s, m) => s + m.total, 0);
   const totalThisWeek = thisWeekInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
   const totalThisMonth = thisMonthInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
   const totalClients = clientsWithInvoices.length;
 
-  // ---------- פעולות ----------
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
       const { error } = await supabaseClient.functions.invoke("bina-fetch-debt-report", { body: {} });
       if (error) throw error;
       await new Promise((r) => setTimeout(r, 1500));
-      if (typeof onDebtReload === "function") await onDebtReload();
+      if (onDebtReload) await onDebtReload();
     } catch (e) {
-      alert("שגיאה ברענון: " + (e && e.message ? e.message : String(e)));
+      alert('שגיאה ברענון: ' + (e.message || e));
     } finally {
       setRefreshing(false);
     }
   };
 
   const handleSendEmail = (client, emailType) => {
-    // אם אין מייל - לפתוח דיאלוג להוסיף מייל
     if (!client.collection_email_primary) {
       setEmailModal({ client, mode: 'addEmail', pendingType: emailType });
       return;
@@ -2529,50 +2644,55 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
 
   const sendEmail = async (client, emailType) => {
     try {
-      const { data, error } = await supabaseClient.functions.invoke("send-collection-email", {
+      // עדכון החשבוניות עם תאריך הפירעון המחושב לפני שליחה
+      const invoicesForEmail = client.invoices.map(inv => ({
+        doc_num: inv.doc_num,
+        doc_balance: inv.doc_balance,
+        doc_date: inv.doc_date,
+        doc_payment_date: inv.calculated_due_date 
+          ? inv.calculated_due_date.toISOString().split('T')[0]
+          : inv.doc_payment_date,
+        days_overdue: inv.calculated_due_date 
+          ? Math.max(0, Math.floor((todayMs - inv.calculated_due_date.getTime()) / 86400000))
+          : 0,
+      }));
+      
+      const { data, error } = await supabaseClient.functions.invoke('send-collection-email', {
         body: {
           bina_customer_id: client.bina_customer_id,
           email_type: emailType,
-          invoices: client.invoices.map((inv) => ({
-            doc_num: inv.doc_num,
-            doc_balance: inv.doc_balance,
-            doc_date: inv.doc_date,
-            doc_payment_date: inv.doc_payment_date,
-            days_overdue: inv.days_overdue || 0,
-          })),
+          invoices: invoicesForEmail,
         },
       });
-      if (error) throw error;
-      if (!data || !data.success) {
-        alert("❌ שגיאה: " + (data && data.error ? data.error : "לא ידוע"));
+      
+      if (error || !data?.success) {
+        alert(`❌ שגיאה: ${data?.error || error?.message || 'לא ידוע'}`);
         return false;
       }
-      alert("✅ נשלח ל-" + data.sent_to.join(", ") + "\nסכום: ₪" + Number(data.total_amount).toLocaleString("he-IL"));
+      
+      alert(`✅ נשלח ל-${data.sent_to.join(', ')}\nסכום: ₪${Number(data.total_amount).toLocaleString('he-IL')}`);
       return true;
     } catch (e) {
-      alert("שגיאה: " + (e && e.message ? e.message : String(e)));
+      alert('שגיאה: ' + e.message);
       return false;
     }
   };
 
-  const printMonthlyReport = (month) => {
-    setPrintMonth(month);
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const formatDate = (d) => {
+    if (!d) return '';
+    const date = d instanceof Date ? d : new Date(d);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('he-IL');
   };
 
-  // ---------- פורמטים ----------
-  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
-
-  // ---------- סטיילים ----------
   const wrapStyle = { direction: 'rtl', padding: 16, background: '#f8fafa', minHeight: 'calc(100vh - 56px)' };
   const titleStyle = { fontSize: 24, fontWeight: 800, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 10 };
   const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 };
-
   const kpisRow = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 };
   const kpiCard = (color, bg) => ({ background: bg, padding: 16, borderRadius: 12, border: `1px solid ${color}30` });
   const kpiValue = (color) => ({ fontSize: 26, fontWeight: 800, color, lineHeight: 1.1, marginBottom: 4 });
   const kpiLabel = { fontSize: 12, color: '#6b7280', fontWeight: 600 };
-
   const sectionCard = { background: '#fff', padding: 0, borderRadius: 12, marginBottom: 16, border: '1px solid #e5e7eb', overflow: 'hidden' };
   const sectionHeaderStyle = (bg, color) => ({
     padding: '16px 20px', background: bg, color: color || '#1E3A52',
@@ -2580,15 +2700,18 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     fontSize: 15, fontWeight: 700, gap: 10,
   });
 
-  // ---------- רינדור חשבונית בודדת ----------
+  const miniBtn = (color) => ({
+    padding: '6px 10px', border: `1px solid ${color}40`,
+    borderRadius: 6, background: '#fff', color, cursor: 'pointer',
+    fontSize: 13, fontFamily: 'inherit', transition: 'all 0.15s',
+  });
+
   const renderInvoiceRow = (inv) => {
     const client = inv.client;
     const isOverdue = inv.daysOverdue > 0;
     
     return (
-      <div key={`${client.bina_customer_id}-${inv.doc_num}`} style={{
-        padding: 14, borderBottom: '1px solid #f1f5f9',
-      }}>
+      <div key={`${client.bina_customer_id}-${inv.doc_num}`} style={{ padding: 14, borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52' }}>
@@ -2600,7 +2723,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
               )}
             </div>
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
-              חשבונית #{inv.doc_num} · הוצאה {formatDate(inv.doc_date)} · פירעון {formatDate(inv.doc_payment_date)}
+              חשבונית #{inv.doc_num} · הוצאה {formatDate(inv.doc_date)} · פירעון <strong style={{color:'#1E3A52'}}>{formatDate(inv.calculated_due_date)}</strong>
               {isOverdue && (
                 <span style={{ marginInlineStart: 8, color: '#dc2626', fontWeight: 700 }}>
                   · איחור {inv.daysOverdue} ימים
@@ -2633,13 +2756,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     );
   };
 
-  const miniBtn = (color) => ({
-    padding: '6px 10px', border: `1px solid ${color}40`,
-    borderRadius: 6, background: '#fff', color, cursor: 'pointer',
-    fontSize: 13, fontFamily: 'inherit', transition: 'all 0.15s',
-  });
-
-  // ---------- Render ----------
   return (
     <div style={wrapStyle}>
       <div style={headerStyle}>
@@ -2654,7 +2770,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </button>
       </div>
 
-      {/* KPIs */}
       <div style={kpisRow}>
         <div style={kpiCard('#dc2626', '#fef2f2')}>
           <div style={kpiValue('#dc2626')}>{fmtCurrency(totalOverdue)}</div>
@@ -2674,14 +2789,13 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </div>
       </div>
 
-      {/* קטגוריית עבר - לפי חודשים */}
       {overdueByMonth.length > 0 && (
         <div>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: '#dc2626', margin: '24px 0 12px' }}>
-            🔥 דחוף - חוב באיחור (לפי חודש פירעון)
+            🔥 דחוף - חוב באיחור (לפי חודש פירעון מחושב)
           </h3>
-          {overdueByMonth.map(month => (
-            <details key={month.key} style={sectionCard} open={overdueByMonth.indexOf(month) < 2}>
+          {overdueByMonth.map((month, idx) => (
+            <details key={month.key} style={sectionCard} open={idx < 2}>
               <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #fef2f2, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 16 }}>📅 {month.label}</span>
@@ -2690,20 +2804,23 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
                   </span>
                   <span style={{ color: '#dc2626', fontWeight: 700 }}>{fmtCurrency(month.total)}</span>
                 </div>
-                <button onClick={(e) => { e.preventDefault(); printMonthlyReport(month); }} 
-                  style={{ padding: '6px 12px', background: '#fff', border: '1px solid #dc2626', borderRadius: 6, color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  🖨️ הדפס רשימה
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={(e) => { e.preventDefault(); exportMonthToCSV(month); }} 
+                    style={{ padding: '6px 12px', background: '#fff', border: '1px solid #10b981', borderRadius: 6, color: '#10b981', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    📊 Excel
+                  </button>
+                  <button onClick={(e) => { e.preventDefault(); setPrintMonth(month); }} 
+                    style={{ padding: '6px 12px', background: '#fff', border: '1px solid #dc2626', borderRadius: 6, color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    🖨️ הדפס
+                  </button>
+                </div>
               </summary>
-              <div>
-                {month.invoices.map(renderInvoiceRow)}
-              </div>
+              <div>{month.invoices.map(renderInvoiceRow)}</div>
             </details>
           ))}
         </div>
       )}
 
-      {/* השבוע */}
       {thisWeekInvoices.length > 0 && (
         <div>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', margin: '24px 0 12px' }}>
@@ -2719,7 +2836,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </div>
       )}
 
-      {/* החודש */}
       {thisMonthInvoices.length > 0 && (
         <details style={{ ...sectionCard, marginTop: 24 }}>
           <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #eff6ff, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
@@ -2733,7 +2849,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </details>
       )}
 
-      {/* בקרוב */}
       {soonInvoices.length > 0 && (
         <details style={{ ...sectionCard, marginTop: 12 }}>
           <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #f0fdf4, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
@@ -2750,7 +2865,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </div>
       )}
 
-      {/* Modals */}
       {actionModal && (
         <DebtActionModal
           customer={actionModal.customer}
@@ -2774,7 +2888,6 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
           onClose={() => setEmailModal(null)}
           onSendEmail={sendEmail}
           onSaveAndSend={async (emails, typeToSend) => {
-            // שמירת מיילים ב-DB
             await sb(`clients?id=eq.${emailModal.client.client_id}`, {
               method: 'PATCH',
               body: JSON.stringify({
@@ -2782,10 +2895,8 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
                 collection_email_secondary: emails.secondary || null,
               }),
             });
-            // עדכון מקומי
             emailModal.client.collection_email_primary = emails.primary;
             emailModal.client.collection_email_secondary = emails.secondary;
-            // שליחה
             if (typeToSend) {
               await sendEmail(emailModal.client, typeToSend);
             }
@@ -2802,6 +2913,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     </div>
   );
 }
+
 
 // ========================================
 // Modal לניהול מיילים + שליחה

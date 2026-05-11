@@ -767,11 +767,10 @@ function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
         if(dept!=="כללי")taskPatch.dept=dept;
         const ag=(agent||"").trim();
         if(ag)taskPatch.assignee=ag;
-        if(Object.keys(taskPatch).length){
-          try{
-            await sb(`tasks?id=eq.${result.taskId}`,{method:"PATCH",body:JSON.stringify(taskPatch)});
-          }catch(e){console.warn("Failed to update task (dept/assignee):",e)}
-        }
+        taskPatch.sales_agent=ag||null;
+        try{
+          await sb(`tasks?id=eq.${result.taskId}`,{method:"PATCH",body:JSON.stringify(taskPatch)});
+        }catch(e){console.warn("Failed to update task (dept/assignee/sales_agent):",e)}
       }
       try{
         const addrStr=selectedClient.address||"";

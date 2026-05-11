@@ -28,6 +28,12 @@ interface ClientRecord {
   bina_customer_id: string;
 }
 
+interface TaskClientHint {
+  name: string;
+  address: string;
+  city: string;
+}
+
 // ---------- Helpers ----------
 
 /** ממיר תאריך מ-dd/MM/yyyy ל-yyyy-MM-dd (פורמט SQL) */
@@ -78,6 +84,39 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    const tasksClientMap = new Map<string, TaskClientHint>();
+    {
+      const pageSize = 1000;
+      let from = 0;
+      for (;;) {
+        const { data: taskPage, error: tasksMapErr } = await supabase
+          .from('tasks')
+          .select('bina_cust_id, client_name, bina_cust_address, bina_cust_city')
+          .not('bina_cust_id', 'is', null)
+          .not('client_name', 'is', null)
+          .range(from, from + pageSize - 1);
+
+        if (tasksMapErr) {
+          console.error('[debt-report] שגיאה בטעינת מפת לקוחות מ-tasks:', tasksMapErr.message);
+          break;
+        }
+        const rows = taskPage || [];
+        for (const t of rows) {
+          const key = String(t.bina_cust_id);
+          if (!tasksClientMap.has(key) && t.client_name) {
+            tasksClientMap.set(key, {
+              name: String(t.client_name).trim(),
+              address: (t.bina_cust_address && String(t.bina_cust_address)) || '',
+              city: (t.bina_cust_city && String(t.bina_cust_city)) || '',
+            });
+          }
+        }
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+      console.log(`[debt-report] טען ${tasksClientMap.size} לקוחות ממשימות היסטוריות`);
+    }
+
     // אופציה: לקוח ספציפי (אם נשלח בגוף הבקשה)
     let specificCustId: number | null = null;
     if (req.method === 'POST') {
@@ -126,6 +165,12 @@ Deno.serve(async (req) => {
     let binaDebts: BinaDebtRecord[];
     try {
       const parsed = JSON.parse(result.text);
+      // deno-lint-ignore no-explicit-any
+      const data: any = parsed;
+      console.log(
+        '[DEBUG-FIRST-RECORD]',
+        JSON.stringify(data[0] || data.Records?.[0] || data.Items?.[0] || data, null, 2).substring(0, 2000),
+      );
 
       // בדיקת שגיאה - בינה מחזירים גם array וגם object, וגם ResCode/resCode (case insensitive)
       const errorCheck = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -253,6 +298,79 @@ Deno.serve(async (req) => {
       }
     }
 
+    let createdClients = 0;
+    let foundInTasks = 0;
+
+    for (const [custId] of missingClients.entries()) {
+      if (clientsMap.has(custId)) continue;
+
+      const { data: existingRow } = await supabase
+        .from('clients')
+        .select('id, name, bina_customer_id')
+        .eq('bina_customer_id', custId)
+        .maybeSingle();
+
+      if (existingRow) {
+        clientsMap.set(custId, existingRow as ClientRecord);
+        continue;
+      }
+
+      const taskClient = tasksClientMap.get(custId);
+      const addrParts = [taskClient?.city, taskClient?.address].filter(Boolean);
+      const fullAddress = addrParts.length ? addrParts.join(', ') : (taskClient?.address || '');
+
+      const newClient = {
+        name: taskClient?.name || `לקוח #${custId}`,
+        bina_customer_id: String(custId),
+        address: fullAddress || null,
+        notes: taskClient
+          ? 'נוצר אוטומטית מדוח חייבים (שם ממשימה היסטורית)'
+          : 'נוצר אוטומטית מדוח חייבים - שם זמני',
+      };
+
+      const { data: insData, error: insErr } = await supabase
+        .from('clients')
+        .insert(newClient)
+        .select('id, name, bina_customer_id')
+        .maybeSingle();
+
+      if (!insErr && insData) {
+        createdClients++;
+        if (taskClient) foundInTasks++;
+        clientsMap.set(custId, {
+          id: insData.id,
+          name: insData.name,
+          bina_customer_id: String(insData.bina_customer_id ?? custId),
+        });
+      } else if (insErr) {
+        const dup =
+          insErr.code === '23505' ||
+          (insErr.message && /duplicate|unique/i.test(insErr.message));
+        if (dup) {
+          const { data: again } = await supabase
+            .from('clients')
+            .select('id, name, bina_customer_id')
+            .eq('bina_customer_id', custId)
+            .maybeSingle();
+          if (again) clientsMap.set(custId, again as ClientRecord);
+          else console.error(`[debt-report] שגיאה ביצירת לקוח ${custId} (כפילות ללא fetch):`, insErr.message);
+        } else {
+          console.error(`[debt-report] שגיאה ביצירת לקוח ${custId}:`, insErr.message);
+        }
+      }
+    }
+
+    for (const r of snapshotRecords) {
+      if (!r.client_exists_in_db && r.bina_customer_id) {
+        const c = clientsMap.get(r.bina_customer_id);
+        if (c) {
+          r.customer_name = c.name;
+          r.client_id = c.id;
+          r.client_exists_in_db = true;
+        }
+      }
+    }
+
     // --- שלב 4: שמירה ב-DB (upsert לפי snapshot_date + custId + docNum) ---
     if (snapshotRecords.length > 0) {
       // מוחקים את ה-snapshot של היום (אם קיים) ושמים מחדש
@@ -331,6 +449,8 @@ Deno.serve(async (req) => {
             .sort((a, b) => b.total_debt - a.total_debt)
             .slice(0, 20),
         },
+        created_clients: createdClients,
+        found_names_from_tasks: foundInTasks,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

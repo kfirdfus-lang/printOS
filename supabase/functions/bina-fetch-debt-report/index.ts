@@ -12,6 +12,7 @@ const corsHeaders = {
 };
 
 const BINA_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx';
+const ORDERS_QUERY_URL = 'https://webapps.binaw.com/PostJsonDocQuery.aspx';
 
 interface BinaDebtRecord {
   custId: number;
@@ -116,6 +117,7 @@ Deno.serve(async (req) => {
       }
       console.log(`[debt-report] טען ${tasksClientMap.size} לקוחות ממשימות היסטוריות`);
     }
+    const clientHintsFromTasksDb = new Set(tasksClientMap.keys());
 
     // אופציה: לקוח ספציפי (אם נשלח בגוף הבקשה)
     let specificCustId: number | null = null;
@@ -298,6 +300,68 @@ Deno.serve(async (req) => {
       }
     }
 
+    let namesFromHistoricalOrders = 0;
+    const missingIds = Array.from(missingClients.keys())
+      .map((id) => parseInt(id, 10))
+      .filter((n) => !Number.isNaN(n));
+    const missingIdSet = new Set(missingIds);
+
+    if (missingIds.length > 0) {
+      console.log(`[debt-report] מנסה למצוא שמות ל-${missingIds.length} לקוחות חסרים`);
+
+      const fromDate5y = new Date();
+      fromDate5y.setFullYear(fromDate5y.getFullYear() - 5);
+      const toDate6m = new Date();
+      toDate6m.setMonth(toDate6m.getMonth() + 6);
+
+      const ordersResult = await fetchBinaViaQuotaGuard(ORDERS_QUERY_URL, {
+        tokenId: token.trim(),
+        docType: -15,
+        fromDate: fromDate5y.toISOString().split('T')[0],
+        toDate: toDate6m.toISOString().split('T')[0],
+      });
+
+      if (ordersResult.ok) {
+        try {
+          const ordersData = JSON.parse(ordersResult.text) as Record<string, unknown> | unknown[];
+          const orders = Array.isArray(ordersData)
+            ? ordersData
+            : (Array.isArray((ordersData as Record<string, unknown>)?.Orders)
+              ? ((ordersData as Record<string, unknown>).Orders as unknown[])
+              : []);
+          console.log(`[debt-report] התקבלו ${orders.length} הזמנות היסטוריות מבינה`);
+
+          for (const order of orders) {
+            const o = order as Record<string, unknown>;
+            const rawId = o.custId ?? o.CustId;
+            if (rawId === undefined || rawId === null) continue;
+            const cid = String(rawId);
+            const n = parseInt(cid, 10);
+            if (!missingIdSet.has(n)) continue;
+
+            const custName = (o.custName ?? o.CustName) as string | undefined;
+            if (!custName || !String(custName).trim()) continue;
+
+            if (!tasksClientMap.has(cid)) {
+              tasksClientMap.set(cid, {
+                name: String(custName).trim(),
+                address: String(o.custAddress ?? o.CustAddress ?? '') || '',
+                city: String(o.custCity ?? o.CustCity ?? '') || '',
+              });
+              namesFromHistoricalOrders++;
+            }
+          }
+          console.log(
+            `[debt-report] נמצאו שמות מבינה (הזמנות היסטוריות) ל-${namesFromHistoricalOrders} לקוחות חסרים`,
+          );
+        } catch (e) {
+          console.error('[debt-report] שגיאה בפענוח הזמנות היסטוריות:', e);
+        }
+      } else {
+        console.warn('[debt-report] שאילתת הזמנות היסטורית נכשלה:', ordersResult.status);
+      }
+    }
+
     let createdClients = 0;
     let foundInTasks = 0;
 
@@ -336,7 +400,7 @@ Deno.serve(async (req) => {
 
       if (!insErr && insData) {
         createdClients++;
-        if (taskClient) foundInTasks++;
+        if (taskClient && clientHintsFromTasksDb.has(custId)) foundInTasks++;
         clientsMap.set(custId, {
           id: insData.id,
           name: insData.name,
@@ -451,6 +515,7 @@ Deno.serve(async (req) => {
         },
         created_clients: createdClients,
         found_names_from_tasks: foundInTasks,
+        names_from_historical_orders: namesFromHistoricalOrders,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

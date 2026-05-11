@@ -2346,7 +2346,7 @@ const DEBT_ACTION_TYPES = {
 };
 
 // ============================================================
-// 🎯 חישוב תאריך פירעון לפי תנאי תשלום
+// פונקציות עזר (זהות ל-V3)
 // ============================================================
 function endOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0);
@@ -2354,100 +2354,75 @@ function endOfMonth(date) {
 
 function calculateDueDate(invoiceDate, paymentTerms) {
   if (!invoiceDate || !paymentTerms) return null;
-  
   const invDate = invoiceDate instanceof Date ? invoiceDate : new Date(invoiceDate);
   if (isNaN(invDate.getTime())) return null;
   
-  // נורמליזציה של תנאי התשלום
   const pt = String(paymentTerms).replace(/\s/g, '').replace('שוטף+', '').trim();
-  
-  // תנאים מיידיים - יום ההוצאה
-  const immediateTerms = [
-    'אשראי', 'מיידי', 'תשלוםמידבהוצאתהחשבונית',
-    'העברהבהוצאתהחשבונית', "צ'קבהוצאתהחשבונית",
-    'תשלוםבהוצאתהחשבונית'
-  ];
-  if (immediateTerms.includes(pt)) {
-    return new Date(invDate);
-  }
+  const immediateTerms = ['אשראי', 'מיידי', 'תשלוםמידבהוצאתהחשבונית', 'העברהבהוצאתהחשבונית', "צ'קבהוצאתהחשבונית", 'תשלוםבהוצאתהחשבונית'];
+  if (immediateTerms.includes(pt)) return new Date(invDate);
   
   const n = parseInt(pt, 10);
   if (isNaN(n)) return null;
   
-  // שוטף = סוף החודש של החשבונית
   const endInvMonth = endOfMonth(invDate);
-  
   const fullMonths = Math.floor(n / 30);
   const remainder = n % 30;
   
   if (remainder === 0) {
-    // 30, 60, 90, 120 → היום האחרון של החודש המתאים
     const year = endInvMonth.getFullYear();
     let month = endInvMonth.getMonth() + fullMonths;
     let yearAdj = year;
     while (month > 11) { month -= 12; yearAdj += 1; }
     return endOfMonth(new Date(yearAdj, month, 1));
   } else {
-    // יש שארית - נחשב יום גולמי ואז נתעגל
     const rawDate = new Date(endInvMonth);
     rawDate.setDate(rawDate.getDate() + n);
-    
     const rightDigit = n % 10;
     let day;
-    
-    if (rightDigit === 5) {
-      day = 15;
-    } else if (rightDigit === 0) {
-      // 100 → היום ה-10
-      day = remainder;
-    } else {
-      day = rightDigit;
-    }
-    
+    if (rightDigit === 5) day = 15;
+    else if (rightDigit === 0) day = remainder;
+    else day = rightDigit;
     const result = new Date(rawDate.getFullYear(), rawDate.getMonth(), day);
-    // אם היום לא קיים בחודש (לדוגמה 30 בפברואר) → לוקחים את היום האחרון
-    if (result.getMonth() !== rawDate.getMonth()) {
-      return endOfMonth(rawDate);
-    }
+    if (result.getMonth() !== rawDate.getMonth()) return endOfMonth(rawDate);
     return result;
   }
 }
 
 // ============================================================
-// 📊 ייצוא Excel/CSV
+// ייצוא Excel - לקוח אחד בשורה
 // ============================================================
-function exportMonthToCSV(month) {
+function exportToCSV(data, filename) {
   const fmtCurrency = (n) => Number(n || 0).toFixed(2);
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
   
-  // BOM ל-UTF-8 כדי שעברית תעבוד באקסל
   let csv = '\uFEFF';
-  csv += 'מס,לקוח,תנאי תשלום,חשבונית,תאריך הוצאה,תאריך פירעון,ימי איחור,איש קשר,טלפון,סכום\n';
+  csv += 'מס,לקוח,תנאי תשלום,מס חשבוניות,פירוט חשבוניות,איש קשר,טלפון,סה״כ\n';
   
-  month.invoices.forEach((inv, idx) => {
-    const client = inv.client;
+  data.clients.forEach((c, idx) => {
+    const invoicesDetail = c.invoices.map(i => 
+      `#${i.doc_num}=₪${Math.round(i.doc_balance)}`
+    ).join(' | ');
+    
     const row = [
       idx + 1,
-      `"${client.name.replace(/"/g, '""')}"`,
-      `"${client.payment_terms || ''}"`,
-      `#${inv.doc_num}`,
-      formatDate(inv.doc_date),
-      formatDate(inv.calculated_due_date),
-      inv.daysOverdue || 0,
-      `"${client.contact_name || ''}"`,
-      `"${client.phone || ''}"`,
-      fmtCurrency(inv.doc_balance),
+      `"${c.name.replace(/"/g, '""')}"`,
+      `"${c.payment_terms || ''}"`,
+      c.invoices.length,
+      `"${invoicesDetail}"`,
+      `"${c.contact_name || ''}"`,
+      `"${c.phone || ''}"`,
+      fmtCurrency(c.total),
     ];
     csv += row.join(',') + '\n';
   });
   
-  csv += `\n,,,,,,,,,סה״כ:,${fmtCurrency(month.total)}\n`;
+  csv += `\n,,,,,,סה״כ:,${fmtCurrency(data.grandTotal)}\n`;
   
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `רשימת_גביה_${month.label.replace(/\s+/g, '_')}.csv`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -2460,7 +2435,11 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
   const [actions, setActions] = useState([]);
   const [actionModal, setActionModal] = useState(null);
   const [emailModal, setEmailModal] = useState(null);
-  const [printMonth, setPrintMonth] = useState(null);
+  const [printData, setPrintData] = useState(null);
+  
+  // 🆕 בורר תאריך לדוח גלובלי
+  const [globalReportDate, setGlobalReportDate] = useState('');
+  const [showGlobalReport, setShowGlobalReport] = useState(false);
 
   if (!isA) return null;
 
@@ -2479,14 +2458,12 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
   const clientsMap = useMemo(() => {
     const map = new Map();
     for (const c of (allClients || [])) {
-      if (c.bina_customer_id) {
-        map.set(String(c.bina_customer_id), c);
-      }
+      if (c.bina_customer_id) map.set(String(c.bina_customer_id), c);
     }
     return map;
   }, [allClients]);
 
-  // בניית רשימת הלקוחות עם חשבוניות + חישוב תאריך פירעון נכון
+  // בניית רשימת לקוחות עם חשבוניות + תאריכי פירעון מחושבים
   const clientsWithInvoices = useMemo(() => {
     const map = new Map();
     for (const d of (debtSnapshots || [])) {
@@ -2511,20 +2488,14 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         });
       }
       const c = map.get(key);
-      
-      // 🎯 חישוב תאריך פירעון לפי תנאי תשלום מטבלת clients (לא מבינה!)
       const calculatedDueDate = c.payment_terms 
         ? calculateDueDate(d.doc_date, c.payment_terms)
         : (d.doc_payment_date ? new Date(d.doc_payment_date) : null);
       
-      c.invoices.push({ 
-        ...d, 
-        calculated_due_date: calculatedDueDate 
-      });
+      c.invoices.push({ ...d, calculated_due_date: calculatedDueDate });
       c.total_debt += Number(d.doc_balance);
     }
     
-    // מיון חשבוניות בכל לקוח לפי תאריך פירעון מחושב
     for (const c of map.values()) {
       c.invoices.sort((a, b) => {
         const da = a.calculated_due_date ? a.calculated_due_date.getTime() : 0;
@@ -2536,15 +2507,13 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return Array.from(map.values());
   }, [debtSnapshots, clientsMap]);
 
-  // קטגוריזציה לפי תאריך הפירעון המחושב
+  // קטגוריזציה
   const categorizeInvoice = (inv) => {
     if (!inv.calculated_due_date) return { type: 'future', daysAway: 999 };
-    
     const dueDate = new Date(inv.calculated_due_date);
     dueDate.setHours(0, 0, 0, 0);
     const dueMs = dueDate.getTime();
     const daysFromToday = Math.floor((dueMs - todayMs) / 86400000);
-    
     if (daysFromToday < 0) return { type: 'overdue', month: dueDate, daysOverdue: -daysFromToday };
     if (daysFromToday <= 7) return { type: 'thisWeek', daysAway: daysFromToday };
     if (daysFromToday <= 30) return { type: 'thisMonth', daysAway: daysFromToday };
@@ -2552,9 +2521,9 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return { type: 'future', daysAway: daysFromToday };
   };
 
-  // קיבוץ עבר לפי חודש פירעון מחושב
+  // 🆕 קיבוץ עבר לפי חודש - **מאוחד לפי לקוח**
   const overdueByMonth = useMemo(() => {
-    const map = new Map();
+    const monthMap = new Map();
     
     for (const client of clientsWithInvoices) {
       for (const inv of client.invoices) {
@@ -2562,73 +2531,158 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         if (cat.type !== 'overdue') continue;
         
         const monthKey = `${cat.month.getFullYear()}-${String(cat.month.getMonth() + 1).padStart(2, '0')}`;
-        if (!map.has(monthKey)) {
-          map.set(monthKey, {
+        if (!monthMap.has(monthKey)) {
+          monthMap.set(monthKey, {
             key: monthKey,
             label: cat.month.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' }),
             year: cat.month.getFullYear(),
             month: cat.month.getMonth(),
-            invoices: [],
+            clientsMap: new Map(), // לקוח -> { ...client, invoices: [], total }
             total: 0,
+            invoicesCount: 0,
             sortKey: cat.month.getTime(),
           });
         }
-        const m = map.get(monthKey);
-        m.invoices.push({ ...inv, client, daysOverdue: cat.daysOverdue });
+        const m = monthMap.get(monthKey);
+        
+        // איחוד תחת לקוח
+        if (!m.clientsMap.has(client.bina_customer_id)) {
+          m.clientsMap.set(client.bina_customer_id, {
+            ...client,
+            invoices: [],
+            total: 0,
+            maxDaysOverdue: 0,
+          });
+        }
+        const c = m.clientsMap.get(client.bina_customer_id);
+        c.invoices.push({ ...inv, daysOverdue: cat.daysOverdue });
+        c.total += Number(inv.doc_balance);
+        c.maxDaysOverdue = Math.max(c.maxDaysOverdue, cat.daysOverdue);
+        
         m.total += Number(inv.doc_balance);
+        m.invoicesCount += 1;
       }
     }
     
-    return Array.from(map.values()).sort((a, b) => a.sortKey - b.sortKey);
+    // המרה למערך עם clients ממוין לפי גודל
+    return Array.from(monthMap.values())
+      .map(m => ({
+        ...m,
+        clients: Array.from(m.clientsMap.values()).sort((a, b) => b.total - a.total),
+      }))
+      .sort((a, b) => a.sortKey - b.sortKey);
   }, [clientsWithInvoices]);
 
-  const thisWeekInvoices = useMemo(() => {
-    const list = [];
+  // 🆕 קיבוץ "השבוע" / "החודש" / "בקרוב" - גם לפי לקוח
+  const groupInvoicesByClient = (invoicesWithCat) => {
+    const clientMap = new Map();
+    for (const item of invoicesWithCat) {
+      const key = item.client.bina_customer_id;
+      if (!clientMap.has(key)) {
+        clientMap.set(key, {
+          ...item.client,
+          invoices: [],
+          total: 0,
+          minDaysAway: 999,
+        });
+      }
+      const c = clientMap.get(key);
+      c.invoices.push({ ...item.inv, daysAway: item.daysAway });
+      c.total += Number(item.inv.doc_balance);
+      c.minDaysAway = Math.min(c.minDaysAway, item.daysAway);
+    }
+    return Array.from(clientMap.values()).sort((a, b) => b.total - a.total);
+  };
+
+  const thisWeekClients = useMemo(() => {
+    const items = [];
     for (const client of clientsWithInvoices) {
       for (const inv of client.invoices) {
         const cat = categorizeInvoice(inv);
-        if (cat.type === 'thisWeek') list.push({ ...inv, client, daysAway: cat.daysAway });
+        if (cat.type === 'thisWeek') items.push({ client, inv, daysAway: cat.daysAway });
       }
     }
-    return list.sort((a, b) => a.daysAway - b.daysAway);
+    return groupInvoicesByClient(items);
   }, [clientsWithInvoices]);
 
-  const thisMonthInvoices = useMemo(() => {
-    const list = [];
+  const thisMonthClients = useMemo(() => {
+    const items = [];
     for (const client of clientsWithInvoices) {
       for (const inv of client.invoices) {
         const cat = categorizeInvoice(inv);
-        if (cat.type === 'thisMonth') list.push({ ...inv, client, daysAway: cat.daysAway });
+        if (cat.type === 'thisMonth') items.push({ client, inv, daysAway: cat.daysAway });
       }
     }
-    return list.sort((a, b) => a.daysAway - b.daysAway);
+    return groupInvoicesByClient(items);
   }, [clientsWithInvoices]);
 
-  const soonInvoices = useMemo(() => {
-    const list = [];
+  const soonClients = useMemo(() => {
+    const items = [];
     for (const client of clientsWithInvoices) {
       for (const inv of client.invoices) {
         const cat = categorizeInvoice(inv);
-        if (cat.type === 'soon') list.push({ ...inv, client, daysAway: cat.daysAway });
+        if (cat.type === 'soon') items.push({ client, inv, daysAway: cat.daysAway });
       }
     }
-    return list.sort((a, b) => a.daysAway - b.daysAway);
+    return groupInvoicesByClient(items);
   }, [clientsWithInvoices]);
+
+  // 🆕 דוח גלובלי "עד תאריך X"
+  const globalReport = useMemo(() => {
+    if (!globalReportDate) return null;
+    const targetDate = new Date(globalReportDate);
+    targetDate.setHours(23, 59, 59, 999);
+    const targetMs = targetDate.getTime();
+    
+    const clientMap = new Map();
+    let grandTotal = 0;
+    let totalInvoices = 0;
+    
+    for (const client of clientsWithInvoices) {
+      const relevantInvoices = client.invoices.filter(inv => {
+        if (!inv.calculated_due_date) return false;
+        return inv.calculated_due_date.getTime() <= targetMs;
+      });
+      
+      if (relevantInvoices.length === 0) continue;
+      
+      const clientTotal = relevantInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
+      clientMap.set(client.bina_customer_id, {
+        ...client,
+        invoices: relevantInvoices.map(inv => {
+          const days = Math.floor((todayMs - inv.calculated_due_date.getTime()) / 86400000);
+          return { ...inv, daysOverdue: Math.max(0, days) };
+        }),
+        total: clientTotal,
+      });
+      grandTotal += clientTotal;
+      totalInvoices += relevantInvoices.length;
+    }
+    
+    return {
+      targetDate: globalReportDate,
+      clients: Array.from(clientMap.values()).sort((a, b) => b.total - a.total),
+      grandTotal,
+      totalInvoices,
+      clientsCount: clientMap.size,
+    };
+  }, [clientsWithInvoices, globalReportDate]);
 
   const totalOverdue = overdueByMonth.reduce((s, m) => s + m.total, 0);
-  const totalThisWeek = thisWeekInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
-  const totalThisMonth = thisMonthInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
+  const totalThisWeek = thisWeekClients.reduce((s, c) => s + c.total, 0);
+  const totalThisMonth = thisMonthClients.reduce((s, c) => s + c.total, 0);
   const totalClients = clientsWithInvoices.length;
 
+  // פעולות
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const { error } = await supabaseClient.functions.invoke("bina-fetch-debt-report", { body: {} });
+      const { error } = await supabaseClient.functions.invoke('bina-fetch-debt-report', { body: {} });
       if (error) throw error;
       await new Promise((r) => setTimeout(r, 1500));
       if (onDebtReload) await onDebtReload();
     } catch (e) {
-      alert('שגיאה ברענון: ' + (e.message || e));
+      alert("שגיאה ברענון: " + (e && e.message ? e.message : String(e)));
     } finally {
       setRefreshing(false);
     }
@@ -2642,20 +2696,39 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     setEmailModal({ client, mode: 'confirmSend', emailType });
   };
 
+  // 🆕 שליחת מייל חכמה - לפי סוג מסננת חשבוניות
   const sendEmail = async (client, emailType) => {
     try {
-      // עדכון החשבוניות עם תאריך הפירעון המחושב לפני שליחה
-      const invoicesForEmail = client.invoices.map(inv => ({
+      // סינון חשבוניות לפי סוג המייל:
+      // reminder = רק חשבוניות עתידיות (לא באיחור)
+      // inquiry = רק חשבוניות באיחור
+      const filteredInvoices = client.invoices.filter(inv => {
+        if (!inv.calculated_due_date) return false;
+        const dueMs = inv.calculated_due_date.getTime();
+        const isOverdue = dueMs < todayMs;
+        return emailType === 'inquiry' ? isOverdue : !isOverdue;
+      });
+      
+      if (filteredInvoices.length === 0) {
+        alert(emailType === 'inquiry' 
+          ? '✅ אין חשבוניות באיחור ללקוח זה'
+          : '✅ אין חשבוניות לתשלום עתידי ללקוח זה');
+        return false;
+      }
+      
+      const invoicesForEmail = filteredInvoices.map((inv) => {
+        const dueMs = inv.calculated_due_date ? inv.calculated_due_date.getTime() : 0;
+        const dOver = dueMs ? Math.max(0, Math.floor((todayMs - dueMs) / 86400000)) : 0;
+        return {
         doc_num: inv.doc_num,
         doc_balance: inv.doc_balance,
         doc_date: inv.doc_date,
-        doc_payment_date: inv.calculated_due_date 
-          ? inv.calculated_due_date.toISOString().split('T')[0]
+        doc_payment_date: inv.calculated_due_date
+          ? inv.calculated_due_date.toISOString().split("T")[0]
           : inv.doc_payment_date,
-        days_overdue: inv.calculated_due_date 
-          ? Math.max(0, Math.floor((todayMs - inv.calculated_due_date.getTime()) / 86400000))
-          : 0,
-      }));
+        days_overdue: dOver,
+        };
+      });
       
       const { data, error } = await supabaseClient.functions.invoke('send-collection-email', {
         body: {
@@ -2670,7 +2743,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         return false;
       }
       
-      alert(`✅ נשלח ל-${data.sent_to.join(', ')}\nסכום: ₪${Number(data.total_amount).toLocaleString('he-IL')}`);
+      alert(`✅ נשלח ל-${data.sent_to.join(', ')}\n${filteredInvoices.length} חשבוניות · סכום: ₪${Number(data.total_amount).toLocaleString('he-IL')}`);
       return true;
     } catch (e) {
       alert('שגיאה: ' + e.message);
@@ -2697,60 +2770,75 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
   const sectionHeaderStyle = (bg, color) => ({
     padding: '16px 20px', background: bg, color: color || '#1E3A52',
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    fontSize: 15, fontWeight: 700, gap: 10,
+    fontSize: 15, fontWeight: 700, gap: 10, flexWrap: 'wrap',
   });
-
   const miniBtn = (color) => ({
     padding: '6px 10px', border: `1px solid ${color}40`,
     borderRadius: 6, background: '#fff', color, cursor: 'pointer',
     fontSize: 13, fontFamily: 'inherit', transition: 'all 0.15s',
   });
 
-  const renderInvoiceRow = (inv) => {
-    const client = inv.client;
-    const isOverdue = inv.daysOverdue > 0;
+  // 🆕 רינדור כרטיס לקוח עם חשבוניות מאוחדות
+  const renderClientCard = (client, mode) => {
+    const isOverdue = mode === 'overdue' || (client.maxDaysOverdue && client.maxDaysOverdue > 0);
     
     return (
-      <div key={`${client.bina_customer_id}-${inv.doc_num}`} style={{ padding: 14, borderBottom: '1px solid #f1f5f9' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+      <div key={client.bina_customer_id} style={{ padding: 14, borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1E3A52' }}>
               {client.name}
               {client.payment_terms && (
                 <span style={{ marginInlineStart: 8, fontSize: 11, color: '#6b7280', fontWeight: 500 }}>
                   ({client.payment_terms})
                 </span>
               )}
-            </div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
-              חשבונית #{inv.doc_num} · הוצאה {formatDate(inv.doc_date)} · פירעון <strong style={{color:'#1E3A52'}}>{formatDate(inv.calculated_due_date)}</strong>
-              {isOverdue && (
-                <span style={{ marginInlineStart: 8, color: '#dc2626', fontWeight: 700 }}>
-                  · איחור {inv.daysOverdue} ימים
+              {client.contact_name && (
+                <span style={{ marginInlineStart: 8, fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>
+                  · {client.contact_name}
                 </span>
               )}
-              {!isOverdue && inv.daysAway !== undefined && (
-                <span style={{ marginInlineStart: 8, color: inv.daysAway <= 7 ? '#f59e0b' : '#3b82f6', fontWeight: 600 }}>
-                  · בעוד {inv.daysAway} ימים
+              {client.phone && (
+                <span style={{ marginInlineStart: 6, fontSize: 11, color: '#6b7280' }}>
+                  · {client.phone}
                 </span>
               )}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: '#1E3A52' }}>
-              {fmtCurrency(inv.doc_balance)}
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#1E3A52' }}>
+              {fmtCurrency(client.total)}
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={() => setActionModal({ customer: client, type: 'called' })}
-                title="התקשרתי" style={miniBtn('#3b82f6')}>📞</button>
-              <button onClick={() => handleSendEmail(client, isOverdue ? 'inquiry' : 'reminder')}
+              <button onClick={() => setActionModal({ customer: client, type: 'called' })} title="התקשרתי" style={miniBtn('#3b82f6')}>📞</button>
+              <button onClick={() => handleSendEmail(client, isOverdue ? 'inquiry' : 'reminder')} 
                 title={isOverdue ? 'בקש בירור' : 'תזכורת'} style={miniBtn(isOverdue ? '#dc2626' : '#8b5cf6')}>📧</button>
-              <button onClick={() => setActionModal({ customer: client, type: 'promised_to_pay' })}
-                title="הבטיח לשלם" style={miniBtn('#f59e0b')}>🤝</button>
-              <button onClick={() => setActionModal({ customer: client, type: 'paid_transfer' })}
-                title="שולם" style={miniBtn('#10b981')}>💰</button>
+              <button onClick={() => setActionModal({ customer: client, type: 'promised_to_pay' })} title="הבטיח לשלם" style={miniBtn('#f59e0b')}>🤝</button>
+              <button onClick={() => setActionModal({ customer: client, type: 'paid_transfer' })} title="שולם הכל" style={miniBtn('#10b981')}>💰</button>
             </div>
           </div>
+        </div>
+        
+        {/* 🆕 פירוט חשבוניות בקו אחד */}
+        <div style={{ fontSize: 12, color: '#4b5563', paddingInlineStart: 4, lineHeight: 1.8 }}>
+          <strong style={{ color: '#1E3A52' }}>📋 {client.invoices.length} חשבוניות:</strong>{' '}
+          {client.invoices.map((inv, idx) => (
+            <span key={inv.doc_num} style={{ display: 'inline-block', marginInlineEnd: 8 }}>
+              <button
+                onClick={() => setActionModal({ customer: client, type: 'paid_transfer', specificInvoice: inv })}
+                title={`סמן חשבונית ${inv.doc_num} כשולמה`}
+                style={{
+                  background: inv.daysOverdue > 0 ? '#fef2f2' : '#f0fdfa',
+                  border: `1px solid ${inv.daysOverdue > 0 ? '#fecaca' : '#a7f3d0'}`,
+                  borderRadius: 4, padding: '2px 6px', cursor: 'pointer',
+                  color: '#1E3A52', fontSize: 12, fontFamily: 'inherit',
+                }}
+              >
+                #{inv.doc_num} ({fmtCurrency(inv.doc_balance)})
+                {inv.daysOverdue > 0 && <span style={{ color: '#dc2626', marginInlineStart: 4 }}>⏰{inv.daysOverdue}י'</span>}
+              </button>
+            </span>
+          ))}
         </div>
       </div>
     );
@@ -2770,18 +2858,19 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </button>
       </div>
 
+      {/* KPIs */}
       <div style={kpisRow}>
         <div style={kpiCard('#dc2626', '#fef2f2')}>
           <div style={kpiValue('#dc2626')}>{fmtCurrency(totalOverdue)}</div>
-          <div style={kpiLabel}>🔥 חוב בעבר (לתשלום עכשיו)</div>
+          <div style={kpiLabel}>🔥 חוב בעבר</div>
         </div>
         <div style={kpiCard('#f59e0b', '#fffbeb')}>
           <div style={kpiValue('#f59e0b')}>{fmtCurrency(totalThisWeek)}</div>
-          <div style={kpiLabel}>📅 השבוע (7 ימים)</div>
+          <div style={kpiLabel}>📅 השבוע</div>
         </div>
         <div style={kpiCard('#3b82f6', '#eff6ff')}>
           <div style={kpiValue('#3b82f6')}>{fmtCurrency(totalThisMonth)}</div>
-          <div style={kpiLabel}>📆 החודש (30 ימים)</div>
+          <div style={kpiLabel}>📆 החודש</div>
         </div>
         <div style={kpiCard('#9333ea', '#faf5ff')}>
           <div style={kpiValue('#9333ea')}>{totalClients}</div>
@@ -2789,10 +2878,75 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </div>
       </div>
 
+      {/* 🆕 בורר תאריך לדוח גלובלי */}
+      <div style={{
+        background: 'linear-gradient(135deg, #faf5ff, #fff)',
+        padding: 16, borderRadius: 12, marginBottom: 20,
+        border: '2px solid #9333ea30',
+        display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 6 }}>
+          📊 דוח גבייה כולל עד תאריך:
+        </div>
+        <input
+          type="date"
+          value={globalReportDate}
+          onChange={e => setGlobalReportDate(e.target.value)}
+          style={{
+            padding: '8px 12px', fontSize: 14, border: '1px solid #d8b4fe',
+            borderRadius: 6, fontFamily: 'inherit', direction: 'ltr',
+          }}
+        />
+        {globalReport && (
+          <>
+            <span style={{ color: '#6b7280', fontSize: 13 }}>
+              ({globalReport.clientsCount} לקוחות · {globalReport.totalInvoices} חשבוניות · {fmtCurrency(globalReport.grandTotal)})
+            </span>
+            <button onClick={() => setShowGlobalReport(!showGlobalReport)} style={{
+              padding: '6px 14px', background: '#9333ea', color: '#fff',
+              border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              {showGlobalReport ? '🔼 הסתר' : '🔽 הצג דוח'}
+            </button>
+            <button onClick={() => setPrintData({ 
+              type: 'global', 
+              title: `דוח גבייה עד ${formatDate(globalReportDate)}`,
+              data: globalReport,
+            })} style={{
+              padding: '6px 14px', background: '#fff', color: '#9333ea',
+              border: '1px solid #9333ea', borderRadius: 6, fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              🖨️ הדפס
+            </button>
+            <button onClick={() => exportToCSV(globalReport, `דוח_גביה_עד_${globalReportDate}.csv`)} style={{
+              padding: '6px 14px', background: '#fff', color: '#10b981',
+              border: '1px solid #10b981', borderRadius: 6, fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              📊 Excel
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* תצוגת דוח גלובלי */}
+      {showGlobalReport && globalReport && (
+        <div style={{ ...sectionCard, border: '2px solid #9333ea' }}>
+          <div style={{ ...sectionHeaderStyle('linear-gradient(135deg, #faf5ff, #fff)') }}>
+            <span style={{ fontSize: 16 }}>📊 דוח גבייה עד {formatDate(globalReportDate)}</span>
+            <span style={{ color: '#9333ea', fontWeight: 700 }}>{fmtCurrency(globalReport.grandTotal)}</span>
+          </div>
+          {globalReport.clients.map(c => renderClientCard(c, 'overdue'))}
+        </div>
+      )}
+
+      {/* חוב באיחור - לפי חודש */}
       {overdueByMonth.length > 0 && (
         <div>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: '#dc2626', margin: '24px 0 12px' }}>
-            🔥 דחוף - חוב באיחור (לפי חודש פירעון מחושב)
+            🔥 דחוף - חוב באיחור (לפי חודש פירעון)
           </h3>
           {overdueByMonth.map((month, idx) => (
             <details key={month.key} style={sectionCard} open={idx < 2}>
@@ -2800,62 +2954,71 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 16 }}>📅 {month.label}</span>
                   <span style={{ background: '#dc2626', color: '#fff', padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>
-                    {month.invoices.length} חשבוניות
+                    {month.clients.length} לקוחות · {month.invoicesCount} חשבוניות
                   </span>
                   <span style={{ color: '#dc2626', fontWeight: 700 }}>{fmtCurrency(month.total)}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={(e) => { e.preventDefault(); exportMonthToCSV(month); }} 
+                  <button onClick={(e) => { 
+                    e.preventDefault(); 
+                    exportToCSV({ clients: month.clients, grandTotal: month.total }, `רשימת_גביה_${month.label.replace(/\s+/g, '_')}.csv`); 
+                  }} 
                     style={{ padding: '6px 12px', background: '#fff', border: '1px solid #10b981', borderRadius: 6, color: '#10b981', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                     📊 Excel
                   </button>
-                  <button onClick={(e) => { e.preventDefault(); setPrintMonth(month); }} 
+                  <button onClick={(e) => { 
+                    e.preventDefault(); 
+                    setPrintData({ type: 'month', title: `רשימת גבייה - ${month.label}`, data: month });
+                  }} 
                     style={{ padding: '6px 12px', background: '#fff', border: '1px solid #dc2626', borderRadius: 6, color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                     🖨️ הדפס
                   </button>
                 </div>
               </summary>
-              <div>{month.invoices.map(renderInvoiceRow)}</div>
+              <div>{month.clients.map(c => renderClientCard(c, 'overdue'))}</div>
             </details>
           ))}
         </div>
       )}
 
-      {thisWeekInvoices.length > 0 && (
+      {/* השבוע */}
+      {thisWeekClients.length > 0 && (
         <div>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f59e0b', margin: '24px 0 12px' }}>
             📅 השבוע - 7 ימים הקרובים
           </h3>
           <div style={sectionCard}>
             <div style={sectionHeaderStyle('linear-gradient(135deg, #fffbeb, #fff)')}>
-              <span>{thisWeekInvoices.length} חשבוניות לפירעון</span>
+              <span>{thisWeekClients.length} לקוחות לפירעון</span>
               <span style={{ color: '#f59e0b', fontWeight: 700 }}>{fmtCurrency(totalThisWeek)}</span>
             </div>
-            {thisWeekInvoices.map(renderInvoiceRow)}
+            {thisWeekClients.map(c => renderClientCard(c, 'thisWeek'))}
           </div>
         </div>
       )}
 
-      {thisMonthInvoices.length > 0 && (
+      {/* החודש */}
+      {thisMonthClients.length > 0 && (
         <details style={{ ...sectionCard, marginTop: 24 }}>
           <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #eff6ff, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
             <span style={{ fontSize: 16, fontWeight: 700 }}>📆 החודש (8-30 ימים)</span>
             <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span style={{ color: '#3b82f6' }}>{thisMonthInvoices.length} חשבוניות</span>
+              <span style={{ color: '#3b82f6' }}>{thisMonthClients.length} לקוחות</span>
               <span style={{ color: '#3b82f6', fontWeight: 700 }}>{fmtCurrency(totalThisMonth)}</span>
             </span>
           </summary>
-          <div>{thisMonthInvoices.map(renderInvoiceRow)}</div>
+          <div>{thisMonthClients.map(c => renderClientCard(c, 'thisMonth'))}</div>
         </details>
       )}
 
-      {soonInvoices.length > 0 && (
+      {/* בקרוב */}
+      {soonClients.length > 0 && (
         <details style={{ ...sectionCard, marginTop: 12 }}>
           <summary style={{ ...sectionHeaderStyle('linear-gradient(135deg, #f0fdf4, #fff)'), cursor: 'pointer', listStyle: 'none' }}>
             <span style={{ fontSize: 16, fontWeight: 700 }}>🟢 בקרוב (30-90 ימים)</span>
-            <span style={{ color: '#22c55e' }}>{soonInvoices.length} חשבוניות · {fmtCurrency(soonInvoices.reduce((s,i)=>s+Number(i.doc_balance),0))}</span>
+            <span style={{ color: '#22c55e' }}>{soonClients.length} לקוחות · {fmtCurrency(soonClients.reduce((s,c)=>s+c.total,0))}</span>
           </summary>
-          <div>{soonInvoices.map(renderInvoiceRow)}</div>
+          <div>{soonClients.map(c => renderClientCard(c, 'soon'))}</div>
         </details>
       )}
 
@@ -2865,14 +3028,17 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         </div>
       )}
 
+      {/* Modals */}
       {actionModal && (
         <DebtActionModal
           customer={actionModal.customer}
           actionType={actionModal.type}
+          specificInvoice={actionModal.specificInvoice}
           onClose={() => setActionModal(null)}
           onSuccess={(newAction) => {
             setActions([newAction, ...actions]);
             setActionModal(null);
+            if (onDebtReload) onDebtReload();
           }}
           sb={sb}
           collectorName={collectorName}
@@ -2907,10 +3073,119 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         />
       )}
 
-      {printMonth && (
-        <MonthlyPrintReport month={printMonth} onClose={() => setPrintMonth(null)} />
+      {printData && (
+        <PrintReport data={printData} onClose={() => setPrintData(null)} />
       )}
     </div>
+  );
+}
+
+// ============================================================
+// 🆕 PrintReport - דוח כללי להדפסה (גם לחודש וגם לדוח גלובלי)
+// ============================================================
+function PrintReport({ data, onClose }) {
+  useEffect(() => {
+    setTimeout(() => window.print(), 300);
+  }, []);
+
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
+  
+  const clients = data.type === 'month' ? data.data.clients : data.data.clients;
+  const total = data.type === 'month' ? data.data.total : data.data.grandTotal;
+
+  return (
+    <>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #print-area, #print-area * { visibility: visible; }
+          #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+          .no-print-btn { display: none !important; }
+          @page { size: A4; margin: 1cm; }
+        }
+      `}</style>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 10000, overflow: 'auto', padding: '20px' }} 
+        className="no-print-btn" onClick={onClose}>
+        <div onClick={e => e.stopPropagation()} style={{
+          background: '#fff', maxWidth: 1000, margin: '0 auto', borderRadius: 8, direction: 'rtl', overflow: 'hidden',
+        }}>
+          <div className="no-print-btn" style={{ padding: 12, background: '#1E3A52', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700 }}>תצוגה לפני הדפסה</span>
+            <div>
+              <button onClick={() => window.print()} style={{
+                padding: '6px 14px', borderRadius: 6, background: '#3DB5B1', color: '#fff',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, marginInlineEnd: 8,
+              }}>🖨️ הדפס</button>
+              <button onClick={onClose} style={{
+                padding: '6px 14px', borderRadius: 6, background: '#fff', color: '#1E3A52',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+              }}>✕ סגור</button>
+            </div>
+          </div>
+          
+          <div id="print-area" style={{ padding: '30px 40px', fontFamily: 'Arial, sans-serif' }}>
+            <div style={{ borderBottom: '3px solid #3DB5B1', paddingBottom: 16, marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: '#1E3A52', letterSpacing: 2 }}>NATALIE</div>
+                <div style={{ fontSize: 13, color: '#3DB5B1', fontWeight: 600 }}>פתרונות הדפסה</div>
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 11, color: '#3DB5B1', textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>דוח גבייה</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#1E3A52' }}>{data.title}</div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>הופק: {new Date().toLocaleDateString('he-IL')}</div>
+              </div>
+            </div>
+            
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#1E3A52', color: '#fff' }}>
+                  <th style={{ padding: 8, textAlign: 'center', width: 30 }}>#</th>
+                  <th style={{ padding: 8, textAlign: 'right' }}>לקוח / איש קשר</th>
+                  <th style={{ padding: 8, textAlign: 'center' }}>תנאי תשלום</th>
+                  <th style={{ padding: 8, textAlign: 'right' }}>חשבוניות</th>
+                  <th style={{ padding: 8, textAlign: 'left' }}>סכום</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((c, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', background: idx % 2 ? '#f8fafa' : '#fff' }}>
+                    <td style={{ padding: 8, textAlign: 'center', color: '#6b7280' }}>{idx + 1}</td>
+                    <td style={{ padding: 8, fontWeight: 600, color: '#1E3A52' }}>
+                      <div>{c.name}</div>
+                      {(c.contact_name || c.phone) && (
+                        <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>
+                          {c.contact_name || '—'} {c.phone && `| ${c.phone}`}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: 8, textAlign: 'center', fontSize: 11 }}>{c.payment_terms || '—'}</td>
+                    <td style={{ padding: 8, fontSize: 11, lineHeight: 1.6 }}>
+                      <strong>{c.invoices.length} חשבוניות:</strong><br/>
+                      {c.invoices.map((inv, i) => (
+                        <span key={i} style={{ marginInlineEnd: 6, display: 'inline-block' }}>
+                          #{inv.doc_num} ({fmtCurrency(inv.doc_balance)})
+                          {inv.daysOverdue > 0 && <span style={{ color: '#dc2626' }}> ⏰{inv.daysOverdue}י'</span>}
+                        </span>
+                      ))}
+                    </td>
+                    <td style={{ padding: 8, textAlign: 'left', fontWeight: 700, color: '#1E3A52', fontSize: 14 }}>{fmtCurrency(c.total)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: '#3DB5B1', color: '#fff', fontWeight: 700 }}>
+                  <td colSpan="4" style={{ padding: 14, textAlign: 'right', fontSize: 14 }}>סה״כ {clients.length} לקוחות:</td>
+                  <td style={{ padding: 14, textAlign: 'left', fontSize: 16 }}>{fmtCurrency(total)}</td>
+                </tr>
+              </tbody>
+            </table>
+            
+            <div style={{ marginTop: 30, paddingTop: 16, borderTop: '2px solid #3DB5B1', textAlign: 'center', color: '#6b7280', fontSize: 11 }}>
+              <strong style={{ color: '#1E3A52' }}>נטלי פתרונות הדפסה בע״מ</strong> | ח.פ. 517205332 | שד&apos; הר ציון 104, תל אביב | 03-6815703
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -3020,117 +3295,10 @@ function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail
   );
 }
 
-// ========================================
-// הדפסת רשימה חודשית
-// ========================================
-function MonthlyPrintReport({ month, onClose }) {
-  useEffect(() => {
-    // אוטופן של חלון הדפסה
-    setTimeout(() => {
-      window.print();
-    }, 300);
-  }, []);
-
-  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2 })}`;
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
-
-  const overlayStyle = {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-    zIndex: 10000, overflow: 'auto', padding: '20px',
-  };
-
-  return (
-    <>
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #monthly-print-area, #monthly-print-area * { visibility: visible; }
-          #monthly-print-area { position: absolute; left: 0; top: 0; width: 100%; }
-          .no-print-btn { display: none !important; }
-        }
-      `}</style>
-      <div style={overlayStyle} className="no-print-btn" onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{
-          background: '#fff', maxWidth: 900, margin: '0 auto', borderRadius: 8,
-          direction: 'rtl', padding: 0, overflow: 'hidden',
-        }}>
-          <div style={{ padding: 12, background: '#1E3A52', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} className="no-print-btn">
-            <span style={{ fontWeight: 700 }}>תצוגה לפני הדפסה</span>
-            <div>
-              <button onClick={() => window.print()} style={{
-                padding: '6px 14px', borderRadius: 6, background: '#3DB5B1', color: '#fff',
-                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, marginInlineEnd: 8,
-              }}>🖨️ הדפס</button>
-              <button onClick={onClose} style={{
-                padding: '6px 14px', borderRadius: 6, background: '#fff', color: '#1E3A52',
-                border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
-              }}>✕ סגור</button>
-            </div>
-          </div>
-          
-          <div id="monthly-print-area" style={{ padding: '30px 40px', fontFamily: 'Arial, sans-serif' }}>
-            <div style={{ borderBottom: '3px solid #3DB5B1', paddingBottom: 16, marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: '#1E3A52', letterSpacing: 2 }}>NATALIE</div>
-                <div style={{ fontSize: 13, color: '#3DB5B1', fontWeight: 600 }}>פתרונות הדפסה</div>
-              </div>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: 11, color: '#3DB5B1', textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700 }}>רשימת גבייה</div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: '#1E3A52' }}>{month.label}</div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>הופק: {new Date().toLocaleDateString('he-IL')}</div>
-              </div>
-            </div>
-            
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: '#1E3A52', color: '#fff' }}>
-                  <th style={{ padding: 10, textAlign: 'center' }}>#</th>
-                  <th style={{ padding: 10, textAlign: 'right' }}>לקוח</th>
-                  <th style={{ padding: 10, textAlign: 'center' }}>חשבונית</th>
-                  <th style={{ padding: 10, textAlign: 'center' }}>פירעון</th>
-                  <th style={{ padding: 10, textAlign: 'center' }}>איחור</th>
-                  <th style={{ padding: 10, textAlign: 'right' }}>איש קשר / טלפון</th>
-                  <th style={{ padding: 10, textAlign: 'left' }}>סכום</th>
-                </tr>
-              </thead>
-              <tbody>
-                {month.invoices.map((inv, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #e5e7eb', background: idx % 2 ? '#f8fafa' : '#fff' }}>
-                    <td style={{ padding: 10, textAlign: 'center', color: '#6b7280' }}>{idx + 1}</td>
-                    <td style={{ padding: 10, fontWeight: 600, color: '#1E3A52' }}>
-                      {inv.client.name}
-                      {inv.client.payment_terms && <div style={{ fontSize: 10, color: '#6b7280' }}>{inv.client.payment_terms}</div>}
-                    </td>
-                    <td style={{ padding: 10, textAlign: 'center' }}>#{inv.doc_num}</td>
-                    <td style={{ padding: 10, textAlign: 'center' }}>{formatDate(inv.calculated_due_date || inv.doc_payment_date)}</td>
-                    <td style={{ padding: 10, textAlign: 'center', color: '#dc2626', fontWeight: 700 }}>{inv.daysOverdue} ימים</td>
-                    <td style={{ padding: 10, fontSize: 11, color: '#6b7280' }}>
-                      {inv.client.contact_name || '—'}<br/>{inv.client.phone || ''}
-                    </td>
-                    <td style={{ padding: 10, textAlign: 'left', fontWeight: 700, color: '#1E3A52' }}>{fmtCurrency(inv.doc_balance)}</td>
-                  </tr>
-                ))}
-                <tr style={{ background: '#3DB5B1', color: '#fff', fontWeight: 700 }}>
-                  <td colSpan="6" style={{ padding: 14, textAlign: 'right', fontSize: 14 }}>סה״כ {month.invoices.length} חשבוניות:</td>
-                  <td style={{ padding: 14, textAlign: 'left', fontSize: 16 }}>{fmtCurrency(month.total)}</td>
-                </tr>
-              </tbody>
-            </table>
-            
-            <div style={{ marginTop: 30, paddingTop: 16, borderTop: '2px solid #3DB5B1', textAlign: 'center', color: '#6b7280', fontSize: 11 }}>
-              <strong style={{ color: '#1E3A52' }}>נטלי פתרונות הדפסה בע״מ</strong> | ח.פ. 517205332 | שד&apos; הר ציון 104, תל אביב | 03-6815703
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collectorName }) {
+function DebtActionModal({ customer, actionType, specificInvoice, onClose, onSuccess, sb, collectorName }) {
   const info = DEBT_ACTION_TYPES[actionType];
   const [notes, setNotes] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(specificInvoice?.doc_balance ? String(specificInvoice.doc_balance) : '');
   const [promisedDate, setPromisedDate] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [promisedAmount, setPromisedAmount] = useState('');
@@ -3141,17 +3309,23 @@ function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collect
   const isPayment = actionType.startsWith('paid_');
   const isPromise = actionType === 'promised_to_pay';
   const isCheck = actionType === 'paid_check';
-  const isPartial = actionType === 'paid_partial';
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      // 🆕 אם זו חשבונית ספציפית - נציין אותה ב-notes
+      let finalNotes = notes;
+      if (specificInvoice) {
+        const invoicePrefix = `[חשבונית #${specificInvoice.doc_num}] `;
+        finalNotes = invoicePrefix + (notes || `שולם: ₪${specificInvoice.doc_balance}`);
+      }
+      
       const payload = {
         bina_customer_id: customer.bina_customer_id,
         client_id: customer.client_id || null,
-        client_name: customer.client_name,
+        client_name: customer.client_name || customer.name,
         action_type: actionType,
-        notes: notes || null,
+        notes: finalNotes || null,
         amount: isPayment && amount ? Number(amount) : null,
         promised_date: isPromise && promisedDate ? promisedDate : null,
         remind_at: isPromise && remindAt ? remindAt : null,
@@ -3194,17 +3368,19 @@ function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collect
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={modalStyle} onClick={e => e.stopPropagation()}>
-        <div style={{
-          padding: '16px 20px', borderBottom: '1px solid #e5e7eb',
-          background: `${info.color}10`,
-        }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', background: `${info.color}10` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: info.color }}>
                 {info.emoji} {info.label}
               </div>
               <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
-                {customer.client_name}
+                {customer.client_name || customer.name}
+                {specificInvoice && (
+                  <span style={{ marginInlineStart: 8, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
+                    📋 חשבונית #{specificInvoice.doc_num}
+                  </span>
+                )}
               </div>
             </div>
             <button onClick={onClose} style={{
@@ -3214,11 +3390,17 @@ function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collect
         </div>
 
         <div style={{ padding: 20 }}>
+          {specificInvoice && (
+            <div style={{ background: '#fffbeb', padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: '#92400e', border: '1px solid #fcd34d' }}>
+              ℹ️ פעולה זו תתועד עבור <strong>חשבונית #{specificInvoice.doc_num} בלבד</strong> ({fmtCurrencySimple(specificInvoice.doc_balance)})
+            </div>
+          )}
+
           {isPayment && (
             <>
               <label style={labelStyle}>סכום ששולם (₪)</label>
               <input type="number" value={amount} onChange={e => setAmount(e.target.value)} 
-                placeholder={String(customer.total_debt)} style={inputStyle} />
+                placeholder={specificInvoice ? String(specificInvoice.doc_balance) : String(customer.total || customer.total_debt || 0)} style={inputStyle} />
             </>
           )}
 
@@ -3227,39 +3409,30 @@ function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collect
               <label style={labelStyle}>מספר צ'ק</label>
               <input type="text" value={checkNumber} onChange={e => setCheckNumber(e.target.value)} 
                 placeholder="לדוגמה: 12345" style={inputStyle} />
-              
               <label style={labelStyle}>תאריך צ'ק</label>
-              <input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} 
-                style={inputStyle} />
+              <input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} style={inputStyle} />
             </>
           )}
 
           {isPromise && (
             <>
               <label style={labelStyle}>📅 הבטיח לשלם בתאריך</label>
-              <input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)} 
-                style={inputStyle} />
-              
+              <input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)} style={inputStyle} />
               <label style={labelStyle}>⏰ תזכיר לי לבדוק ב</label>
-              <input type="date" value={remindAt} onChange={e => setRemindAt(e.target.value)} 
-                style={inputStyle} />
-              
+              <input type="date" value={remindAt} onChange={e => setRemindAt(e.target.value)} style={inputStyle} />
               <label style={labelStyle}>💰 סכום שהבטיח (אופציונלי)</label>
               <input type="number" value={promisedAmount} onChange={e => setPromisedAmount(e.target.value)} 
-                placeholder={String(customer.total_debt)} style={inputStyle} />
+                placeholder={specificInvoice ? String(specificInvoice.doc_balance) : String(customer.total || customer.total_debt || 0)} style={inputStyle} />
             </>
           )}
 
           <label style={labelStyle}>📝 הערות</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} 
-            placeholder="לדוגמה: דיברתי עם מנהל הכספים, אמר שיעביר היום..."
+            placeholder="לדוגמה: דיברתי עם מנהל הכספים..."
             style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} />
         </div>
 
-        <div style={{
-          padding: 16, borderTop: '1px solid #e5e7eb',
-          display: 'flex', gap: 8, justifyContent: 'flex-end',
-        }}>
+        <div style={{ padding: 16, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} disabled={saving} style={{
             padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
             background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb',
@@ -3278,6 +3451,13 @@ function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collect
     </div>
   );
 }
+
+// פונקציית עזר
+
+function fmtCurrencySimple(n) {
+  return `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
 
 // ── MAIN APP ──
 function App(){

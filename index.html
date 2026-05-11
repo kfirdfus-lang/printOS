@@ -73,7 +73,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useRef}=React;
+const {useState,useEffect,useRef,useMemo}=React;
 const LABEL_PRINT_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"};
 const openLabelPrintTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openLabelPrint==="function")window.openLabelPrint(task);};
 const SU="https://pvwcpukfhyrmdpxgfwrk.supabase.co";
@@ -2333,6 +2333,602 @@ function QuotesDashboard({allQuotes,allTasks,isA,sb,onQuotesReload}) {
   );
 }
 
+const DEBT_ACTION_TYPES = {
+  called: { emoji: '📞', label: 'התקשרתי', color: '#3b82f6' },
+  email_sent: { emoji: '📧', label: 'מייל', color: '#8b5cf6' },
+  whatsapp_sent: { emoji: '💬', label: 'וואטסאפ', color: '#22c55e' },
+  promised_to_pay: { emoji: '🤝', label: 'הבטיח לשלם', color: '#f59e0b' },
+  paid_credit: { emoji: '💳', label: 'שולם אשראי', color: '#10b981' },
+  paid_check: { emoji: '🏦', label: 'שולם צ\'ק', color: '#10b981' },
+  paid_transfer: { emoji: '💸', label: 'שולם העברה', color: '#10b981' },
+  paid_partial: { emoji: '💰', label: 'שולם חלקית', color: '#06b6d4' },
+  debt_lost: { emoji: '❌', label: 'חוב אבוד', color: '#dc2626' },
+};
+
+function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtReload, collectorName }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionModal, setActionModal] = useState(null); // { customer, type }
+  const [actions, setActions] = useState([]);
+  const [actionsLoaded, setActionsLoaded] = useState(false);
+
+  if (!isA) return null;
+
+  // טעינת פעולות מעקב
+  useEffect(() => {
+    if (!sb) return;
+    sb('debt_actions?order=created_at.desc&limit=500')
+      .then(data => {
+        setActions(data || []);
+        setActionsLoaded(true);
+      })
+      .catch(() => setActionsLoaded(true));
+  }, [sb]);
+
+  // ---------- עיבוד נתונים ----------
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // קבוצת חשבוניות לפי לקוח
+  const debtsByClient = useMemo(() => {
+    const map = new Map();
+    for (const d of (debtSnapshots || [])) {
+      if (!d.bina_customer_id || !d.doc_balance || d.doc_balance <= 0) continue;
+      const key = String(d.bina_customer_id);
+      if (!map.has(key)) {
+        const client = (allClients || []).find(c => 
+          String(c.bina_customer_id) === key
+        );
+        map.set(key, {
+          bina_customer_id: key,
+          client_name: client?.name || d.customer_name || `לקוח #${key}`,
+          client_id: client?.id || null,
+          phone: client?.phone || '',
+          email: client?.email || '',
+          total_debt: 0,
+          invoices: [],
+          oldest_due_date: null,
+          max_days_overdue: 0,
+        });
+      }
+      const c = map.get(key);
+      c.total_debt += Number(d.doc_balance);
+      c.invoices.push(d);
+      if (d.days_overdue && d.days_overdue > c.max_days_overdue) {
+        c.max_days_overdue = d.days_overdue;
+      }
+      if (d.doc_payment_date && (!c.oldest_due_date || d.doc_payment_date < c.oldest_due_date)) {
+        c.oldest_due_date = d.doc_payment_date;
+      }
+    }
+    return Array.from(map.values());
+  }, [debtSnapshots, allClients]);
+
+  // פעולה אחרונה לכל לקוח
+  const lastActionByClient = useMemo(() => {
+    const map = new Map();
+    for (const a of actions) {
+      const key = String(a.bina_customer_id);
+      if (!map.has(key)) {
+        map.set(key, a);
+      }
+    }
+    return map;
+  }, [actions]);
+
+  // ---------- KPIs ----------
+  const totalDebt = debtsByClient.reduce((s, c) => s + c.total_debt, 0);
+  const totalOverdue = debtsByClient
+    .filter(c => c.max_days_overdue > 0)
+    .reduce((s, c) => s + c.total_debt, 0);
+  const totalClients = debtsByClient.length;
+  const oldestDebt = Math.max(...debtsByClient.map(c => c.max_days_overdue), 0);
+
+  // ---------- חלוקה לפי טווחי גיל ----------
+  const ageRanges = [
+    { label: '0-30 ימים', min: 0, max: 30, color: '#22c55e' },
+    { label: '31-60 ימים', min: 31, max: 60, color: '#f59e0b' },
+    { label: '61-90 ימים', min: 61, max: 90, color: '#f97316' },
+    { label: '90+ ימים', min: 91, max: 9999, color: '#dc2626' },
+  ];
+
+  const ageData = ageRanges.map(r => {
+    const inRange = debtsByClient.filter(c => 
+      c.max_days_overdue >= r.min && c.max_days_overdue <= r.max
+    );
+    return {
+      ...r,
+      count: inRange.length,
+      amount: inRange.reduce((s, c) => s + c.total_debt, 0),
+    };
+  });
+
+  // ---------- "צריך פעולה דחופה" ----------
+  const urgentClients = debtsByClient
+    .filter(c => c.max_days_overdue >= 60)
+    .sort((a, b) => b.total_debt - a.total_debt);
+
+  const mediumClients = debtsByClient
+    .filter(c => c.max_days_overdue >= 30 && c.max_days_overdue < 60)
+    .sort((a, b) => b.total_debt - a.total_debt);
+
+  const recentClients = debtsByClient
+    .filter(c => c.max_days_overdue < 30)
+    .sort((a, b) => b.total_debt - a.total_debt);
+
+  // ---------- תזכורות שצריכות לקבל ----------
+  const todayStr = today.toISOString().split('T')[0];
+  const pendingReminders = actions.filter(a => 
+    a.action_type === 'promised_to_pay' && 
+    !a.is_resolved && 
+    a.remind_at && 
+    a.remind_at <= todayStr
+  );
+
+  // ---------- רענון ידני ----------
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const { error } = await supabaseClient.functions.invoke("bina-fetch-debt-report", { body: {} });
+      if (error) throw error;
+      await new Promise((r) => setTimeout(r, 1500));
+      if (typeof onDebtReload === "function") await onDebtReload();
+    } catch (e) {
+      alert("שגיאה ברענון: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ---------- פתיחת בינה ----------
+  const openInBina = (binaId) => {
+    alert(`פתח בבינה את לקוח #${binaId}\n\n(בעתיד נחבר ישירות לבינה)`);
+  };
+
+  // ---------- פורמטים ----------
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { 
+    minimumFractionDigits: 0, maximumFractionDigits: 0 
+  })}`;
+  const fmtPct = (n) => `${Math.round(n)}%`;
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '';
+
+  // ---------- סטיילים ----------
+  const wrapStyle = { direction: 'rtl', padding: 16, background: '#f8fafa', minHeight: 'calc(100vh - 56px)' };
+  const titleStyle = { fontSize: 24, fontWeight: 800, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 10 };
+  const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 };
+
+  const kpisRow = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 };
+  const kpiCard = (color, bg) => ({ background: bg, padding: 16, borderRadius: 12, border: `1px solid ${color}30` });
+  const kpiValue = (color) => ({ fontSize: 28, fontWeight: 800, color, lineHeight: 1.1, marginBottom: 4 });
+  const kpiLabel = { fontSize: 12, color: '#6b7280', fontWeight: 600 };
+
+  const sectionCard = { background: '#fff', padding: 20, borderRadius: 12, marginBottom: 16, border: '1px solid #e5e7eb' };
+  const sectionTitle = { fontSize: 16, fontWeight: 700, color: '#1E3A52', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 };
+
+  const clientCard = (urgency) => ({
+    background: '#fff',
+    border: `1px solid ${urgency === 'urgent' ? '#fecaca' : urgency === 'medium' ? '#fcd34d' : '#e5e7eb'}`,
+    borderRightWidth: 4,
+    borderRightColor: urgency === 'urgent' ? '#dc2626' : urgency === 'medium' ? '#f59e0b' : '#22c55e',
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 10,
+  });
+
+  const actionBtnStyle = (color) => ({
+    padding: '6px 10px',
+    border: `1px solid ${color}40`,
+    borderRadius: 6,
+    background: '#fff',
+    color: color,
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    transition: 'all 0.15s',
+  });
+
+  const renderClientCard = (client, urgency) => {
+    const lastAction = lastActionByClient.get(client.bina_customer_id);
+    
+    return (
+      <div key={client.bina_customer_id} style={clientCard(urgency)}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1E3A52', marginBottom: 4 }}>
+              {client.client_name}
+              {client.client_name.startsWith('לקוח #') && (
+                <span style={{ marginInlineStart: 8, fontSize: 11, color: '#f59e0b', fontWeight: 500 }}>
+                  ⚠️ שם זמני
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: '#6b7280' }}>
+              {client.invoices.length} חשבוניות פתוחות
+              {client.phone && ` · 📞 ${client.phone}`}
+              {client.oldest_due_date && ` · 📅 פירעון: ${formatDate(client.oldest_due_date)}`}
+            </div>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#1E3A52' }}>
+              {fmtCurrency(client.total_debt)}
+            </div>
+            {client.max_days_overdue > 0 && (
+              <div style={{
+                display: 'inline-block',
+                marginTop: 4,
+                padding: '2px 10px',
+                borderRadius: 12,
+                fontSize: 11,
+                fontWeight: 700,
+                background: urgency === 'urgent' ? '#fef2f2' : urgency === 'medium' ? '#fffbeb' : '#f0fdf4',
+                color: urgency === 'urgent' ? '#dc2626' : urgency === 'medium' ? '#a16207' : '#15803d',
+              }}>
+                {client.max_days_overdue} ימים באיחור
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* פעולה אחרונה */}
+        {lastAction && (
+          <div style={{
+            background: '#f9fafb', padding: 8, borderRadius: 6, marginBottom: 10,
+            fontSize: 12, color: '#4b5563',
+          }}>
+            {DEBT_ACTION_TYPES[lastAction.action_type]?.emoji} 
+            <strong> {DEBT_ACTION_TYPES[lastAction.action_type]?.label}</strong>
+            {' · '}{formatDate(lastAction.created_at)}
+            {lastAction.notes && ` · ${lastAction.notes}`}
+            {lastAction.promised_date && ` · הבטיח: ${formatDate(lastAction.promised_date)}`}
+          </div>
+        )}
+
+        {/* כפתורי פעולה */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {Object.entries(DEBT_ACTION_TYPES).map(([type, info]) => (
+            <button
+              key={type}
+              onClick={() => setActionModal({ customer: client, type })}
+              style={actionBtnStyle(info.color)}
+              title={info.label}
+            >
+              {info.emoji}
+            </button>
+          ))}
+          <button
+            onClick={() => openInBina(client.bina_customer_id)}
+            style={{ ...actionBtnStyle('#6366f1'), marginInlineStart: 'auto' }}
+            title="פתח בבינה"
+          >
+            🔗 #{client.bina_customer_id}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ---------- Render ----------
+  return (
+    <div style={wrapStyle}>
+      <div style={headerStyle}>
+        <div style={titleStyle}>
+          💰 דשבורד גבייה
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button onClick={handleRefresh} disabled={refreshing} style={{
+            padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: '#fff', color: '#3DB5B1', border: '1px solid #e5e7eb',
+            cursor: refreshing ? 'wait' : 'pointer', fontFamily: 'inherit',
+            opacity: refreshing ? 0.6 : 1,
+          }}>
+            {refreshing ? '⏳ מרענן...' : '🔄 רענן דוח חייבים'}
+          </button>
+        </div>
+      </div>
+
+      {/* תזכורות */}
+      {pendingReminders.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+          padding: 16, borderRadius: 12, marginBottom: 16,
+          border: '2px solid #f59e0b',
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#92400e', marginBottom: 8 }}>
+            ⏰ תזכורות לפעולה ({pendingReminders.length})
+          </div>
+          {pendingReminders.slice(0, 5).map(r => (
+            <div key={r.id} style={{ fontSize: 13, marginBottom: 4 }}>
+              <strong>{r.client_name || `לקוח #${r.bina_customer_id}`}</strong>
+              {' - '}הבטיח לשלם ב-{formatDate(r.promised_date)}
+              {r.promised_amount && ` (${fmtCurrency(r.promised_amount)})`}
+              {' · '}<span style={{ color: '#dc2626' }}>תזכורת מ-{formatDate(r.remind_at)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={kpisRow}>
+        <div style={kpiCard('#dc2626', '#fef2f2')}>
+          <div style={kpiValue('#dc2626')}>{fmtCurrency(totalDebt)}</div>
+          <div style={kpiLabel}>💰 חוב פתוח כולל</div>
+        </div>
+        <div style={kpiCard('#f59e0b', '#fffbeb')}>
+          <div style={kpiValue('#f59e0b')}>{fmtCurrency(totalOverdue)}</div>
+          <div style={kpiLabel}>🔴 חוב באיחור</div>
+        </div>
+        <div style={kpiCard('#3b82f6', '#eff6ff')}>
+          <div style={kpiValue('#3b82f6')}>{totalClients}</div>
+          <div style={kpiLabel}>👥 לקוחות חייבים</div>
+        </div>
+        <div style={kpiCard('#9333ea', '#faf5ff')}>
+          <div style={kpiValue('#9333ea')}>{oldestDebt}</div>
+          <div style={kpiLabel}>⏰ החוב הוותיק ביותר (ימים)</div>
+        </div>
+      </div>
+
+      {/* חלוקה לפי גיל */}
+      <div style={sectionCard}>
+        <div style={sectionTitle}>📊 חלוקה לפי גיל החוב</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {ageData.map((r, idx) => {
+            const pct = totalDebt > 0 ? (r.amount / totalDebt) * 100 : 0;
+            return (
+              <div key={idx}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 13 }}>
+                  <span style={{ fontWeight: 600, color: '#1E3A52' }}>
+                    {r.label} ({r.count} לקוחות)
+                  </span>
+                  <span style={{ fontWeight: 700, color: r.color }}>
+                    {fmtCurrency(r.amount)} ({fmtPct(pct)})
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: 10, background: '#f1f5f9', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${pct}%`, height: '100%',
+                    background: `linear-gradient(90deg, ${r.color}, ${r.color}dd)`,
+                    transition: 'width 0.5s ease',
+                  }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* דורש פעולה דחופה (60+ ימים) */}
+      {urgentClients.length > 0 && (
+        <div style={sectionCard}>
+          <div style={sectionTitle}>
+            🔥 דורש פעולה דחופה (חוב 60+ ימים)
+            <span style={{
+              background: '#dc2626', color: '#fff',
+              padding: '2px 10px', borderRadius: 12,
+              fontSize: 13, fontWeight: 700, marginInlineStart: 8,
+            }}>
+              {urgentClients.length}
+            </span>
+          </div>
+          {urgentClients.map(c => renderClientCard(c, 'urgent'))}
+        </div>
+      )}
+
+      {/* רמה בינונית (30-60 ימים) */}
+      {mediumClients.length > 0 && (
+        <div style={sectionCard}>
+          <div style={sectionTitle}>
+            ⚠️ לב לפעולה (חוב 30-60 ימים)
+            <span style={{
+              background: '#f59e0b', color: '#fff',
+              padding: '2px 10px', borderRadius: 12,
+              fontSize: 13, fontWeight: 700, marginInlineStart: 8,
+            }}>
+              {mediumClients.length}
+            </span>
+          </div>
+          {mediumClients.map(c => renderClientCard(c, 'medium'))}
+        </div>
+      )}
+
+      {/* חדש (0-30 ימים) */}
+      {recentClients.length > 0 && (
+        <details style={sectionCard}>
+          <summary style={{ ...sectionTitle, cursor: 'pointer' }}>
+            🟢 חוב חדש (0-30 ימים)
+            <span style={{
+              background: '#22c55e', color: '#fff',
+              padding: '2px 10px', borderRadius: 12,
+              fontSize: 13, fontWeight: 700, marginInlineStart: 8,
+            }}>
+              {recentClients.length}
+            </span>
+          </summary>
+          <div style={{ marginTop: 12 }}>
+            {recentClients.map(c => renderClientCard(c, 'recent'))}
+          </div>
+        </details>
+      )}
+
+      {totalClients === 0 && (
+        <div style={{ ...sectionCard, textAlign: 'center', padding: 40, color: '#9ca3af', border: '1px dashed #e5e7eb' }}>
+          🎉 אין לקוחות חייבים כרגע!<br/>
+          <small>הנתונים מתעדכנים אוטומטית כל לילה.</small>
+        </div>
+      )}
+
+      {/* Modal לפעולה */}
+      {actionModal && (
+        <DebtActionModal
+          customer={actionModal.customer}
+          actionType={actionModal.type}
+          onClose={() => setActionModal(null)}
+          onSuccess={(newAction) => {
+            setActions([newAction, ...actions]);
+            setActionModal(null);
+          }}
+          sb={sb}
+          collectorName={collectorName}
+        />
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// Modal לרישום פעולת מעקב
+// ========================================
+function DebtActionModal({ customer, actionType, onClose, onSuccess, sb, collectorName }) {
+  const info = DEBT_ACTION_TYPES[actionType];
+  const [notes, setNotes] = useState('');
+  const [amount, setAmount] = useState('');
+  const [promisedDate, setPromisedDate] = useState('');
+  const [remindAt, setRemindAt] = useState('');
+  const [promisedAmount, setPromisedAmount] = useState('');
+  const [checkNumber, setCheckNumber] = useState('');
+  const [checkDate, setCheckDate] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const isPayment = actionType.startsWith('paid_');
+  const isPromise = actionType === 'promised_to_pay';
+  const isCheck = actionType === 'paid_check';
+  const isPartial = actionType === 'paid_partial';
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        bina_customer_id: customer.bina_customer_id,
+        client_id: customer.client_id || null,
+        client_name: customer.client_name,
+        action_type: actionType,
+        notes: notes || null,
+        amount: isPayment && amount ? Number(amount) : null,
+        promised_date: isPromise && promisedDate ? promisedDate : null,
+        remind_at: isPromise && remindAt ? remindAt : null,
+        promised_amount: isPromise && promisedAmount ? Number(promisedAmount) : null,
+        check_number: isCheck && checkNumber ? checkNumber : null,
+        check_date: isCheck && checkDate ? checkDate : null,
+        created_by: collectorName || 'admin',
+      };
+
+      const result = await sb('debt_actions', {
+        method: 'POST',
+        headers: { 'Prefer': 'return=representation' },
+        body: JSON.stringify(payload),
+      });
+
+      const newAction = Array.isArray(result) ? result[0] : result;
+      if (onSuccess) onSuccess(newAction);
+    } catch (e) {
+      alert('שגיאה בשמירה: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const overlayStyle = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+    zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  };
+  const modalStyle = {
+    background: '#fff', borderRadius: 16, maxWidth: 500, width: '100%',
+    maxHeight: '90vh', overflowY: 'auto', direction: 'rtl',
+  };
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', fontSize: 14,
+    border: '1px solid #e5e7eb', borderRadius: 8, fontFamily: 'inherit',
+    boxSizing: 'border-box', marginBottom: 12, direction: 'rtl',
+  };
+  const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 };
+
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={modalStyle} onClick={e => e.stopPropagation()}>
+        <div style={{
+          padding: '16px 20px', borderBottom: '1px solid #e5e7eb',
+          background: `${info.color}10`,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: info.color }}>
+                {info.emoji} {info.label}
+              </div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+                {customer.client_name}
+              </div>
+            </div>
+            <button onClick={onClose} style={{
+              background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#9ca3af',
+            }}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          {isPayment && (
+            <>
+              <label style={labelStyle}>סכום ששולם (₪)</label>
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} 
+                placeholder={String(customer.total_debt)} style={inputStyle} />
+            </>
+          )}
+
+          {isCheck && (
+            <>
+              <label style={labelStyle}>מספר צ'ק</label>
+              <input type="text" value={checkNumber} onChange={e => setCheckNumber(e.target.value)} 
+                placeholder="לדוגמה: 12345" style={inputStyle} />
+              
+              <label style={labelStyle}>תאריך צ'ק</label>
+              <input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} 
+                style={inputStyle} />
+            </>
+          )}
+
+          {isPromise && (
+            <>
+              <label style={labelStyle}>📅 הבטיח לשלם בתאריך</label>
+              <input type="date" value={promisedDate} onChange={e => setPromisedDate(e.target.value)} 
+                style={inputStyle} />
+              
+              <label style={labelStyle}>⏰ תזכיר לי לבדוק ב</label>
+              <input type="date" value={remindAt} onChange={e => setRemindAt(e.target.value)} 
+                style={inputStyle} />
+              
+              <label style={labelStyle}>💰 סכום שהבטיח (אופציונלי)</label>
+              <input type="number" value={promisedAmount} onChange={e => setPromisedAmount(e.target.value)} 
+                placeholder={String(customer.total_debt)} style={inputStyle} />
+            </>
+          )}
+
+          <label style={labelStyle}>📝 הערות</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} 
+            placeholder="לדוגמה: דיברתי עם מנהל הכספים, אמר שיעביר היום..."
+            style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} />
+        </div>
+
+        <div style={{
+          padding: 16, borderTop: '1px solid #e5e7eb',
+          display: 'flex', gap: 8, justifyContent: 'flex-end',
+        }}>
+          <button onClick={onClose} disabled={saving} style={{
+            padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+            background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb',
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>ביטול</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            padding: '10px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700,
+            background: info.color, color: '#fff', border: 'none',
+            cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit',
+            opacity: saving ? 0.6 : 1,
+          }}>
+            {saving ? '⏳ שומר...' : '✓ שמור'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ──
 function App(){
   const [user,setUser]=useState(null);
@@ -2342,6 +2938,8 @@ function App(){
   const [tab,setTab]=useState("dashboard");
   const [showSales,setShowSales]=useState(false);
   const [showQuotes,setShowQuotes]=useState(false);
+  const [showDebt,setShowDebt]=useState(false);
+  const [debtSnapshots,setDebtSnapshots]=useState([]);
   const [quotes,setQuotes]=useState([]);
   const [mob,setMob]=useState(false);
   const [addTask,setAddTask]=useState(false);
@@ -2486,9 +3084,15 @@ function App(){
     try{
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,d,q]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([]),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([])]);
+      const [t,c,d,q,ds]=await Promise.all([sb(tp),sb("clients?order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([]),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null)]);
       setTasks(t);setClients(c);setDebt(d);
-      if(isA)setQuotes(Array.isArray(q)?q:[]);
+      if(isA){
+        setQuotes(Array.isArray(q)?q:[]);
+        if(Array.isArray(ds)&&ds.length>0){
+          const latestDate=ds[0].snapshot_date;
+          setDebtSnapshots(ds.filter(x=>x.snapshot_date===latestDate));
+        }else setDebtSnapshots([]);
+      }else setDebtSnapshots([]);
       sb("users?role=eq.worker&order=name.asc").then(setAllUsers).catch(()=>{});
     }catch(e){notify("שגיאה בטעינה","#DC2626");}
     setLoading(false);
@@ -2501,6 +3105,16 @@ function App(){
       const q=await sb("quotes?order=created_at.desc&limit=500");
       setQuotes(Array.isArray(q)?q:[]);
     }catch(e){setQuotes([]);}
+  };
+  const reloadDebtSnapshots=async()=>{
+    const cu=user;if(!cu||cu.role!=="admin")return;
+    try{
+      const ds=await sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000");
+      if(Array.isArray(ds)&&ds.length>0){
+        const latestDate=ds[0].snapshot_date;
+        setDebtSnapshots(ds.filter(x=>x.snapshot_date===latestDate));
+      }else setDebtSnapshots([]);
+    }catch(e){setDebtSnapshots([]);}
   };
   const refreshAll=async()=>{
     try{
@@ -2574,6 +3188,7 @@ function App(){
       setTab("dashboard");
       setShowSales(false);
       setShowQuotes(false);
+      setShowDebt(false);
     }
   },[tab,user]);
 
@@ -2788,14 +3403,19 @@ function App(){
 
     {/* Nav */}
     <nav style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
-      {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);setMob(false);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);}else{setShowSales(false);setShowQuotes(false);}}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:tab===n.id?"var(--blue-light)":"transparent",color:tab===n.id?"var(--blue)":"var(--text2)",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit",transition:"all 0.15s"}}>
+      {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);setMob(false);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);setShowDebt(false);}else{setShowSales(false);setShowQuotes(false);setShowDebt(false);}}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:tab===n.id?"var(--blue-light)":"transparent",color:tab===n.id?"var(--blue)":"var(--text2)",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit",transition:"all 0.15s"}}>
         <span style={{fontSize:15}}>{n.ic}</span>{n.lb}
         {tab===n.id&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
       </button>)}
 
-      {isA&&<button type="button" onClick={()=>{setShowQuotes(true);setShowSales(false);setTab("sales");setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:showQuotes&&tab==="sales"?"var(--blue-light)":"transparent",color:showQuotes&&tab==="sales"?"var(--blue)":"var(--text2)",fontWeight:showQuotes&&tab==="sales"?700:500,fontSize:13,marginBottom:2,marginTop:6,fontFamily:"inherit",transition:"all 0.15s"}}>
+      {isA&&<button type="button" onClick={()=>{setShowQuotes(true);setShowSales(false);setShowDebt(false);setTab("sales");setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:showQuotes&&tab==="sales"&&!showDebt?"var(--blue-light)":"transparent",color:showQuotes&&tab==="sales"&&!showDebt?"var(--blue)":"var(--text2)",fontWeight:showQuotes&&tab==="sales"&&!showDebt?700:500,fontSize:13,marginBottom:2,marginTop:6,fontFamily:"inherit",transition:"all 0.15s"}}>
         <span style={{fontSize:15}}>📋</span>דשבורד הצעות
-        {showQuotes&&tab==="sales"&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
+        {showQuotes&&tab==="sales"&&!showDebt&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
+      </button>}
+
+      {isA&&<button type="button" onClick={()=>{setShowDebt(true);setShowSales(false);setShowQuotes(false);setTab("sales");setMob(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:showDebt&&tab==="sales"?"var(--blue-light)":"transparent",color:showDebt&&tab==="sales"?"var(--blue)":"var(--text2)",fontWeight:showDebt&&tab==="sales"?700:500,fontSize:13,marginBottom:2,marginTop:2,fontFamily:"inherit",transition:"all 0.15s"}}>
+        <span style={{fontSize:15}}>💰</span>דשבורד גבייה
+        {showDebt&&tab==="sales"&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
       </button>}
 
       {isA&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)"}}>
@@ -2804,7 +3424,7 @@ function App(){
           const color=DEPT_COLORS[dept]||"#2563EB";
           const count=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
           const isActive=tab==="tasks"&&(user.role==="worker"?user.dept===dept:deptFilter===dept);
-          return<button key={dept} type="button" onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);setShowSales(false);setShowQuotes(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
+          return<button key={dept} type="button" onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);setShowSales(false);setShowQuotes(false);setShowDebt(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
             <span style={{fontSize:12,fontWeight:isActive?700:400,color:isActive?color:"var(--text2)",flex:1,textAlign:"right"}}>{dept}</span>
             {count>0&&<span style={{background:color,color:"#fff",borderRadius:20,padding:"1px 7px",fontSize:10,fontWeight:700,flexShrink:0}}>{count}</span>}
@@ -2844,7 +3464,7 @@ function App(){
         {tab!=="dashboard"&&<><span style={{color:"var(--text3)"}}>›</span><span style={{fontSize:13,color:"var(--text2)",fontWeight:600}}>{navs.find(n=>n.id===tab)?.lb}</span></>}
       </div>
       <div style={{display:"flex",gap:8}}>
-        {tab!=="dashboard"&&<button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text2)",cursor:"pointer",padding:"5px 10px",fontSize:12,fontFamily:"inherit"}}>🏠</button>}
+        {tab!=="dashboard"&&<button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);setShowDebt(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text2)",cursor:"pointer",padding:"5px 10px",fontSize:12,fontFamily:"inherit"}}>🏠</button>}
         <button onClick={()=>setMob(true)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text)",cursor:"pointer",padding:"5px 10px",fontSize:16}}>☰</button>
       </div>
     </div>
@@ -2852,7 +3472,7 @@ function App(){
     {/* Mobile bottom nav */}
     <div className="bn" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:150,background:"#fff",borderTop:"1px solid var(--border)",boxShadow:"0 -2px 8px rgba(0,0,0,0.06)"}}>
       <div style={{display:"flex",justifyContent:"space-around",padding:"6px 0 8px"}}>
-        {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);}else{setShowSales(false);setShowQuotes(false);}}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 10px",color:tab===n.id?"var(--blue)":"var(--text3)",fontFamily:"inherit"}}>
+        {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);setShowDebt(false);}else{setShowSales(false);setShowQuotes(false);setShowDebt(false);}}} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 10px",color:tab===n.id?"var(--blue)":"var(--text3)",fontFamily:"inherit"}}>
           <span style={{fontSize:18}}>{n.ic}</span>
           <span style={{fontSize:10,fontWeight:600}}>{n.lb}</span>
         </button>)}
@@ -2863,14 +3483,15 @@ function App(){
     </div>
 
     {/* Main content */}
-    <div className="ma" style={{marginRight:"var(--sidebar)",padding:(showQuotes&&isA)||(tab==="sales"&&isA&&showSales)?"0":"28px 32px 40px"}}>
+    <div className="ma" style={{marginRight:"var(--sidebar)",padding:(showDebt&&isA)||(showQuotes&&isA)||(tab==="sales"&&isA&&showSales)?"0":"28px 32px 40px"}}>
 
-      {showQuotes&&isA?<QuotesDashboard allQuotes={quotes} allTasks={tasks} isA={isA} sb={sb} onQuotesReload={reloadQuotes}/>:
-      tab==="sales"&&isA&&showSales?<SalesDashboard allTasks={[...tasks,...archivedTasks]} isA={isA} DEPT_COLORS={DEPT_COLORS} onClose={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);}}/>:<>
+      {showDebt&&isA?<DebtCollectionDashboard allClients={clients} debtSnapshots={debtSnapshots} isA={isA} sb={sb} onDebtReload={reloadDebtSnapshots} collectorName={user?.name||""}/>:
+      showQuotes&&isA?<QuotesDashboard allQuotes={quotes} allTasks={tasks} isA={isA} sb={sb} onQuotesReload={reloadQuotes}/>:
+      tab==="sales"&&isA&&showSales?<SalesDashboard allTasks={[...tasks,...archivedTasks]} isA={isA} DEPT_COLORS={DEPT_COLORS} onClose={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);setShowDebt(false);}}/>:<>
 
       {/* Breadcrumb */}
       {tab!=="dashboard"&&tab!=="sales"&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
-        <button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text2)",cursor:"pointer",padding:"5px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>🏠 דשבורד</button>
+        <button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);setShowDebt(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text2)",cursor:"pointer",padding:"5px 12px",fontSize:12,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>🏠 דשבורד</button>
         <span style={{color:"var(--text3)"}}>›</span>
         <span style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{navs.find(n=>n.id===tab)?.lb}</span>
       </div>}
@@ -2913,7 +3534,7 @@ function App(){
           {isA&&<Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div style={{fontWeight:700,fontSize:14,color:"var(--text)"}}>💳 גבייה</div>
-              <button onClick={()=>setTab("debt")} style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>פירוט ←</button>
+              <button onClick={()=>{setShowDebt(false);setShowQuotes(false);setShowSales(false);setTab("debt");}} style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>פירוט ←</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
               <div style={{background:"var(--green-light)",borderRadius:10,padding:12}}>

@@ -44,48 +44,52 @@ Deno.serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const fromDate = new Date();
-    fromDate.setFullYear(fromDate.getFullYear() - 5);
-    const toDate = new Date();
-    toDate.setMonth(toDate.getMonth() + 6);
+    const allOrders: unknown[] = [];
 
-    console.log(`[update-names] שולח לבינה: ${fromDate.toISOString().split('T')[0]} עד ${toDate.toISOString().split('T')[0]}`);
+    for (let yearsBack = 1; yearsBack <= 5; yearsBack++) {
+      const yearStart = new Date();
+      yearStart.setFullYear(yearStart.getFullYear() - yearsBack);
+      const yearEnd = new Date();
+      yearEnd.setFullYear(yearEnd.getFullYear() - yearsBack + 1);
 
-    const ordersResult = await fetchBinaViaQuotaGuard(ORDERS_QUERY_URL, {
-      tokenId: token.trim(),
-      docType: -15,
-      fromDate: fromDate.toISOString().split('T')[0],
-      toDate: toDate.toISOString().split('T')[0],
-    });
+      const fromStr = yearStart.toISOString().split('T')[0];
+      const toStr = yearEnd.toISOString().split('T')[0];
 
-    if (!ordersResult.ok) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: `בינה החזירו HTTP ${ordersResult.status}`,
-      }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      console.log(`[update-names] שולח לבינה: ${fromStr} עד ${toStr}`);
+
+      const ordersResult = await fetchBinaViaQuotaGuard(ORDERS_QUERY_URL, {
+        tokenId: token.trim(),
+        docType: -15,
+        fromDate: fromStr,
+        toDate: toStr,
+      });
+
+      if (!ordersResult.ok) {
+        console.warn(`[update-names] שגיאה ב-${yearsBack} שנים אחורה: HTTP ${ordersResult.status}`);
+        continue;
+      }
+
+      try {
+        const ordersData = JSON.parse(ordersResult.text) as Record<string, unknown> | unknown[];
+        const orders = Array.isArray(ordersData) ? ordersData : ((ordersData as Record<string, unknown>)?.Orders as unknown[]) || [];
+        console.log(`[update-names] התקבלו ${orders.length} הזמנות (${yearsBack} שנים אחורה)`);
+        allOrders.push(...orders);
+      } catch (e) {
+        console.warn(`[update-names] שגיאה בפענוח ${yearsBack} שנים:`, e);
+      }
     }
 
-    let ordersData;
-    try {
-      ordersData = JSON.parse(ordersResult.text);
-    } catch {
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'תגובה לא-JSON מבינה',
-      }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const orders = Array.isArray(ordersData) ? ordersData : (ordersData?.Orders || []);
-    console.log(`[update-names] התקבלו ${orders.length} הזמנות`);
+    console.log(`[update-names] סה"כ הזמנות מכל הטווחים: ${allOrders.length}`);
 
     const nameMap = new Map();
-    for (const order of orders) {
-      const cid = String(order.custId);
-      if (!nameMap.has(cid) && order.custName) {
+    for (const order of allOrders) {
+      const o = order as Record<string, unknown>;
+      const cid = String(o.custId);
+      if (!nameMap.has(cid) && o.custName) {
         nameMap.set(cid, {
-          name: String(order.custName).trim(),
-          address: String(order.custAddress || '').trim(),
-          city: String(order.custCity || '').trim(),
+          name: String(o.custName).trim(),
+          address: String(o.custAddress || '').trim(),
+          city: String(o.custCity || '').trim(),
         });
       }
     }

@@ -124,15 +124,20 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. מציאת 2 ה-snapshots האחרונים
+    // 1. שני תאריכי snapshot אחרונים (ייחודיים) — שולפים שבוע אחורה כדי לא לסמוך על 2 שורות בלבד
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
     const { data: dates, error: datesErr } = await supabase
       .from('debt_snapshots')
       .select('snapshot_date')
+      .gte('snapshot_date', sevenDaysAgo.toISOString().split('T')[0])
       .order('snapshot_date', { ascending: false })
-      .limit(2);
+      .limit(1000); // הגנה - לא יותר מאלף שורות
 
     if (datesErr) throw datesErr;
 
+    // מוציאים תאריכים ייחודיים (כל יום פעם אחת)
     const uniqueDates = [...new Set((dates || []).map((d) => d.snapshot_date))];
 
     if (uniqueDates.length < 2) {

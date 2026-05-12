@@ -33,8 +33,14 @@ function formatDate(dateStr: string): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
-function formatCurrency(n: number): string {
+/** מטבע כטקסט בלבד (לוג DB וכו') — ללא HTML */
+function formatCurrencyPlain(n: number): string {
   return `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatCurrency(n: number): string {
+  const num = Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `<bdi style="unicode-bidi:isolate;direction:ltr">₪${num}</bdi>`;
 }
 
 function buildEmailHTML(
@@ -61,7 +67,7 @@ function buildEmailHTML(
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:600;color:#1E3A52">#${inv.doc_num}</td>
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${formatDate(inv.doc_date)}</td>
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${formatDate(inv.doc_payment_date)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:left;font-weight:700;color:#1E3A52">${formatCurrency(inv.doc_balance)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:left;font-weight:700;color:#1E3A52;direction:ltr;unicode-bidi:plaintext">${formatCurrency(inv.doc_balance)}</td>
         <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:12px">${overdueStr}</td>
       </tr>
     `;
@@ -109,7 +115,7 @@ function buildEmailHTML(
           <tfoot>
             <tr style="background:#3DB5B1;color:#fff;font-weight:700">
               <td colspan="3" style="padding:14px;text-align:right">סה"כ לתשלום:</td>
-              <td style="padding:14px;text-align:left;font-size:18px">${formatCurrency(total)}</td>
+              <td style="padding:14px;text-align:left;font-size:18px;direction:ltr;unicode-bidi:plaintext">${formatCurrency(total)}</td>
               <td></td>
             </tr>
           </tfoot>
@@ -225,7 +231,7 @@ Deno.serve(async (req) => {
       client_id: client.id,
       client_name: client.name,
       action_type: 'email_sent',
-      notes: `נשלח ${isInquiry ? 'בקשת בירור' : 'תזכורת'} עבור ${invoices.length} חשבוניות (${formatCurrency(totalAmount)}) ל: ${recipients.join(', ')}`,
+      notes: `נשלח ${isInquiry ? 'בקשת בירור' : 'תזכורת'} עבור ${invoices.length} חשבוניות (${formatCurrencyPlain(totalAmount)}) ל: ${recipients.join(', ')}`,
       amount: totalAmount,
       created_by: 'admin',
     });

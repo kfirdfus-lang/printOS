@@ -1230,6 +1230,8 @@ function MonthlyAgentSummary({ allTasks, onAgentClick }) {
 
     for (const task of (allTasks || [])) {
       if (!task.created_at) continue;
+      if (!task.total_amount || Number(task.total_amount) <= 0) continue;
+      if (task.archived_at) continue;
       const d = new Date(task.created_at);
       if (d.getFullYear() !== selectedYear || d.getMonth() !== selectedMonth) continue;
       const agent = normalizeAgentName(task.sales_agent || task.assignee);
@@ -1251,6 +1253,8 @@ function MonthlyAgentSummary({ allTasks, onAgentClick }) {
     const months = new Set();
     for (const task of (allTasks || [])) {
       if (!task.created_at) continue;
+      if (!task.total_amount || Number(task.total_amount) <= 0) continue;
+      if (task.archived_at) continue;
       const d = new Date(task.created_at);
       months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }

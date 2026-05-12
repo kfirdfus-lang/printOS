@@ -3041,6 +3041,34 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
             </span>
           ))}
         </div>
+        {(client.collection_email_primary || client.collection_email_secondary) && (
+          <div style={{
+            marginTop: 8, padding: '6px 10px', background: '#f0fdfa',
+            borderRadius: 4, fontSize: 12, color: '#1E3A52',
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          }}>
+            <span style={{ color: '#3DB5B1' }}>📧</span>
+            <span style={{ direction: 'ltr' }}>
+              {client.collection_email_primary}
+              {client.collection_email_secondary && (
+                <span style={{ marginInlineStart: 6, color: '#6b7280' }}>
+                  + {client.collection_email_secondary}
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => setEmailModal({ client, mode: 'editEmail' })}
+              style={{
+                marginInlineStart: 'auto', background: 'transparent', border: '1px solid #3DB5B1',
+                color: '#3DB5B1', borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
+                fontSize: 11, fontFamily: 'inherit',
+              }}
+            >
+              ✏️ ערוך
+            </button>
+          </div>
+        )}
         {renderClientActions(client)}
       </div>
     );
@@ -3571,6 +3599,7 @@ function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail
   const [saving, setSaving] = useState(false);
 
   const isAddMode = mode === 'addEmail';
+  const isEditMode = mode === 'editEmail';
   const isConfirmMode = mode === 'confirmSend';
 
   const overlayStyle = {
@@ -3595,7 +3624,7 @@ function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: 17, fontWeight: 700, color: '#1E3A52' }}>
-                {isAddMode ? '➕ הוסף מייל לגבייה' : '📧 אישור שליחה'}
+                {isAddMode ? '➕ הוסף מייל לגבייה' : isEditMode ? '✏️ ערוך מיילים' : '📧 אישור שליחה'}
               </div>
               <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{client.name}</div>
             </div>
@@ -3604,10 +3633,15 @@ function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail
         </div>
 
         <div style={{ padding: 20 }}>
-          {isAddMode && (
+          {(isAddMode || isEditMode) && (
             <>
-              <div style={{ background: '#fffbeb', padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13, color: '#78350f' }}>
-                ⚠️ אין כתובת מייל לגבייה ללקוח זה. הוסף וננסה לשלוח שוב.
+              <div style={{
+                background: isAddMode ? '#fffbeb' : '#f0fdfa', padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13,
+                color: isAddMode ? '#78350f' : '#1E3A52',
+              }}>
+                {isAddMode
+                  ? '⚠️ אין כתובת מייל לגבייה ללקוח זה. הוסף וננסה לשלוח שוב.'
+                  : '✏️ עדכן את כתובות המייל. שינויים יישמרו אוטומטית.'}
               </div>
               <label style={labelStyle}>📧 מייל ראשי לגבייה *</label>
               <input type="email" value={primary} onChange={e => setPrimary(e.target.value)}
@@ -3643,11 +3677,11 @@ function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail
             background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb',
             cursor: 'pointer', fontFamily: 'inherit',
           }}>ביטול</button>
-          <button onClick={async () => {
+          <button type="button" onClick={async () => {
             setSaving(true);
-            if (isAddMode) {
+            if (isAddMode || isEditMode) {
               if (!primary) { alert('חובה למלא לפחות מייל ראשי'); setSaving(false); return; }
-              await onSaveAndSend({ primary, secondary }, pendingType);
+              await onSaveAndSend({ primary, secondary }, isAddMode ? pendingType : null);
             } else {
               await onSendEmail(client, emailType);
               onClose();
@@ -3655,11 +3689,11 @@ function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail
             setSaving(false);
           }} disabled={saving} style={{
             padding: '10px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700,
-            background: emailType === 'inquiry' ? '#dc2626' : '#3DB5B1', color: '#fff', border: 'none',
+            background: isConfirmMode && emailType === 'inquiry' ? '#dc2626' : '#3DB5B1', color: '#fff', border: 'none',
             cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit',
             opacity: saving ? 0.6 : 1,
           }}>
-            {saving ? '⏳ שולח...' : (isAddMode ? '💾 שמור ושלח' : '📤 שלח')}
+            {saving ? '⏳ שומר...' : (isAddMode ? '💾 שמור ושלח' : isEditMode ? '💾 שמור' : '📤 שלח')}
           </button>
         </div>
       </div>

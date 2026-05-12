@@ -1109,9 +1109,270 @@ function normalizeAgentName(name) {
   return trimmed;
 }
 
+function AgentOrdersModal({ agent, orders, period, onClose }) {
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+  const formatDate = (d) => {
+    if (!d) return '';
+    const date = d instanceof Date ? d : new Date(d);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('he-IL') + ' ' +
+           String(date.getHours()).padStart(2, '0') + ':' +
+           String(date.getMinutes()).padStart(2, '0');
+  };
+
+  const totalAmount = orders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+
+  const overlayStyle = {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+    zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  };
+  const modalStyle = {
+    background: '#fff', borderRadius: 16, maxWidth: 800, width: '100%',
+    maxHeight: '85vh', overflowY: 'auto', direction: 'rtl',
+  };
+
+  const agentColors = {
+    'כפיר': '#3DB5B1',
+    'נטלי': '#9333ea',
+    'ברק': '#f59e0b',
+  };
+  const color = agentColors[agent] || '#3b82f6';
+
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={modalStyle} onClick={e => e.stopPropagation()}>
+
+        <div style={{
+          padding: '20px 24px', background: `${color}15`,
+          borderBottom: `3px solid ${color}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color }}>
+              🏆 הזמנות של {agent}
+            </div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+              {period} · {orders.length} הזמנות · {fmtCurrency(totalAmount)}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={{
+            background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', color: '#9ca3af',
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: 16 }}>
+          {orders.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
+              אין הזמנות בתקופה זו
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f8fafa' }}>
+                  <th style={{ padding: 10, textAlign: 'center', borderBottom: '2px solid #e5e7eb', width: 60, color: '#6b7280' }}>הזמנה</th>
+                  <th style={{ padding: 10, textAlign: 'right', borderBottom: '2px solid #e5e7eb', color: '#6b7280' }}>כותרת</th>
+                  <th style={{ padding: 10, textAlign: 'right', borderBottom: '2px solid #e5e7eb', color: '#6b7280' }}>לקוח</th>
+                  <th style={{ padding: 10, textAlign: 'center', borderBottom: '2px solid #e5e7eb', color: '#6b7280' }}>תאריך</th>
+                  <th style={{ padding: 10, textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#6b7280' }}>סכום</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order, idx) => (
+                  <tr key={order.id || idx} style={{
+                    borderBottom: '1px solid #f1f5f9',
+                    background: idx % 2 === 0 ? '#fff' : '#fafafa',
+                  }}>
+                    <td style={{ padding: 10, textAlign: 'center', fontWeight: 700, color: '#1E3A52' }}>
+                      #{order.bina_order_id || '—'}
+                    </td>
+                    <td style={{ padding: 10, color: '#1E3A52', fontWeight: 600 }}>
+                      {order.title || '—'}
+                    </td>
+                    <td style={{ padding: 10, color: '#4b5563', fontSize: 12 }}>
+                      {order.client_name || '—'}
+                    </td>
+                    <td style={{ padding: 10, textAlign: 'center', fontSize: 11, color: '#6b7280' }}>
+                      {formatDate(order.created_at)}
+                    </td>
+                    <td style={{
+                      padding: 10, textAlign: 'left', fontWeight: 700,
+                      color: Number(order.total_amount) > 0 ? '#1E3A52' : '#dc2626',
+                      direction: 'ltr', unicodeBidi: 'plaintext',
+                    }}>
+                      {Number(order.total_amount) > 0 ? fmtCurrency(order.total_amount) : '—'}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ background: color, color: '#fff' }}>
+                  <td colSpan={4} style={{ padding: 14, textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
+                    סה״כ {orders.length} הזמנות:
+                  </td>
+                  <td style={{ padding: 14, textAlign: 'left', fontWeight: 800, fontSize: 16, direction: 'ltr' }}>
+                    {fmtCurrency(totalAmount)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthlyAgentSummary({ allTasks, onAgentClick }) {
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
+
+  const monthlyStats = useMemo(() => {
+    const stats = new Map();
+
+    for (const task of (allTasks || [])) {
+      if (!task.created_at) continue;
+      const d = new Date(task.created_at);
+      if (d.getFullYear() !== selectedYear || d.getMonth() !== selectedMonth) continue;
+      const agent = normalizeAgentName(task.sales_agent || task.assignee);
+      if (!agent) continue;
+
+      if (!stats.has(agent)) {
+        stats.set(agent, { agent, count: 0, total: 0, orders: [] });
+      }
+      const s = stats.get(agent);
+      s.count += 1;
+      s.total += Number(task.total_amount || 0);
+      s.orders.push(task);
+    }
+
+    return Array.from(stats.values()).sort((a, b) => b.total - a.total);
+  }, [allTasks, selectedYear, selectedMonth]);
+
+  const availableMonths = useMemo(() => {
+    const months = new Set();
+    for (const task of (allTasks || [])) {
+      if (!task.created_at) continue;
+      const d = new Date(task.created_at);
+      months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    const arr = Array.from(months).sort().reverse();
+    if (arr.length === 0) {
+      arr.push(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+    }
+    return arr;
+  }, [allTasks]);
+
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+
+  const agentColors = {
+    'כפיר': { bg: '#f0fdfa', color: '#3DB5B1', border: '#5eead4' },
+    'נטלי': { bg: '#faf5ff', color: '#9333ea', border: '#c4b5fd' },
+    'ברק': { bg: '#fffbeb', color: '#f59e0b', border: '#fcd34d' },
+  };
+
+  const monthLabel = new Date(selectedYear, selectedMonth, 1)
+    .toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+
+  const handleMonthChange = (e) => {
+    const [y, m] = e.target.value.split('-');
+    setSelectedYear(parseInt(y, 10));
+    setSelectedMonth(parseInt(m, 10) - 1);
+  };
+
+  return (
+    <div style={{
+      background: '#fff', padding: 16, borderRadius: 12,
+      border: '1px solid #e5e7eb', marginBottom: 16,
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 14, flexWrap: 'wrap', gap: 8,
+      }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 6 }}>
+          📊 סיכום חודשי
+        </div>
+        <select
+          value={`${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`}
+          onChange={handleMonthChange}
+          style={{
+            padding: '6px 10px', fontSize: 13, border: '1px solid #d1d5db',
+            borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer',
+          }}
+        >
+          {availableMonths.map(m => {
+            const [y, mo] = m.split('-');
+            const d = new Date(parseInt(y, 10), parseInt(mo, 10) - 1, 1);
+            return (
+              <option key={m} value={m}>
+                {d.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      {monthlyStats.length === 0 ? (
+        <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+          אין הזמנות בחודש זה
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {monthlyStats.map(stat => {
+            const c = agentColors[stat.agent] || { bg: '#f8fafa', color: '#3b82f6', border: '#dbeafe' };
+            return (
+              <button
+                type="button"
+                key={stat.agent}
+                onClick={() => onAgentClick && onAgentClick(stat.agent, stat.orders, monthLabel)}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '12px 14px', background: c.bg, border: `1px solid ${c.border}`,
+                  borderRadius: 8, cursor: 'pointer', textAlign: 'right',
+                  fontFamily: 'inherit', transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = `0 2px 6px ${c.color}40`;
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: c.color }}>
+                    {stat.agent}
+                  </span>
+                  <span style={{
+                    background: c.color, color: '#fff',
+                    padding: '2px 10px', borderRadius: 12,
+                    fontSize: 12, fontWeight: 700,
+                  }}>
+                    {stat.count} הזמנות
+                  </span>
+                </div>
+                <div style={{
+                  fontSize: 16, fontWeight: 800, color: c.color,
+                  direction: 'ltr', unicodeBidi: 'plaintext',
+                }}>
+                  {fmtCurrency(stat.total)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 10, textAlign: 'center' }}>
+        💡 לחץ על סוכן לפירוט ההזמנות
+      </div>
+    </div>
+  );
+}
+
 function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
   const [period, setPeriod] = useState('month');
   const [showOtherDetails, setShowOtherDetails] = useState(false);
+  const [agentOrdersModal, setAgentOrdersModal] = useState(null);
 
   if (!isA) return null;
 
@@ -1155,6 +1416,17 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
     }
     return Array.from(agentMap.values()).sort((a, b) => b.revenue - a.revenue);
   };
+
+  const getTodayCompetitionOrdersForAgent = (agentName) =>
+    (allTasks || []).filter((t) => {
+      if (!t.total_amount || t.total_amount <= 0) return false;
+      if (t.archived_at) return false;
+      const taskDate = t.bina_order_date
+        ? new Date(t.bina_order_date).getTime()
+        : new Date(t.created_at).getTime();
+      if (taskDate < todayMs || taskDate >= tomorrowMs) return false;
+      return normalizeAgentName(t.sales_agent || t.assignee) === agentName;
+    });
 
   const todayAgents = getDailyAgentsData(todayMs, tomorrowMs);
   const yesterdayAgents = getDailyAgentsData(yesterdayMs, todayMs);
@@ -1462,11 +1734,20 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
                 const timeAgo = formatTimeAgo(agent.lastOrderTime);
                 
                 return (
-                  <div key={agent.name} style={{
-                    background: idx === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)',
-                    padding: 14, borderRadius: 10,
-                    border: idx === 0 ? '2px solid rgba(255,215,0,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                  }}>
+                  <div
+                    key={agent.name}
+                    onClick={() => setAgentOrdersModal({
+                      agent: agent.name,
+                      orders: getTodayCompetitionOrdersForAgent(agent.name),
+                      period: 'היום',
+                    })}
+                    style={{
+                      background: idx === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)',
+                      padding: 14, borderRadius: 10,
+                      border: idx === 0 ? '2px solid rgba(255,215,0,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                      cursor: 'pointer',
+                    }}
+                  >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ fontSize: 24 }}>{medal}</span>
@@ -1502,6 +1783,13 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
           </>
         )}
       </div>
+
+      <MonthlyAgentSummary
+        allTasks={allTasks}
+        onAgentClick={(agent, orders, period) =>
+          setAgentOrdersModal({ agent, orders, period })
+        }
+      />
 
       
       <div style={kpisRow}>
@@ -1663,6 +1951,15 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
             </div>
           </div>
         </>
+      )}
+
+      {agentOrdersModal && (
+        <AgentOrdersModal
+          agent={agentOrdersModal.agent}
+          orders={agentOrdersModal.orders}
+          period={agentOrdersModal.period}
+          onClose={() => setAgentOrdersModal(null)}
+        />
       )}
     </div>
   );

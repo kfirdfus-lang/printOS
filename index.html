@@ -3660,7 +3660,6 @@ function App(){
   const [user,setUser]=useState(null);
   const [tasks,setTasks]=useState([]);
   const [clients,setClients]=useState([]);
-  const [debt,setDebt]=useState([]);
   const [tab,setTab]=useState("dashboard");
   const [showSales,setShowSales]=useState(false);
   const [showQuotes,setShowQuotes]=useState(false);
@@ -3810,8 +3809,8 @@ function App(){
     try{
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,d,q,ds]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary&order=name.asc"),isA?sb("debt?order=days_overdue.desc"):Promise.resolve([]),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null)]);
-      setTasks(t);setClients(c);setDebt(d);
+      const [t,c,q,ds]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null)]);
+      setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
         if(Array.isArray(ds)&&ds.length>0){
@@ -3963,8 +3962,6 @@ function App(){
   const boardTasks=user?.role==="worker"?tasks.filter(t=>t.dept===user.dept):(deptFilter==="all"?tasks:tasks.filter(t=>t.dept===deptFilter));
   const visTasks=boardTasks;
   const byS=s=>boardTasks.filter(t=>t.status===s).length;
-  const totD=debt.reduce((s,d)=>s+Number(d.amount),0);
-  const ovD=debt.filter(d=>d.status==="באיחור").reduce((s,d)=>s+Number(d.amount),0);
 
   const doAddTask=async()=>{
     if(!nt.title.trim())return;
@@ -4256,29 +4253,7 @@ function App(){
           </Card>)}
         </div>
 
-        <div className="mg" style={{display:"grid",gridTemplateColumns:isA?"1fr 1fr":"1fr",gap:16,marginBottom:16}}>
-          {isA&&<Card>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-              <div style={{fontWeight:700,fontSize:14,color:"var(--text)"}}>💳 גבייה</div>
-              <button onClick={()=>{setShowDebt(true);setShowQuotes(false);setShowSales(false);setTab("sales");}} style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>פירוט ←</button>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-              <div style={{background:"var(--green-light)",borderRadius:10,padding:12}}>
-                <div style={{color:"var(--text3)",fontSize:10,fontWeight:600,marginBottom:3}}>סה״כ</div>
-                <div style={{fontSize:18,fontWeight:800,color:"var(--green)"}}>₪{totD.toLocaleString()}</div>
-              </div>
-              <div style={{background:"var(--red-light)",borderRadius:10,padding:12}}>
-                <div style={{color:"var(--text3)",fontSize:10,fontWeight:600,marginBottom:3}}>באיחור</div>
-                <div style={{fontSize:18,fontWeight:800,color:"var(--red)"}}>₪{ovD.toLocaleString()}</div>
-              </div>
-            </div>
-            {debt.filter(d=>d.status==="באיחור").slice(0,3).map(d=><div key={d.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--border)"}}>
-              <div><div style={{fontWeight:600,fontSize:12,color:"var(--text)"}}>{d.client_name}</div><div style={{color:"var(--red)",fontSize:11}}>{d.days_overdue} ימי איחור</div></div>
-              <div style={{fontWeight:700,color:"var(--red)",fontSize:13}}>₪{Number(d.amount).toLocaleString()}</div>
-            </div>)}
-            {debt.filter(d=>d.status==="באיחור").length===0&&<div style={{textAlign:"center",color:"var(--text3)",fontSize:12,padding:"10px 0"}}>אין חובות באיחור 🎉</div>}
-          </Card>}
-
+        <div className="mg" style={{display:"grid",gridTemplateColumns:"1fr",gap:16,marginBottom:16}}>
           <Card>
             <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:16}}>🏭 עומס מחלקות</div>
             {(isA?(deptFilter==="all"?DEPTS:[deptFilter]):[user.dept]).map((dept,i)=>{

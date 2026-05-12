@@ -490,6 +490,22 @@ Deno.serve(async (req) => {
       snapshotRecords.filter(r => r.is_overdue).map(r => r.bina_customer_id)
     ).size;
 
+    try {
+      const detectUrl = `${supabaseUrl}/functions/v1/detect-and-notify-payments`;
+      const detectResp = await fetch(detectUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      const detectResult = await detectResp.json();
+      console.log('[bina-fetch-debt-report] detect-payments result:', JSON.stringify(detectResult.summary || detectResult));
+    } catch (detectErr) {
+      console.error('[bina-fetch-debt-report] detect-payments failed:', detectErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

@@ -2457,6 +2457,86 @@ async function exportToExcel(data, filename, reportTitle) {
   }
 }
 
+function isPromiseFulfilled(promise, allActions) {
+  if (!promise.created_at) return false;
+  const promiseTime = new Date(promise.created_at).getTime();
+  return (allActions || []).some((a) =>
+    a.action_type && a.action_type.startsWith('paid_') &&
+    new Date(a.created_at).getTime() > promiseTime
+  );
+}
+
+function BrokenPromisesAlert({ brokenPromises }) {
+  if (!brokenPromises || brokenPromises.length === 0) return null;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #fef2f2, #fff)',
+      border: '2px solid #dc2626',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 20,
+      boxShadow: '0 2px 8px rgba(220, 38, 38, 0.1)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <span style={{ fontSize: 24 }}>🔔</span>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#dc2626' }}>
+            הבטחות שלא קוימו ({brokenPromises.length})
+          </div>
+          <div style={{ fontSize: 12, color: '#7f1d1d' }}>
+            לקוחות שהתחייבו לשלם ועברו את התאריך
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {brokenPromises.slice(0, 5).map((bp, idx) => (
+          <div key={idx} style={{
+            padding: '8px 12px',
+            background: '#fff',
+            borderRadius: 6,
+            border: '1px solid #fecaca',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E3A52' }}>
+                {bp.client.name}
+              </div>
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                הבטיח לשלם {bp.promiseDate.toLocaleDateString('he-IL')} ·
+                <span style={{ color: '#dc2626', fontWeight: 700, marginInlineStart: 4 }}>
+                  עברו {bp.daysLate} ימים
+                </span>
+              </div>
+              {bp.promise.notes && (
+                <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2, fontStyle: 'italic' }}>
+                  {`"${bp.promise.notes}"`}
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626' }}>
+              {bp.promise.amount || bp.promise.promised_amount
+                ? `₪${Number(bp.promise.amount || bp.promise.promised_amount).toLocaleString('he-IL')}`
+                : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {brokenPromises.length > 5 && (
+        <div style={{ marginTop: 8, fontSize: 12, color: '#7f1d1d', textAlign: 'center' }}>
+          + עוד {brokenPromises.length - 5} הבטחות שעברו תאריך...
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============================================================
 function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtReload, collectorName }) {
   const [refreshing, setRefreshing] = useState(false);
@@ -2531,9 +2611,36 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         return da - db;
       });
     }
-    
+
+    for (const c of map.values()) {
+      c.actions = (actions || []).filter((a) =>
+        String(a.bina_customer_id) === c.bina_customer_id
+      ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
     return Array.from(map.values());
-  }, [debtSnapshots, clientsMap]);
+  }, [debtSnapshots, clientsMap, actions]);
+
+  const brokenPromises = useMemo(() => {
+    const list = [];
+    for (const client of clientsWithInvoices) {
+      const promises = (client.actions || []).filter((a) =>
+        a.action_type === 'promised_to_pay' &&
+        a.promised_date &&
+        !isPromiseFulfilled(a, client.actions)
+      );
+
+      for (const promise of promises) {
+        const promiseDate = new Date(promise.promised_date);
+        promiseDate.setHours(0, 0, 0, 0);
+        if (promiseDate.getTime() < todayMs) {
+          const daysLate = Math.floor((todayMs - promiseDate.getTime()) / 86400000);
+          list.push({ client, promise, daysLate, promiseDate });
+        }
+      }
+    }
+    return list.sort((a, b) => b.daysLate - a.daysLate);
+  }, [clientsWithInvoices, todayMs]);
 
   // קטגוריזציה
   const categorizeInvoice = (inv) => {
@@ -2806,6 +2913,72 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     fontSize: 13, fontFamily: 'inherit', transition: 'all 0.15s',
   });
 
+  const renderClientActions = (client) => {
+    if (!client.actions || client.actions.length === 0) return null;
+
+    const actionTypeInfo = (type) => DEBT_ACTION_TYPES[type] || { emoji: '📌', label: type, color: '#6b7280' };
+
+    const formatDateTime = (d) => {
+      if (!d) return '';
+      const date = new Date(d);
+      return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    };
+
+    return (
+      <div style={{
+        marginTop: 10,
+        padding: '10px 14px',
+        background: '#f8fafa',
+        borderRadius: 6,
+        border: '1px solid #e5e7eb',
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#1E3A52', marginBottom: 8 }}>
+          📜 היסטוריית פעולות ({client.actions.length}):
+        </div>
+
+        {client.actions.map((action, idx) => {
+          const info = actionTypeInfo(action.action_type);
+          return (
+            <div key={action.id || idx} style={{
+              padding: '6px 8px',
+              marginBottom: 4,
+              background: '#fff',
+              borderRadius: 4,
+              borderRight: `3px solid ${info.color}`,
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14 }}>{info.emoji}</span>
+                  <strong style={{ color: info.color }}>{info.label}</strong>
+                  {action.amount && (
+                    <span style={{ color: '#1E3A52', fontWeight: 700, marginInlineStart: 4 }}>
+                      ₪{Number(action.amount).toLocaleString('he-IL')}
+                    </span>
+                  )}
+                  {action.promised_date && (
+                    <span style={{ background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>
+                      📅 {new Date(action.promised_date).toLocaleDateString('he-IL')}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>
+                  {formatDateTime(action.created_at)} · {action.created_by || 'admin'}
+                </div>
+              </div>
+              {action.notes && (
+                <div style={{ marginTop: 4, color: '#4b5563', fontSize: 12 }}>
+                  {action.notes}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   // 🆕 רינדור כרטיס לקוח עם חשבוניות מאוחדות
   const renderClientCard = (client, mode) => {
     const isOverdue = mode === 'overdue' || (client.maxDaysOverdue && client.maxDaysOverdue > 0);
@@ -2868,6 +3041,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
             </span>
           ))}
         </div>
+        {renderClientActions(client)}
       </div>
     );
   };
@@ -2905,6 +3079,8 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
           <div style={kpiLabel}>👥 לקוחות חייבים</div>
         </div>
       </div>
+
+      <BrokenPromisesAlert brokenPromises={brokenPromises} />
 
       {/* 🆕 בורר תאריך לדוח גלובלי */}
       <div style={{
@@ -3064,7 +3240,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
           specificInvoice={actionModal.specificInvoice}
           onClose={() => setActionModal(null)}
           onSuccess={(newAction) => {
-            setActions([newAction, ...actions]);
+            setActions((prev) => [newAction, ...prev]);
             setActionModal(null);
             if (onDebtReload) onDebtReload();
           }}

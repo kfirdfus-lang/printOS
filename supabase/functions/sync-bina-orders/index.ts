@@ -235,6 +235,11 @@ Deno.serve(async (req) => {
       orders = binaData
     }
 
+    const binaOrders = orders
+    if (binaOrders && binaOrders.length > 0) {
+      console.log('[DEBUG] First bina order full structure:', JSON.stringify(binaOrders[0], null, 2))
+    }
+
     let created = 0
     let skipped = 0
     let errors = 0
@@ -242,7 +247,8 @@ Deno.serve(async (req) => {
 
     const { linkedByBinaId, unlinkedByName } = await loadClientMaps(supabase)
 
-    for (const order of orders) {
+    for (let orderIdx = 0; orderIdx < orders.length; orderIdx++) {
+      const order = orders[orderIdx]
       try {
         const binaOrderId = order.orderId
 
@@ -326,7 +332,8 @@ Deno.serve(async (req) => {
         }
       } catch (err) {
         errors++
-        errorDetails.push(`Order processing error: ${err.message}`)
+        const msg = err instanceof Error ? err.message : String(err)
+        errorDetails.push(`Order processing error: ${msg}`)
       }
     }
 

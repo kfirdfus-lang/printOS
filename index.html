@@ -2457,6 +2457,489 @@ async function exportToExcel(data, filename, reportTitle) {
   }
 }
 
+// ============================================================
+// דוח תחזית חודשית למורן (Excel + הדפסה)
+// ============================================================
+async function exportMoranReportToExcel(monthData, monthLabel) {
+  try {
+    if (typeof XLSX === 'undefined') {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        script.onload = resolve;
+        script.onerror = () => reject(new Error('טעינת ספריית Excel נכשלה'));
+        document.head.appendChild(script);
+      });
+    }
+
+    const formatDate = (d) => {
+      if (!d) return '';
+      const date = d instanceof Date ? d : new Date(d);
+      if (isNaN(date.getTime())) return '';
+      return date.toLocaleDateString('he-IL');
+    };
+
+    const wb = XLSX.utils.book_new();
+
+    const data = [
+      [`דוח תחזית גבייה - ${monthLabel}`],
+      [`הופק: ${new Date().toLocaleDateString('he-IL')}`],
+      [],
+      ['לקוח', 'סכום', 'תאריך לתשלום'],
+    ];
+
+    const allInvoices = [];
+    for (const client of monthData.clients) {
+      for (const inv of client.invoices) {
+        allInvoices.push({
+          client_name: client.name,
+          amount: Number(inv.doc_balance),
+          due_date: inv.calculated_due_date,
+        });
+      }
+    }
+
+    allInvoices.sort((a, b) => {
+      const da = a.due_date ? a.due_date.getTime() : 0;
+      const db = b.due_date ? b.due_date.getTime() : 0;
+      return da - db;
+    });
+
+    for (const inv of allInvoices) {
+      data.push([
+        inv.client_name,
+        Number(inv.amount),
+        formatDate(inv.due_date),
+      ]);
+    }
+
+    data.push([]);
+    data.push(['', 'סה"כ:', Number(monthData.total)]);
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [
+      { width: 40 },
+      { width: 16 },
+      { width: 16 },
+    ];
+    ws['!views'] = [{ RTL: true }];
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
+    ];
+
+    if (ws['A1']) ws['A1'].s = {
+      font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: '1E3A52' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+    };
+
+    if (ws['A2']) ws['A2'].s = {
+      font: { sz: 11, italic: true, color: { rgb: '6B7280' } },
+      alignment: { horizontal: 'center' },
+    };
+
+    ['A4', 'B4', 'C4'].forEach((cell) => {
+      if (ws[cell]) ws[cell].s = {
+        font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '3DB5B1' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: {
+          top: { style: 'thin', color: { rgb: '1E3A52' } },
+          bottom: { style: 'thin', color: { rgb: '1E3A52' } },
+          left: { style: 'thin', color: { rgb: '1E3A52' } },
+          right: { style: 'thin', color: { rgb: '1E3A52' } },
+        },
+      };
+    });
+
+    allInvoices.forEach((inv, idx) => {
+      const row = idx + 5;
+      const isAlt = idx % 2 === 0;
+      const bgColor = isAlt ? 'F8FAFA' : 'FFFFFF';
+
+      if (ws[`A${row}`]) ws[`A${row}`].s = {
+        font: { sz: 12, bold: true, color: { rgb: '1E3A52' } },
+        fill: { fgColor: { rgb: bgColor } },
+        alignment: { horizontal: 'right', vertical: 'center' },
+        border: { top: { style: 'thin', color: { rgb: 'E5E7EB' } }, bottom: { style: 'thin', color: { rgb: 'E5E7EB' } } },
+      };
+
+      if (ws[`B${row}`]) ws[`B${row}`].s = {
+        font: { sz: 13, bold: true, color: { rgb: '1E3A52' } },
+        fill: { fgColor: { rgb: bgColor } },
+        alignment: { horizontal: 'left' },
+        numFmt: '₪#,##0.00',
+        border: { top: { style: 'thin', color: { rgb: 'E5E7EB' } }, bottom: { style: 'thin', color: { rgb: 'E5E7EB' } } },
+      };
+
+      if (ws[`C${row}`]) ws[`C${row}`].s = {
+        font: { sz: 12 },
+        fill: { fgColor: { rgb: bgColor } },
+        alignment: { horizontal: 'center' },
+        border: { top: { style: 'thin', color: { rgb: 'E5E7EB' } }, bottom: { style: 'thin', color: { rgb: 'E5E7EB' } } },
+      };
+    });
+
+    const totalRow = allInvoices.length + 6;
+    ['A', 'B', 'C'].forEach((col) => {
+      const cell = `${col}${totalRow}`;
+      if (ws[cell]) ws[cell].s = {
+        font: { sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '1E3A52' } },
+        alignment: { horizontal: col === 'B' ? 'left' : 'right' },
+        numFmt: col === 'B' ? '₪#,##0.00' : undefined,
+      };
+    });
+
+    XLSX.utils.book_append_sheet(wb, ws, `${monthLabel}`);
+
+    const filename = `דוח_גביה_${monthLabel.replace(/\s+/g, '_')}.xlsx`;
+    XLSX.writeFile(wb, filename, { bookType: 'xlsx', cellStyles: true });
+  } catch (e) {
+    alert('ייצוא Excel למורן: ' + (e && e.message ? e.message : String(e)));
+  }
+}
+
+function openMoranPrintWindow(monthData, monthLabel) {
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatDate = (d) => {
+    if (!d) return '';
+    const date = d instanceof Date ? d : new Date(d);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('he-IL');
+  };
+
+  const allInvoices = [];
+  for (const client of monthData.clients) {
+    for (const inv of client.invoices) {
+      allInvoices.push({
+        client_name: client.name,
+        amount: Number(inv.doc_balance),
+        due_date: inv.calculated_due_date,
+      });
+    }
+  }
+
+  allInvoices.sort((a, b) => {
+    const da = a.due_date ? a.due_date.getTime() : 0;
+    const db = b.due_date ? b.due_date.getTime() : 0;
+    return da - db;
+  });
+
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    alert('אנא אפשר חלונות קופצים והנסה שוב');
+    return;
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>דוח גבייה - ${monthLabel}</title>
+<style>
+  @page { size: A4; margin: 1.5cm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    direction: rtl;
+    margin: 0;
+    padding: 20px;
+    color: #1E3A52;
+    background: #fff;
+  }
+  .header {
+    border-bottom: 3px solid #3DB5B1;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .logo { font-size: 28px; font-weight: 900; color: #1E3A52; letter-spacing: 2px; }
+  .logo-sub { font-size: 13px; color: #3DB5B1; font-weight: 600; }
+  .title-box { text-align: left; }
+  .title-tag { font-size: 11px; color: #3DB5B1; text-transform: uppercase; letter-spacing: 3px; font-weight: 700; }
+  .title-main { font-size: 22px; font-weight: 800; color: #1E3A52; margin: 4px 0; }
+  .title-date { font-size: 12px; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th {
+    background: #1E3A52;
+    color: #fff;
+    padding: 12px 10px;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  th.right { text-align: right; }
+  th.left { text-align: left; }
+  th.center { text-align: center; }
+  td {
+    padding: 10px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  tr:nth-child(even) td { background: #f8fafa; }
+  td.client { font-weight: 700; color: #1E3A52; font-size: 13px; }
+  td.amount { text-align: left; font-weight: 700; color: #1E3A52; font-size: 14px; direction: ltr; }
+  td.date { text-align: center; color: #4b5563; }
+  .total-row td {
+    background: #3DB5B1 !important;
+    color: #fff !important;
+    padding: 14px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .total-row td.amount {
+    color: #fff !important;
+    font-size: 18px;
+    direction: ltr;
+  }
+  .summary-box {
+    background: #f0fdfa;
+    border-right: 4px solid #3DB5B1;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #1E3A52;
+  }
+  .footer {
+    margin-top: 30px;
+    padding-top: 16px;
+    border-top: 2px solid #3DB5B1;
+    text-align: center;
+    color: #6b7280;
+    font-size: 11px;
+  }
+  .footer strong { color: #1E3A52; }
+  @media print {
+    body { padding: 0; }
+    .no-print { display: none !important; }
+  }
+  .print-toolbar {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: #1E3A52;
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    z-index: 9999;
+    font-family: Arial;
+  }
+  .print-toolbar button {
+    background: #3DB5B1;
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 700;
+    margin-inline-start: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="no-print print-toolbar">
+    <button onclick="window.print()">🖨️ הדפס</button>
+    <button onclick="window.close()" style="background:#dc2626">✕ סגור</button>
+  </div>
+  
+  <div class="header">
+    <div>
+      <div class="logo">NATALIE</div>
+      <div class="logo-sub">פתרונות הדפסה</div>
+    </div>
+    <div class="title-box">
+      <div class="title-tag">דוח תחזית גבייה</div>
+      <div class="title-main">${monthLabel}</div>
+      <div class="title-date">הופק: ${new Date().toLocaleDateString('he-IL')}</div>
+    </div>
+  </div>
+  
+  <div class="summary-box">
+    <strong>📊 סיכום:</strong> ${monthData.clients.length} לקוחות · ${allInvoices.length} חשבוניות · 
+    סה״כ צפוי: <strong style="direction:ltr; unicode-bidi:plaintext;">${fmtCurrency(monthData.total)}</strong>
+  </div>
+  
+  <table>
+    <thead>
+      <tr>
+        <th class="right">לקוח</th>
+        <th class="left">סכום</th>
+        <th class="center">תאריך לתשלום</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${allInvoices.map((inv) => `
+        <tr>
+          <td class="client">${inv.client_name}</td>
+          <td class="amount">${fmtCurrency(inv.amount)}</td>
+          <td class="date">${formatDate(inv.due_date)}</td>
+        </tr>
+      `).join('')}
+      <tr class="total-row">
+        <td>סה״כ ${allInvoices.length} חשבוניות:</td>
+        <td class="amount">${fmtCurrency(monthData.total)}</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  
+  <div class="footer">
+    <strong>נטלי פתרונות הדפסה בע״מ</strong> | ח.פ. 517205332 | שד׳ הר ציון 104, תל אביב | 03-6815703
+  </div>
+  
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() { window.print(); }, 500);
+    });
+  <\/script>
+</body>
+</html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+function MoranMonthlyReport({ clientsWithInvoices }) {
+  const [selectedMonth, setSelectedMonth] = useState('');
+
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set();
+    for (const client of clientsWithInvoices) {
+      for (const inv of client.invoices) {
+        if (inv.calculated_due_date) {
+          const m = inv.calculated_due_date;
+          const key = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`;
+          monthsSet.add(key);
+        }
+      }
+    }
+    return Array.from(monthsSet).sort();
+  }, [clientsWithInvoices]);
+
+  const monthReport = useMemo(() => {
+    if (!selectedMonth) return null;
+
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+
+    const clientsMap = new Map();
+    let totalAmount = 0;
+    let totalInvoices = 0;
+
+    for (const client of clientsWithInvoices) {
+      const relevantInvoices = client.invoices.filter((inv) => {
+        if (!inv.calculated_due_date) return false;
+        return inv.calculated_due_date.getFullYear() === year &&
+          inv.calculated_due_date.getMonth() === month;
+      });
+
+      if (relevantInvoices.length === 0) continue;
+
+      const clientTotal = relevantInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
+      clientsMap.set(client.bina_customer_id, {
+        ...client,
+        invoices: relevantInvoices,
+        total: clientTotal,
+      });
+      totalAmount += clientTotal;
+      totalInvoices += relevantInvoices.length;
+    }
+
+    return {
+      clients: Array.from(clientsMap.values()).sort((a, b) => b.total - a.total),
+      total: totalAmount,
+      invoicesCount: totalInvoices,
+    };
+  }, [clientsWithInvoices, selectedMonth]);
+
+  const monthLabel = useMemo(() => {
+    if (!selectedMonth) return '';
+    const [year, month] = selectedMonth.split('-');
+    const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+    return d.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+  }, [selectedMonth]);
+
+  const fmtCurrency = (n) => `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #eff6ff, #fff)',
+      padding: 16, borderRadius: 12, marginBottom: 20,
+      border: '2px solid #3b82f680',
+    }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 6 }}>
+          📊 דוח תחזית גבייה למורן - בחר חודש:
+        </div>
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          style={{
+            padding: '8px 12px', fontSize: 14, border: '1px solid #3b82f6',
+            borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer', minWidth: 180,
+          }}
+        >
+          <option value="">-- בחר חודש --</option>
+          {availableMonths.map((m) => {
+            const [y, mo] = m.split('-');
+            const d = new Date(parseInt(y, 10), parseInt(mo, 10) - 1, 1);
+            return (
+              <option key={m} value={m}>
+                {d.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}
+              </option>
+            );
+          })}
+        </select>
+
+        {monthReport && (
+          <>
+            <span style={{ color: '#6b7280', fontSize: 13 }}>
+              ({monthReport.clients.length} לקוחות · {monthReport.invoicesCount} חשבוניות · {fmtCurrency(monthReport.total)})
+            </span>
+            <button
+              type="button"
+              onClick={() => { void exportMoranReportToExcel(monthReport, monthLabel); }}
+              style={{
+                padding: '6px 14px', background: '#10b981', color: '#fff',
+                border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 13,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              📊 Excel למורן
+            </button>
+            <button
+              type="button"
+              onClick={() => openMoranPrintWindow(monthReport, monthLabel)}
+              style={{
+                padding: '6px 14px', background: '#3b82f6', color: '#fff',
+                border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 13,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              🖨️ PDF למורן
+            </button>
+          </>
+        )}
+      </div>
+
+      {monthReport && monthReport.clients.length === 0 && (
+        <div style={{ fontSize: 13, color: '#6b7280', padding: 10 }}>
+          אין חשבוניות לתשלום בחודש זה
+        </div>
+      )}
+    </div>
+  );
+}
+
 function isPromiseFulfilled(promise, allActions) {
   if (!promise.created_at) return false;
   const promiseTime = new Date(promise.created_at).getTime();
@@ -3109,6 +3592,8 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
       </div>
 
       <BrokenPromisesAlert brokenPromises={brokenPromises} />
+
+      <MoranMonthlyReport clientsWithInvoices={clientsWithInvoices} />
 
       {/* 🆕 בורר תאריך לדוח גלובלי */}
       <div style={{

@@ -201,7 +201,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: `${FROM_NAME} <onboarding@resend.dev>`,
         to: recipients,
-        reply_to: REPLY_TO_EMAIL,
+        replyTo: REPLY_TO_EMAIL,
         subject,
         html,
       }),
@@ -210,6 +210,7 @@ Deno.serve(async (req) => {
     const resendResult = await resendResponse.json();
 
     if (!resendResponse.ok) {
+      console.error('[send-collection-email] Resend rejected:', resendResponse.status, JSON.stringify(resendResult));
       return new Response(JSON.stringify({
         success: false,
         error: 'שגיאה בשליחת מייל',

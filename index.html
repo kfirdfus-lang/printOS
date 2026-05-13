@@ -237,7 +237,7 @@ function AiChat({user,tasks,clients,onRefresh,onClose}){
     setLoading(true);
 
     const system=`אתה עוזר AI לניהול בית דפוס PrintOS. עונה בעברית בלבד, קצר וברור.
-משתמש: ${user.name} | ${user.role==="admin"?"מנהל":"עובד ב-"+user.dept}
+משתמש: ${user.name} | ${user.role==="admin"?"מנהל":"עובד ב-"+(user?.dept||"—")}
 מחלקות: ${DEPTS.join(", ")}
 משימות קיימות (${tasks.length}): ${tasks.slice(0,10).map(t=>`[${t.id?.slice(0,6)}] ${t.title}|${t.dept}|${t.status}`).join(" | ")}
 לקוחות: ${clients.slice(0,10).map(c=>c.name).join(", ")}
@@ -272,7 +272,7 @@ update_status: data={task_id(6תווים),status}`;
 
       if(action?.action==="add_task"&&action.data?.title){
         const d=action.data;
-        await sb("tasks",{method:"POST",body:JSON.stringify({title:d.title,dept:d.dept||user.dept||DEPTS[0],priority:d.priority||"בינונית",status:"ממתין",client_name:d.client_name||"",assignee:d.assignee||"",due_date:d.due_date||null,notes:d.notes||"",created_by:user.name})});
+        await sb("tasks",{method:"POST",body:JSON.stringify({title:d.title,dept:d.dept||user?.dept||DEPTS[0],priority:d.priority||"בינונית",status:"ממתין",client_name:d.client_name||"",assignee:d.assignee||"",due_date:d.due_date||null,notes:d.notes||"",created_by:user.name})});
         onRefresh();
         setMsgs(p=>[...p,{role:"ai",text:`✅ המשימה "${d.title}" נוספה!`}]);
       }
@@ -335,7 +335,7 @@ update_status: data={task_id(6תווים),status}`;
 // ── CALENDAR TAB ──
 function CalendarTab({tasks,taskItems,user,isA,onTaskClick}){
   const [weekOffset,setWeekOffset]=useState(0);
-  const [deptFilter,setDeptFilter]=useState(isA?"הכל":user.dept);
+  const [deptFilter,setDeptFilter]=useState(isA?"הכל":(user?.dept||DEPTS[0]));
 
   const getWeekDays=()=>{
     const today=new Date();
@@ -980,7 +980,7 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
 }
 
 function DepartmentDashboard({user,allTasks,taskItems,isA,deptFilter}){
-  const targetDept=isA?(deptFilter==="all"?null:deptFilter):user.dept;
+  const targetDept=isA?(deptFilter==="all"?null:deptFilter):(user?.dept??null);
   const tasks=tasksForDepartment(allTasks||[],taskItems||[],targetDept);
   const today=new Date();
   today.setHours(0,0,0,0);
@@ -1022,7 +1022,7 @@ function DepartmentDashboard({user,allTasks,taskItems,isA,deptFilter}){
   else if(hour<21){greeting="ערב טוב";greetingEmoji="🌆";}
   else{greeting="לילה טוב";greetingEmoji="🌙";}
   const deptColor=targetDept?(DEPT_COLORS[targetDept]||"#3DB5B1"):"#3DB5B1";
-  const displayName=isA?(targetDept?`מחלקת ${targetDept}`:"כל המחלקות"):`מחלקת ${user.dept}`;
+  const displayName=isA?(targetDept?`מחלקת ${targetDept}`:"כל המחלקות"):`מחלקת ${user?.dept||"—"}`;
   const cardStyle={background:"linear-gradient(135deg, #fff 0%, #fafbfc 100%)",border:"1px solid var(--border)",borderRadius:16,padding:20,marginBottom:16,boxShadow:"0 2px 12px rgba(0,0,0,0.04)",direction:"rtl"};
   const headerStyle={display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingBottom:12,borderBottom:"1px solid var(--border)"};
   const greetingStyle={fontSize:18,fontWeight:700,color:"var(--text)"};
@@ -4939,6 +4939,8 @@ function App(){
     }
   },[tab,user]);
 
+  if(!user)return<Login onLogin={u=>{setUser(u);load(u);}}/>;
+
   const syncBina=async()=>{
     if(binaSyncing)return;
     if(window.BINA_STATUS==="offline"){
@@ -4975,9 +4977,9 @@ function App(){
 
 
   const isA=user?.role==="admin";
-  const targetDeptForBoard=user?.role==="worker"?user.dept:(deptFilter==="all"?null:deptFilter);
+  const targetDeptForBoard=user?.role==="worker"?(user?.dept??null):(deptFilter==="all"?null:deptFilter);
   const boardTasks=tasksForDepartment(tasks,taskItems,targetDeptForBoard);
-  const tasksListDept=isA?(deptFilter==="all"?null:deptFilter):user.dept;
+  const tasksListDept=isA?(deptFilter==="all"?null:deptFilter):(user?.dept??null);
   const visTasks=boardTasks;
   const byS=s=>boardTasks.filter(t=>t.status===s).length;
 
@@ -5127,8 +5129,6 @@ function App(){
   const binaStatusColor=binaStatus==="online"?"#16A34A":binaStatus==="offline"?"#DC2626":"#EAB308";
   const binaStatusTooltip=binaLastCheckAt?`בדיקה אחרונה: ${new Date(binaLastCheckAt).toLocaleTimeString("he-IL")}`:"בדיקה ראשונה מתבצעת...";
 
-  if(!user)return<Login onLogin={u=>{setUser(u);load(u);}}/>;
-
   const SideInner=()=><div style={{display:"flex",flexDirection:"column",height:"100%"}}>
     {/* Logo */}
     <div style={{padding:"20px 18px 16px",borderBottom:"1px solid var(--border)"}}>
@@ -5147,7 +5147,7 @@ function App(){
       <Av u={user} sz={32}/>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontWeight:700,fontSize:12,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.name}</div>
-        <div style={{fontSize:10,color:"var(--text3)"}}>{isA?"מנהל ראשי":user.dept}</div>
+        <div style={{fontSize:10,color:"var(--text3)"}}>{isA?"מנהל ראשי":(user?.dept||"—")}</div>
       </div>
       <button onClick={()=>{setUser(null);setTasks([]);setClients([]);}} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:14,padding:2}}>⎋</button>
     </div>
@@ -5174,7 +5174,7 @@ function App(){
         {DEPTS.map(dept=>{
           const color=DEPT_COLORS[dept]||"#2563EB";
           const count=tasksForDepartment(tasks,taskItems,dept).filter(t=>t.status!=="הושלם").length;
-          const isActive=tab==="tasks"&&(user.role==="worker"?user.dept===dept:deptFilter===dept);
+          const isActive=tab==="tasks"&&(user?.role==="worker"?user?.dept===dept:deptFilter===dept);
           return<button key={dept} type="button" onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);setShowSales(false);setShowQuotes(false);setShowDebt(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
             <span style={{fontSize:12,fontWeight:isActive?700:400,color:isActive?color:"var(--text2)",flex:1,textAlign:"right"}}>{dept}</span>
@@ -5257,7 +5257,7 @@ function App(){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24,flexWrap:"wrap",gap:12}}>
           <div>
             <h1 style={{fontSize:24,fontWeight:900,color:"var(--text)",margin:0}}>שלום, {user.name.split(" ")[0]} 👋</h1>
-            <p style={{color:"var(--text3)",margin:"5px 0 0",fontSize:13}}>{isA?"סקירה כללית של בית הדפוס":`הבורד שלך — מחלקת ${user.dept}`}</p>
+            <p style={{color:"var(--text3)",margin:"5px 0 0",fontSize:13}}>{isA?"סקירה כללית של בית הדפוס":`הבורד שלך — מחלקת ${user?.dept||"—"}`}</p>
           </div>
           {isA&&<button onClick={()=>setShowReportModal(true)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>}
         </div>
@@ -5284,7 +5284,7 @@ function App(){
         <div className="mg" style={{display:"grid",gridTemplateColumns:"1fr",gap:16,marginBottom:16}}>
           <Card>
             <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:16}}>🏭 עומס מחלקות</div>
-            {(isA?(deptFilter==="all"?DEPTS:[deptFilter]):[user.dept]).map((dept,i)=>{
+            {(isA?(deptFilter==="all"?DEPTS:[deptFilter]):[user?.dept||DEPTS[0]]).map((dept,i)=>{
               const dt=tasksForDepartment(tasks,taskItems,dept);
               const done=dt.filter(t=>t.status==="הושלם").length;
               const pct=dt.length?Math.round((done/dt.length)*100):0;
@@ -5325,7 +5325,7 @@ function App(){
       {/* TASKS */}
       {tab==="tasks"&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
-          <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>{isA?"לוח משימות":user.dept}</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{visTasks.length} משימות</p></div>
+          <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>{isA?"לוח משימות":(user?.dept||"—")}</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{visTasks.length} משימות</p></div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>refreshAll()} style={{padding:"8px 12px",borderRadius:9,border:"1px solid var(--border)",background:"#fff",color:"var(--text2)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↻</button>
             {isA&&<button onClick={()=>setAddTask(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ חדשה</button>}

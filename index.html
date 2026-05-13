@@ -100,11 +100,12 @@ const sb=async(path,o={})=>{
   const t=await r.text();if(!r.ok)throw new Error(t);return t?JSON.parse(t):[];
 };
 
-const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי שחור לבן","אופסט","עבודות חוץ","משלוחים","תזכורות","ביגוד ומוצרי פרסום"];
+const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי שחור לבן","אופסט","עבודות חוץ","משלוחים","תזכורות","ביגוד ומוצרי פרסום","מתקני תצוגה ומוצרים נלווים"];
 
 const DEPT_COLORS={
   "פורמט רחב":"#2563EB","דיגיטלי צבעוני":"#7C3AED","דיגיטלי שחור לבן":"#475569",
-  "אופסט":"#D97706","עבודות חוץ":"#16A34A","משלוחים":"#DC2626","תזכורות":"#0891B2"
+  "אופסט":"#D97706","עבודות חוץ":"#16A34A","משלוחים":"#DC2626","תזכורות":"#0891B2",
+  "ביגוד ומוצרי פרסום":"#DB2777","מתקני תצוגה ומוצרים נלווים":"#0D9488"
 };
 
 const SC={
@@ -332,7 +333,7 @@ update_status: data={task_id(6תווים),status}`;
 }
 
 // ── CALENDAR TAB ──
-function CalendarTab({tasks,user,isA,onTaskClick}){
+function CalendarTab({tasks,taskItems,user,isA,onTaskClick}){
   const [weekOffset,setWeekOffset]=useState(0);
   const [deptFilter,setDeptFilter]=useState(isA?"הכל":user.dept);
 
@@ -355,7 +356,10 @@ function CalendarTab({tasks,user,isA,onTaskClick}){
 
   const getTasksForDay=(dateStr)=>{
     let filtered=tasks.filter(t=>t.due_date===dateStr);
-    if(deptFilter!=="הכל") filtered=filtered.filter(t=>t.dept===deptFilter);
+    if(deptFilter!=="הכל"){
+      const ids=new Set((taskItems||[]).filter(i=>i.department===deptFilter&&i.status!=="ארכיון").map(i=>i.task_id));
+      filtered=filtered.filter(t=>!t.has_items?t.dept===deptFilter:ids.has(t.id));
+    }
     return filtered;
   };
 
@@ -975,12 +979,9 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
   </div>;
 }
 
-function DepartmentDashboard({user,allTasks,isA,deptFilter}){
+function DepartmentDashboard({user,allTasks,taskItems,isA,deptFilter}){
   const targetDept=isA?(deptFilter==="all"?null:deptFilter):user.dept;
-  const tasks=(allTasks||[]).filter(t=>{
-    if(!targetDept)return true;
-    return t.dept===targetDept;
-  });
+  const tasks=tasksForDepartment(allTasks||[],taskItems||[],targetDept);
   const today=new Date();
   today.setHours(0,0,0,0);
   const todayMs=today.getTime();
@@ -4650,11 +4651,26 @@ function fmtCurrencySimple(n) {
   return `₪${Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+/** משימות לפי מחלקה: legacy לפי tasks.dept, או הזמנות עם task_items לפי department של הפריט */
+function tasksForDepartment(allTasks, taskItems, targetDept) {
+  const list = Array.isArray(allTasks) ? allTasks : [];
+  const items = Array.isArray(taskItems) ? taskItems : [];
+  if (!targetDept) return list;
+  const taskIdsFromItems = new Set(
+    items.filter((i) => i.department === targetDept && i.status !== "ארכיון").map((i) => i.task_id),
+  );
+  return list.filter((t) => {
+    if (!t.has_items) return t.dept === targetDept;
+    return taskIdsFromItems.has(t.id);
+  });
+}
+
 
 // ── MAIN APP ──
 function App(){
   const [user,setUser]=useState(null);
   const [tasks,setTasks]=useState([]);
+  const [taskItems,setTaskItems]=useState([]);
   const [clients,setClients]=useState([]);
   const [tab,setTab]=useState("dashboard");
   const [showSales,setShowSales]=useState(false);
@@ -4686,6 +4702,9 @@ function App(){
   const BCF_DEFAULT=()=>({custName:"",custTz:"",custCity:"",custAddress:"",custGroup:"ישראל",custTel:"",custCel:"",custEmail:"",termsofPayment:"שוטף + 30",notes:""});
   const [bcf,setBcf]=useState(BCF_DEFAULT());
   const [bcfErr,setBcfErr]=useState({});
+
+  const [showReportModal,setShowReportModal]=useState(false);
+  const [reportRecipients,setReportRecipients]=useState([]);
 
   const notify=(m,c="#16A34A")=>{setNotif({m,c});setTimeout(()=>setNotif(null),3000);};
 
@@ -4805,7 +4824,7 @@ function App(){
     try{
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,q,ds]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null)]);
+      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,department,description,quantity,price,total,status&order=created_at.desc")]);
       setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
@@ -4814,8 +4833,9 @@ function App(){
           setDebtSnapshots(ds.filter(x=>x.snapshot_date===latestDate));
         }else setDebtSnapshots([]);
       }else setDebtSnapshots([]);
+      setTaskItems(Array.isArray(ti)?ti:[]);
       sb("users?role=eq.worker&order=name.asc").then(setAllUsers).catch(()=>{});
-    }catch(e){notify("שגיאה בטעינה","#DC2626");}
+    }catch(e){notify("שגיאה בטעינה","#DC2626");setTaskItems([]);}
     setLoading(false);
   };
 
@@ -4955,7 +4975,9 @@ function App(){
 
 
   const isA=user?.role==="admin";
-  const boardTasks=user?.role==="worker"?tasks.filter(t=>t.dept===user.dept):(deptFilter==="all"?tasks:tasks.filter(t=>t.dept===deptFilter));
+  const targetDeptForBoard=user?.role==="worker"?user.dept:(deptFilter==="all"?null:deptFilter);
+  const boardTasks=tasksForDepartment(tasks,taskItems,targetDeptForBoard);
+  const tasksListDept=isA?(deptFilter==="all"?null:deptFilter):user.dept;
   const visTasks=boardTasks;
   const byS=s=>boardTasks.filter(t=>t.status===s).length;
 
@@ -4979,9 +5001,6 @@ function App(){
     }catch{notify("שגיאה","#DC2626");}
   };
 
-  const [showReportModal,setShowReportModal]=useState(false);
-  const [reportRecipients,setReportRecipients]=useState([]);
-
   const DEPT_EMAILS={
     "פורמט רחב":{email:"daniel.natalie.print@gmail.com",name:"דניאל"},
     "דיגיטלי צבעוני":{email:"adam.dfusnatalie@gmail.com",name:"אדם"},
@@ -4998,7 +5017,7 @@ function App(){
     for(const dept of selected){
       const deptInfo=DEPT_EMAILS[dept];
       if(!deptInfo) continue;
-      const deptTasks=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם");
+      const deptTasks=tasksForDepartment(tasks,taskItems,dept).filter(t=>t.status!=="הושלם");
       if(deptTasks.length===0) continue;
       const taskLines=deptTasks.map((t,i)=>`${i+1}. ${t.title}${t.client_name?' | '+t.client_name:''}${t.due_date?' | '+t.due_date:''}${t.assignee?' | '+t.assignee:''} [${t.status}]${t.notes?'\n   הערה: '+t.notes:''}`).join('\n\n');
       const message=`שלום ${deptInfo.name},\n\nדוח יומי — ${dept}\nתאריך: ${today}\nמשימות פתוחות: ${deptTasks.length}\n\n${"─".repeat(36)}\n\n${taskLines}\n\n${"─".repeat(36)}\n\nPrintOS — מערכת ניהול בית דפוס נטלי`;
@@ -5080,6 +5099,19 @@ function App(){
     }catch{notify("שגיאה","#DC2626");}
   };
 
+  const markTaskItemDone=async(itemRow,taskId)=>{
+    try{
+      await sb(`task_items?id=eq.${itemRow.id}`,{method:"PATCH",body:JSON.stringify({status:"מוכן",completed_at:new Date().toISOString()})});
+      const all=await sb(`task_items?task_id=eq.${taskId}&select=id,status`);
+      const arr=Array.isArray(all)?all:[];
+      if(arr.length>0&&arr.every(i=>i.status==="מוכן")){
+        await sb(`tasks?id=eq.${taskId}`,{method:"PATCH",body:JSON.stringify({status:"הושלם",completed_at:new Date().toISOString()})});
+      }
+      await refreshAll();
+      notify("✅ סומן כמוכן");
+    }catch(e){notify("שגיאה בעדכון פריט","#DC2626");}
+  };
+
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
   const LS={color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:5,display:"block"};
 
@@ -5141,7 +5173,7 @@ function App(){
         <div style={{fontSize:10,fontWeight:700,color:"var(--text3)",letterSpacing:"0.06em",marginBottom:8,paddingRight:4}}>מחלקות</div>
         {DEPTS.map(dept=>{
           const color=DEPT_COLORS[dept]||"#2563EB";
-          const count=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
+          const count=tasksForDepartment(tasks,taskItems,dept).filter(t=>t.status!=="הושלם").length;
           const isActive=tab==="tasks"&&(user.role==="worker"?user.dept===dept:deptFilter===dept);
           return<button key={dept} type="button" onClick={()=>{setTab("tasks");setDeptFilter(dept);setMob(false);setShowSales(false);setShowQuotes(false);setShowDebt(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:9,border:"none",cursor:"pointer",background:isActive?`${color}15`:"transparent",fontFamily:"inherit",marginBottom:2,transition:"all 0.15s"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
@@ -5217,7 +5249,7 @@ function App(){
 
       {/* DASHBOARD */}
       {tab==="dashboard"&&<div>
-        <DepartmentDashboard user={user} allTasks={tasks} isA={isA} deptFilter={deptFilter}/>
+        <DepartmentDashboard user={user} allTasks={tasks} taskItems={taskItems} isA={isA} deptFilter={deptFilter}/>
         {isA&&<div style={{display:"flex",gap:8,padding:"12px 0",overflowX:"auto",flexWrap:"wrap"}}>
           <button type="button" onClick={()=>setDeptFilter("all")} style={{padding:"8px 16px",borderRadius:20,border:"1px solid var(--border)",background:deptFilter==="all"?"var(--blue)":"#fff",color:deptFilter==="all"?"#fff":"var(--text)",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}}>🏠 כל המחלקות</button>
           {DEPTS.map(d=><button type="button" key={d} onClick={()=>setDeptFilter(d)} style={{padding:"8px 16px",borderRadius:20,border:"1px solid var(--border)",background:deptFilter===d?(DEPT_COLORS[d]||"var(--blue)"):"#fff",color:deptFilter===d?"#fff":"var(--text)",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit"}}>{d}</button>)}
@@ -5253,7 +5285,7 @@ function App(){
           <Card>
             <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:16}}>🏭 עומס מחלקות</div>
             {(isA?(deptFilter==="all"?DEPTS:[deptFilter]):[user.dept]).map((dept,i)=>{
-              const dt=boardTasks.filter(t=>t.dept===dept);
+              const dt=tasksForDepartment(tasks,taskItems,dept);
               const done=dt.filter(t=>t.status==="הושלם").length;
               const pct=dt.length?Math.round((done/dt.length)*100):0;
               const color=DEPT_COLORS[dept]||"#2563EB";
@@ -5307,14 +5339,26 @@ function App(){
         </div>}
 
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {visTasks.map(t=><div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${DEPT_COLORS[t.dept]||"var(--blue)"}`}} onClick={()=>setDet(t)}>
+          {visTasks.map(t=>{
+            const stripeColor=(tasksListDept?(DEPT_COLORS[tasksListDept]||"var(--blue)"):(DEPT_COLORS[t.dept]||"var(--blue)"));
+            const deptItems=(t.has_items&&tasksListDept)?(taskItems||[]).filter(i=>i.task_id===t.id&&i.department===tasksListDept&&i.status!=="ארכיון"):[];
+            return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`}} onClick={()=>setDet(t)}>
             <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}</div>
-                <div style={{color:"var(--text3)",fontSize:12}}>{t.client_name}{t.client_name&&" · "}{t.dept}{t.assignee&&" · "+t.assignee}</div>
+                <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}{t.bina_order_id?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· #{t.bina_order_id}</span>:null}{t.total_amount!=null&&Number(t.total_amount)>0?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· {fmtCurrencySimple(t.total_amount)}</span>:null}</div>
+                <div style={{color:"var(--text3)",fontSize:12}}>{t.client_name}{t.client_name&&" · "}{t.sales_agent&&"🎯 "+t.sales_agent+" · "}{t.dept}{t.assignee&&" · "+t.assignee}</div>
               </div>
               <PriBadge p={t.priority}/>
             </div>
+            {t.has_items&&tasksListDept&&deptItems.length>0&&<div style={{marginBottom:10}} onClick={e=>e.stopPropagation()}>
+              {deptItems.map(it=><div key={it.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginTop:6,fontSize:12,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>
+                <span style={{color:it.status==="מוכן"?"var(--text3)":"var(--text)",fontWeight:it.status==="מוכן"?500:600}}>
+                  └ {it.description}{it.quantity!=null&&Number(it.quantity)>0?` × ${it.quantity}`:""} {it.status==="מוכן"?"✓":""}
+                </span>
+                {it.status!=="מוכן"&&<button type="button" onClick={()=>markTaskItemDone(it,t.id)} style={{padding:"4px 10px",borderRadius:7,border:"1px solid var(--green)",background:"var(--green-light)",color:"var(--green)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✅ סמן כמוכן</button>}
+              </div>)}
+            </div>}
+            {t.has_items&&!tasksListDept&&<div style={{fontSize:11,color:"var(--text3)",marginBottom:10,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>הזמנה עם פריטים לפי מחלקות — בחר מחלקה מהסינון למעלה כדי לראות ולסמן פריטים.</div>}
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
               <Badge status={t.status}/>
               <select value={t.status} onChange={e=>updStatus(t.id,e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,padding:"4px 9px",color:"var(--text)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",direction:"rtl"}}>
@@ -5342,7 +5386,7 @@ function App(){
                 sendEmail({to:email,subject:`⏰ תזכורת: ${t.title}`,text:msg}).then(()=>notify(`📧 נשלח ל-${name}!`)).catch(()=>notify("שגיאה","#DC2626"));
               }} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔔 תזכורת</button>}
             </div>
-          </div>)}
+          </div>);})}
           {visTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
             <div style={{fontSize:36,marginBottom:10}}>📋</div>
             <div style={{fontWeight:600,fontSize:14}}>אין משימות</div>
@@ -5379,7 +5423,7 @@ function App(){
       </div>}
 
       {/* CALENDAR */}
-      {tab==="calendar"&&<CalendarTab tasks={tasks} user={user} isA={isA} onTaskClick={setDet}/>}
+      {tab==="calendar"&&<CalendarTab tasks={tasks} taskItems={taskItems} user={user} isA={isA} onTaskClick={setDet}/>}
 
       {/* DELIVERY REPORT */}
       {tab==="delivery"&&isA&&<DeliveryTab tasks={tasks}/>}
@@ -5539,7 +5583,7 @@ function App(){
         <p style={{fontSize:13,color:"var(--text2)"}}>בחר את המחלקות שאליהן לשלוח דוח:</p>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {Object.entries(DEPT_EMAILS).map(([dept,info])=>{
-            const deptCount=tasks.filter(t=>t.dept===dept&&t.status!=="הושלם").length;
+            const deptCount=tasksForDepartment(tasks,taskItems,dept).filter(t=>t.status!=="הושלם").length;
             const isSel=reportRecipients.includes(dept);
             return<label key={dept} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,border:`1px solid ${isSel?"var(--blue)":"var(--border)"}`,background:isSel?"var(--blue-light)":"#fff",cursor:"pointer",direction:"rtl"}}>
               <input type="checkbox" checked={isSel} onChange={()=>setReportRecipients(p=>isSel?p.filter(d=>d!==dept):[...p,dept])} style={{accentColor:"var(--blue)",flexShrink:0}}/>

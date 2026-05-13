@@ -4,6 +4,17 @@ import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts'
 const BINA_API_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx'
 const DEFAULT_DEPT = 'חדש'
 
+/** קוד ב-itemId בבינה (1–7) → שם מחלקה ב-PrintOS */
+const DEPARTMENT_CODES: Record<string, string> = {
+  '1': 'פורמט רחב',
+  '2': 'ביגוד ומוצרי פרסום',
+  '3': 'דיגיטלי צבעוני',
+  '4': 'דיגיטלי שחור לבן',
+  '5': 'אופסט',
+  '6': 'עבודות חוץ',
+  '7': 'מתקני תצוגה ומוצרים נלווים',
+}
+
 const VALID_DEPTS = [
   'פורמט רחב',
   'דיגיטלי צבעוני',
@@ -12,7 +23,8 @@ const VALID_DEPTS = [
   'עבודות חוץ',
   'משלוחים',
   'תזכורות',
-  'ביגוד ומוצרי פרסום'
+  'ביגוד ומוצרי פרסום',
+  'מתקני תצוגה ומוצרים נלווים',
 ]
 
 const corsHeaders = {
@@ -161,6 +173,58 @@ function extractDept(title: string): { dept: string, cleanTitle: string } {
   return { dept: DEFAULT_DEPT, cleanTitle: title }
 }
 
+async function upsertTaskItemsFromBinaOrder(
+  supabase: ReturnType<typeof createClient>,
+  taskId: string,
+  binaOrderId: number,
+  order: Record<string, unknown>,
+): Promise<boolean> {
+  const orderNested = order.Order as { items?: unknown[] } | undefined
+  if (!orderNested?.items || !Array.isArray(orderNested.items)) return false
+
+  const rows: Record<string, unknown>[] = []
+  let fallbackLine = 0
+  for (const raw of orderNested.items) {
+    fallbackLine += 1
+    const item = raw as Record<string, unknown>
+    const itemCode = String(item.itemId ?? '').trim()
+    if (!itemCode || !DEPARTMENT_CODES[itemCode]) continue
+
+    const ln = Number(item.itemLineNumber)
+    const line_number = Number.isFinite(ln) ? ln : fallbackLine
+
+    rows.push({
+      task_id: taskId,
+      bina_order_id: binaOrderId,
+      line_number,
+      bina_item_code: itemCode,
+      department: DEPARTMENT_CODES[itemCode],
+      description: (String(item.itemDesc ?? '').trim() || '—'),
+      quantity: Number(item.itemQty) || 0,
+      price: Number(item.itemPrice) || 0,
+      total: Number(item.itemTotal) || 0,
+      status: 'בעבודה',
+    })
+  }
+
+  if (rows.length === 0) return false
+
+  const { error: itemsErr } = await supabase.from('task_items').upsert(rows, {
+    onConflict: 'bina_order_id,line_number',
+  })
+
+  if (itemsErr) {
+    console.error('[sync-bina-orders] task_items upsert:', itemsErr.message)
+    return false
+  }
+
+  const { error: flagErr } = await supabase.from('tasks').update({ has_items: true }).eq('id', taskId)
+  if (flagErr) {
+    console.error('[sync-bina-orders] has_items update:', flagErr.message)
+  }
+  return true
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -233,11 +297,6 @@ Deno.serve(async (req) => {
       orders = binaData.Orders
     } else if (Array.isArray(binaData)) {
       orders = binaData
-    }
-
-    const binaOrders = orders
-    if (binaOrders && binaOrders.length > 0) {
-      console.log('[DEBUG] First bina order full structure:', JSON.stringify(binaOrders[0], null, 2))
     }
 
     let created = 0
@@ -320,15 +379,21 @@ Deno.serve(async (req) => {
 
         await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
 
-        const { error: insertError } = await supabase
+        const { data: insertedTask, error: insertError } = await supabase
           .from('tasks')
           .insert(taskData)
+          .select('id')
+          .single()
 
         if (insertError) {
           errors++
           errorDetails.push(`Order ${binaOrderId}: ${insertError.message}`)
         } else {
           created++
+          const taskId = insertedTask?.id as string | undefined
+          if (taskId) {
+            await upsertTaskItemsFromBinaOrder(supabase, taskId, Number(binaOrderId), order as Record<string, unknown>)
+          }
         }
       } catch (err) {
         errors++
@@ -352,8 +417,9 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Sync error:', error)
+    const msg = error instanceof Error ? error.message : String(error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: msg }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

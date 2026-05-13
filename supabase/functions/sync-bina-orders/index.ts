@@ -173,18 +173,65 @@ function extractDept(title: string): { dept: string, cleanTitle: string } {
   return { dept: DEFAULT_DEPT, cleanTitle: title }
 }
 
-async function upsertTaskItemsFromBinaOrder(
+/** סנכרון task_items ממבנה בינה: מחיקת שורות שלא קיימות יותר, upsert, ועדכון has_items — לא נוגע בשדות tasks אחרים. */
+async function syncTaskItemsForBinaOrder(
   supabase: ReturnType<typeof createClient>,
   taskId: string,
   binaOrderId: number,
   order: Record<string, unknown>,
 ): Promise<boolean> {
   const orderNested = order.Order as { items?: unknown[] } | undefined
-  if (!orderNested?.items || !Array.isArray(orderNested.items)) return false
+  const rawItems = orderNested?.items && Array.isArray(orderNested.items) ? orderNested.items : []
+
+  /** בינה לא החזירה מערך פריטים — לא מוחקים ולא מעדכנים (לא לדרוס מצב קיים). */
+  if (rawItems.length === 0) return true
+
+  const { data: existingRows, error: existingErr } = await supabase
+    .from('task_items')
+    .select('id, line_number, status')
+    .eq('bina_order_id', binaOrderId)
+
+  if (existingErr) {
+    console.error('[sync-bina-orders] task_items preload:', existingErr.message)
+    return false
+  }
+
+  const statusByLine = new Map<number, string>()
+  for (const r of existingRows || []) {
+    const row = r as { line_number: number; status: string }
+    statusByLine.set(Number(row.line_number), String(row.status || ''))
+  }
+
+  const lineNumbersFromBina: number[] = []
+  let fb = 0
+  for (const raw of rawItems) {
+    fb += 1
+    const item = raw as Record<string, unknown>
+    const ln = Number(item.itemLineNumber)
+    lineNumbersFromBina.push(Number.isFinite(ln) ? ln : fb)
+  }
+  const uniqueSet = new Set(lineNumbersFromBina)
+
+  if (uniqueSet.size > 0) {
+    const idsToRemove = (existingRows || [])
+      .filter((row) => {
+        const r = row as { id: string; line_number: number }
+        return !uniqueSet.has(Number(r.line_number))
+      })
+      .map((row) => (row as { id: string }).id)
+
+    if (idsToRemove.length > 0) {
+      const { error: delErr } = await supabase.from('task_items').delete().in('id', idsToRemove)
+      if (delErr) {
+        console.error('[sync-bina-orders] task_items delete stale lines:', delErr.message)
+        return false
+      }
+    }
+  }
 
   const rows: Record<string, unknown>[] = []
   let fallbackLine = 0
-  for (const raw of orderNested.items) {
+  for (const raw of rawItems) {
     fallbackLine += 1
     const item = raw as Record<string, unknown>
     const itemCode = String(item.itemId ?? '').trim()
@@ -192,6 +239,8 @@ async function upsertTaskItemsFromBinaOrder(
 
     const ln = Number(item.itemLineNumber)
     const line_number = Number.isFinite(ln) ? ln : fallbackLine
+    const prev = statusByLine.get(line_number)
+    const status = prev === 'מוכן' ? 'מוכן' : 'בעבודה'
 
     rows.push({
       task_id: taskId,
@@ -203,25 +252,38 @@ async function upsertTaskItemsFromBinaOrder(
       quantity: Number(item.itemQty) || 0,
       price: Number(item.itemPrice) || 0,
       total: Number(item.itemTotal) || 0,
-      status: 'בעבודה',
+      status,
     })
   }
 
-  if (rows.length === 0) return false
+  if (rows.length > 0) {
+    const { error: itemsErr } = await supabase.from('task_items').upsert(rows, {
+      onConflict: 'bina_order_id,line_number',
+    })
 
-  const { error: itemsErr } = await supabase.from('task_items').upsert(rows, {
-    onConflict: 'bina_order_id,line_number',
-  })
+    if (itemsErr) {
+      console.error('[sync-bina-orders] task_items upsert:', itemsErr.message)
+      return false
+    }
+  }
 
-  if (itemsErr) {
-    console.error('[sync-bina-orders] task_items upsert:', itemsErr.message)
+  const { count, error: cntErr } = await supabase
+    .from('task_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('task_id', taskId)
+
+  if (cntErr) {
+    console.error('[sync-bina-orders] task_items count:', cntErr.message)
     return false
   }
 
-  const { error: flagErr } = await supabase.from('tasks').update({ has_items: true }).eq('id', taskId)
+  const hasItems = (count ?? 0) > 0
+  const { error: flagErr } = await supabase.from('tasks').update({ has_items: hasItems }).eq('id', taskId)
   if (flagErr) {
     console.error('[sync-bina-orders] has_items update:', flagErr.message)
+    return false
   }
+
   return true
 }
 
@@ -301,6 +363,7 @@ Deno.serve(async (req) => {
 
     let created = 0
     let skipped = 0
+    let taskItemsSynced = 0
     let errors = 0
     const errorDetails: string[] = []
 
@@ -317,6 +380,12 @@ Deno.serve(async (req) => {
           continue
         }
 
+        const orderHasItemsPayload = Boolean(
+          order.Order &&
+            Array.isArray((order.Order as { items?: unknown }).items) &&
+            (order.Order as { items: unknown[] }).items.length > 0,
+        )
+
         // כולל משימות בארכיון — כדי שלא תיווצר כפילות אחרי ארכוב (במקום מחיקה).
         const { data: existing } = await supabase
           .from('tasks')
@@ -324,8 +393,16 @@ Deno.serve(async (req) => {
           .eq('bina_order_id', binaOrderId)
           .maybeSingle()
 
-        if (existing) {
+        if (existing?.id) {
           skipped++
+          await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
+          const ok = await syncTaskItemsForBinaOrder(
+            supabase,
+            existing.id as string,
+            Number(binaOrderId),
+            order as Record<string, unknown>,
+          )
+          if (ok && orderHasItemsPayload) taskItemsSynced++
           continue
         }
 
@@ -392,7 +469,13 @@ Deno.serve(async (req) => {
           created++
           const taskId = insertedTask?.id as string | undefined
           if (taskId) {
-            await upsertTaskItemsFromBinaOrder(supabase, taskId, Number(binaOrderId), order as Record<string, unknown>)
+            const ok = await syncTaskItemsForBinaOrder(
+              supabase,
+              taskId,
+              Number(binaOrderId),
+              order as Record<string, unknown>,
+            )
+            if (ok && orderHasItemsPayload) taskItemsSynced++
           }
         }
       } catch (err) {
@@ -408,6 +491,7 @@ Deno.serve(async (req) => {
         totalFromBina: orders.length,
         created,
         skipped,
+        taskItemsSynced,
         errors,
         errorDetails: errors > 0 ? errorDetails : undefined,
         dateRange: { from: fromStr, to: toStr },

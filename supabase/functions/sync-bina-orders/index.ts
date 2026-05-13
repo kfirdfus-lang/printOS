@@ -4,15 +4,15 @@ import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts'
 const BINA_API_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx'
 const DEFAULT_DEPT = 'חדש'
 
-/** קוד ב-itemId בבינה (1–7) → שם מחלקה ב-PrintOS */
+/** קוד ב-itemId בבינה (2–8; 1=כללי בבינה — לא ממופה) → שם מחלקה ב-PrintOS */
 const DEPARTMENT_CODES: Record<string, string> = {
-  '1': 'פורמט רחב',
   '2': 'ביגוד ומוצרי פרסום',
   '3': 'דיגיטלי צבעוני',
   '4': 'דיגיטלי שחור לבן',
   '5': 'אופסט',
   '6': 'עבודות חוץ',
   '7': 'מתקני תצוגה ומוצרים נלווים',
+  '8': 'פורמט רחב',
 }
 
 const VALID_DEPTS = [

@@ -5386,7 +5386,7 @@ function App(){
                 sendEmail({to:email,subject:`⏰ תזכורת: ${t.title}`,text:msg}).then(()=>notify(`📧 נשלח ל-${name}!`)).catch(()=>notify("שגיאה","#DC2626"));
               }} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔔 תזכורת</button>}
             </div>
-          </div>);})}
+          </div>})}
           {visTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
             <div style={{fontSize:36,marginBottom:10}}>📋</div>
             <div style={{fontWeight:600,fontSize:14}}>אין משימות</div>

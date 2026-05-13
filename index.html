@@ -1232,7 +1232,6 @@ function MonthlyAgentSummary({ allTasks, onAgentClick }) {
     for (const task of (allTasks || [])) {
       if (!task.created_at) continue;
       if (!task.total_amount || Number(task.total_amount) <= 0) continue;
-      if (task.archived_at) continue;
       const d = new Date(task.created_at);
       if (d.getFullYear() !== selectedYear || d.getMonth() !== selectedMonth) continue;
       const agent = normalizeAgentName(task.sales_agent || task.assignee);
@@ -1255,7 +1254,6 @@ function MonthlyAgentSummary({ allTasks, onAgentClick }) {
     for (const task of (allTasks || [])) {
       if (!task.created_at) continue;
       if (!task.total_amount || Number(task.total_amount) <= 0) continue;
-      if (task.archived_at) continue;
       const d = new Date(task.created_at);
       months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
@@ -1394,7 +1392,6 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
     const agentMap = new Map();
     for (const t of (allTasks || [])) {
       if (!t.total_amount || t.total_amount <= 0) continue;
-      if (t.archived_at) continue;
       const taskDate = t.bina_order_date 
         ? new Date(t.bina_order_date).getTime() 
         : new Date(t.created_at).getTime();
@@ -1425,7 +1422,6 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
   const getTodayCompetitionOrdersForAgent = (agentName) =>
     (allTasks || []).filter((t) => {
       if (!t.total_amount || t.total_amount <= 0) return false;
-      if (t.archived_at) return false;
       const taskDate = t.bina_order_date
         ? new Date(t.bina_order_date).getTime()
         : new Date(t.created_at).getTime();
@@ -1490,7 +1486,6 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
 
   const tasksInRange = (allTasks || []).filter(t => {
     if (!t.total_amount || t.total_amount <= 0) return false;
-    if (t.archived_at) return false;
     const taskDate = t.bina_order_date 
       ? new Date(t.bina_order_date)
       : new Date(t.created_at);
@@ -1510,7 +1505,6 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
       const next = new Date(today.getFullYear(), today.getMonth() - i + 1, 1);
       const monthTasks = (allTasks || []).filter(t => {
         if (!t.total_amount || t.total_amount <= 0) return false;
-        if (t.archived_at) return false;
         const td = t.bina_order_date ? new Date(t.bina_order_date) : new Date(t.created_at);
         return td >= d && td < next;
       });

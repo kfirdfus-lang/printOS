@@ -1372,6 +1372,193 @@ function MonthlyAgentSummary({ allTasks, onAgentClick }) {
   );
 }
 
+function calculateRollingTargets(allTasks, targetConfig) {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const currentDay = today.getDate();
+  const openingEnd = new Date(targetConfig.opening_date);
+  openingEnd.setHours(23, 59, 59, 999);
+
+  const yearTasksRaw = (allTasks || []).filter((t) => {
+    if (!t.created_at || t.total_amount == null || Number(t.total_amount) <= 0) return false;
+    const d = new Date(t.created_at);
+    return d.getFullYear() === currentYear && new Date(t.created_at) > openingEnd;
+  });
+
+  const soldThisYear = yearTasksRaw.reduce(
+    (sum, t) => sum + Number(t.total_amount) / 1.18,
+    0,
+  );
+
+  const openingAmt = Number(targetConfig.opening_amount) || 0;
+  const annualTarget = Number(targetConfig.annual_target) || 0;
+  const totalYTD = openingAmt + soldThisYear;
+  const remainingYearly = annualTarget - totalYTD;
+  const monthsLeft = 12 - currentMonth;
+  const monthlyTarget = monthsLeft > 0 ? remainingYearly / monthsLeft : 0;
+
+  const monthTasks = yearTasksRaw.filter((t) => {
+    const d = new Date(t.created_at);
+    return d.getMonth() === currentMonth;
+  });
+  const soldThisMonth = monthTasks.reduce(
+    (sum, t) => sum + Number(t.total_amount) / 1.18,
+    0,
+  );
+
+  const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
+  let workDaysLeft = 0;
+  for (let day = currentDay; day <= lastDay; day++) {
+    const d = new Date(currentYear, currentMonth, day);
+    const dow = d.getDay();
+    if (dow >= 0 && dow <= 4) workDaysLeft++;
+  }
+
+  const remainingMonthly = monthlyTarget - soldThisMonth;
+  const dailyTarget = workDaysLeft > 0 ? remainingMonthly / workDaysLeft : 0;
+
+  const todayStart = new Date(currentYear, currentMonth, currentDay);
+  const tomorrowStart = new Date(currentYear, currentMonth, currentDay + 1);
+  const soldToday = (allTasks || [])
+    .filter((t) => {
+      if (!t.created_at || t.total_amount == null || Number(t.total_amount) <= 0) return false;
+      const d = new Date(t.created_at);
+      return d >= todayStart && d < tomorrowStart;
+    })
+    .reduce((sum, t) => sum + Number(t.total_amount) / 1.18, 0);
+
+  return {
+    daily: { target: dailyTarget, actual: soldToday, workDaysLeft },
+    monthly: { target: monthlyTarget, actual: soldThisMonth },
+    yearly: {
+      target: annualTarget,
+      actual: totalYTD,
+      remaining: remainingYearly,
+    },
+  };
+}
+
+function RollingTargets({ allTasks }) {
+  const [config, setConfig] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    sb('sales_targets?year=eq.2026&limit=1')
+      .then((r) => {
+        if (cancelled || !r || !r[0]) return;
+        setConfig(r[0]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!config) return null;
+
+  const t = calculateRollingTargets(allTasks, config);
+
+  const getStatus = (actual, target) => {
+    if (target <= 0) {
+      return { color: '#6b7280', bg: '#f3f4f6', emoji: '—', msg: 'אין יעד' };
+    }
+    if (actual >= target) return { color: '#10b981', bg: '#d1fae5', emoji: '🎉', msg: 'מעל היעד!' };
+    const pct = (actual / target) * 100;
+    if (pct >= 80) return { color: '#f59e0b', bg: '#fef3c7', emoji: '⚡', msg: 'קרוב!' };
+    return { color: '#ef4444', bg: '#fee2e2', emoji: '🎯', msg: 'בעבודה' };
+  };
+
+  const dailyStatus = getStatus(t.daily.actual, t.daily.target);
+  const monthlyStatus = getStatus(t.monthly.actual, t.monthly.target);
+  const yearlyStatus = getStatus(t.yearly.actual, t.yearly.target);
+
+  const fmt = (n) => `₪${Math.round(n).toLocaleString('he-IL')}`;
+  const monthlyPct =
+    t.monthly.target > 0 ? Math.round((t.monthly.actual / t.monthly.target) * 100) : 0;
+
+  return (
+    <div
+      style={{
+        background: 'white',
+        padding: '20px',
+        borderRadius: '12px',
+        marginBottom: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+      }}
+    >
+      <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 600 }}>
+        🎯 יעדים מתגלגלים
+      </h3>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '16px',
+        }}
+        className="rolling-targets-grid"
+      >
+        <div
+          style={{
+            background: dailyStatus.bg,
+            padding: '16px',
+            borderRadius: '8px',
+            borderRight: `4px solid ${dailyStatus.color}`,
+          }}
+        >
+          <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+            יעד יומי {dailyStatus.emoji}
+          </div>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: dailyStatus.color }}>
+            {fmt(t.daily.actual)} / {fmt(t.daily.target)}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+            {dailyStatus.msg} • {t.daily.workDaysLeft} ימי עבודה נותרו
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: monthlyStatus.bg,
+            padding: '16px',
+            borderRadius: '8px',
+            borderRight: `4px solid ${monthlyStatus.color}`,
+          }}
+        >
+          <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+            יעד חודשי {monthlyStatus.emoji}
+          </div>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: monthlyStatus.color }}>
+            {fmt(t.monthly.actual)} / {fmt(t.monthly.target)}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+            {monthlyPct}% מהיעד
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: yearlyStatus.bg,
+            padding: '16px',
+            borderRadius: '8px',
+            borderRight: `4px solid ${yearlyStatus.color}`,
+          }}
+        >
+          <div style={{ fontSize: '13px', color: '#666', marginBottom: '8px' }}>
+            יעד שנתי 2026 {yearlyStatus.emoji}
+          </div>
+          <div style={{ fontSize: '24px', fontWeight: 700, color: yearlyStatus.color }}>
+            {fmt(t.yearly.actual)} / {fmt(t.yearly.target)}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+            נותר: {fmt(t.yearly.remaining)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
   const [period, setPeriod] = useState('month');
   const [showOtherDetails, setShowOtherDetails] = useState(false);
@@ -1690,6 +1877,8 @@ function SalesDashboard({allTasks,isA,DEPT_COLORS,onClose}) {
           <button type="button" onClick={() => setPeriod('year')} style={tabStyle(period === 'year')}>השנה</button>
         </div>
       </div>
+
+      <RollingTargets allTasks={allTasks} />
 
       <div style={competitionCard}>
         <div style={competitionTitle}>

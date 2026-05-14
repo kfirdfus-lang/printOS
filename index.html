@@ -75,7 +75,9 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 <script type="text/babel">
 const {useState,useEffect,useRef,useMemo}=React;
 const LABEL_PRINT_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"};
+const DELIVERY_NOTE_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"none",background:"#0891b2",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"};
 const openLabelPrintTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openLabelPrint==="function")window.openLabelPrint(task);};
+const openDeliveryNoteFromTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openDeliveryNoteTask==="function")window.openDeliveryNoteTask(task);};
 const SU="https://pvwcpukfhyrmdpxgfwrk.supabase.co";
 const SA="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d2NwdWtmaHlybWRweGdmd3JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NzIzNzMsImV4cCI6MjA5MjQ0ODM3M30.69GpTOQdwtAgouGN0MIHqQc6bImxAbfQ72xL2S4KaoM";
 const supabaseClient=window.supabase.createClient(SU,SA);
@@ -155,6 +157,402 @@ const Modal=({open,onClose,children,title,maxWidth=520})=>!open?null:
       {children}
     </div>
   </div>;
+
+const escHtml=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+function generateDeliveryNoteHTML(note,_isSigningView=false){
+  const items=Array.isArray(note.items)?note.items:[];
+  const dateStr=note.created_at?new Date(note.created_at).toLocaleDateString("he-IL"):"";
+  const signedDateStr=note.signed_at?new Date(note.signed_at).toLocaleDateString("he-IL"):"";
+  const logoUrl=typeof window!=="undefined"&&window.location&&window.location.origin?`${window.location.origin}/natalie-logo.png`:"/natalie-logo.png";
+  const sigSrc=note.signature_data?escHtml(note.signature_data):"";
+  return`<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>תעודת משלוח ${escHtml(note.delivery_number)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Heebo',sans-serif;direction:rtl;color:#1f2937;padding:40px;max-width:800px;margin:0 auto;background:#fff}
+    .header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0e7490;padding-bottom:20px;margin-bottom:30px}
+    .header-brand{display:flex;align-items:center;gap:12px;min-height:80px}
+    .logo{height:80px;max-width:220px;object-fit:contain}
+    .doc-info{text-align:left}
+    .doc-title{font-size:14px;color:#666}
+    .doc-number{font-size:36px;font-weight:700;color:#0e7490;direction:ltr;text-align:left}
+    .doc-date{font-size:14px;color:#666;margin-top:5px}
+    .section{margin-bottom:25px}
+    .section-title{font-size:16px;font-weight:600;color:#0e7490;margin-bottom:10px;border-bottom:1px solid #e5e7eb;padding-bottom:5px}
+    .customer-box{background:#f9fafb;padding:15px;border-radius:6px;border-right:4px solid #0e7490}
+    .customer-row{display:flex;gap:20px;margin-bottom:5px}
+    .customer-label{font-weight:600;min-width:80px;color:#6b7280}
+    .items-table{width:100%;border-collapse:collapse;margin-top:10px}
+    .items-table th{background:#0e7490;color:#fff;padding:10px;text-align:right;font-weight:600}
+    .items-table td{padding:10px;border-bottom:1px solid #e5e7eb}
+    .items-table tr:nth-child(even){background:#f9fafb}
+    .qty-col{width:100px;text-align:center}
+    .order-ref{background:#fef3c7;padding:10px 15px;border-radius:6px;margin-top:15px;font-size:14px}
+    .signature-section{margin-top:40px;padding:20px;border:2px dashed #d1d5db;border-radius:8px}
+    .signature-box{display:flex;gap:30px;align-items:flex-end}
+    .signature-line{flex:1;border-bottom:2px solid #374151;min-height:60px}
+    .signature-image{max-height:100px;max-width:100%}
+    .signature-label{font-size:13px;color:#6b7280;margin-top:5px}
+    .signed-badge{background:#d1fae5;color:#065f46;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;display:inline-block;margin-bottom:10px}
+    .footer{margin-top:50px;padding-top:20px;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#6b7280;line-height:1.6}
+    .no-print{position:fixed;top:20px;left:20px;display:flex;gap:10px}
+    .no-print button{padding:10px 20px;background:#0e7490;color:#fff;border:none;border-radius:6px;font-family:'Heebo',sans-serif;cursor:pointer;font-size:14px}
+    @media print{.no-print{display:none!important}body{padding:0}@page{size:A4;margin:1.5cm}}
+    .ltr{direction:ltr;display:inline-block}
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button type="button" onclick="window.print()">🖨️ הדפס</button>
+    <button type="button" onclick="window.close()">סגור</button>
+  </div>
+  <div class="header">
+    <div class="header-brand">
+      <img src="${logoUrl}" class="logo" alt="NATALIE" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='flex';">
+      <div style="display:none;align-items:center;gap:10px;">
+        <div style="width:60px;height:60px;background:linear-gradient(135deg,#0e7490,#06b6d4);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;font-weight:700;">N</div>
+        <div>
+          <div style="font-size:24px;font-weight:700;color:#1f2937;letter-spacing:2px;">NATALIE</div>
+          <div style="font-size:12px;color:#6b7280;">פתרונות הדפסה בע״מ</div>
+        </div>
+      </div>
+    </div>
+    <div class="doc-info">
+      <div class="doc-title">תעודת משלוח</div>
+      <div class="doc-number">${escHtml(note.delivery_number)}</div>
+      <div class="doc-date">תאריך: <span class="ltr">${escHtml(dateStr)}</span></div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">לכבוד</div>
+    <div class="customer-box">
+      <div class="customer-row"><span class="customer-label">שם:</span><span>${escHtml(note.customer_name)}</span></div>
+      ${note.contact_name?`<div class="customer-row"><span class="customer-label">איש קשר:</span><span>${escHtml(note.contact_name)}</span></div>`:""}
+      ${note.customer_address?`<div class="customer-row"><span class="customer-label">כתובת:</span><span>${escHtml(note.customer_address)}</span></div>`:""}
+      ${note.customer_phone?`<div class="customer-row"><span class="customer-label">טלפון:</span><span class="ltr">${escHtml(note.customer_phone)}</span></div>`:""}
+      ${note.customer_email?`<div class="customer-row"><span class="customer-label">מייל:</span><span class="ltr">${escHtml(note.customer_email)}</span></div>`:""}
+    </div>
+    ${note.bina_order_id?`<div class="order-ref">📋 בהמשך להזמנה מס׳ <strong class="ltr">${escHtml(note.bina_order_id)}</strong></div>`:""}
+  </div>
+  <div class="section">
+    <div class="section-title">פירוט פריטים למשלוח</div>
+    <table class="items-table">
+      <thead><tr><th>תיאור</th><th class="qty-col">כמות</th></tr></thead>
+      <tbody>${items.map(it=>`<tr><td>${escHtml(it.description)}</td><td class="qty-col"><span class="ltr">${escHtml(it.quantity)}</span></td></tr>`).join("")}</tbody>
+    </table>
+  </div>
+  ${note.notes?`<div class="section"><div class="section-title">הערות</div><div style="padding:10px;background:#f9fafb;border-radius:6px">${escHtml(note.notes)}</div></div>`:""}
+  <div class="signature-section">
+    <div class="section-title" style="border:none;padding:0;margin-bottom:15px">אישור קבלה</div>
+    ${note.signed_at?`
+      <div class="signed-badge">✅ נחתם בתאריך <span class="ltr">${escHtml(signedDateStr)}</span></div>
+      <div class="signature-box"><div style="flex:1;">
+        <img src="${sigSrc}" class="signature-image" alt="חתימה">
+        <div class="signature-label">חתימת מקבל: ${escHtml(note.signed_by_name||"")}</div>
+      </div></div>`:`
+      <div class="signature-box">
+        <div style="flex:1"><div class="signature-line"></div><div class="signature-label">חתימת מקבל</div></div>
+        <div style="flex:1"><div class="signature-line"></div><div class="signature-label">שם המקבל</div></div>
+        <div style="width:150px"><div class="signature-line"></div><div class="signature-label">תאריך</div></div>
+      </div>`}
+  </div>
+  <div class="footer">
+    <strong>נטלי פתרונות הדפסה בע"מ</strong> | ח.פ. 517205332<br>
+    שד׳ הר ציון 104, תל אביב | טל: <span class="ltr">03-6815703</span><br>
+    natalie-print.com
+  </div>
+</body>
+</html>`;
+}
+
+function resolveClientForTask(task,clients){
+  const list=Array.isArray(clients)?clients:[];
+  if(task.bina_cust_id!=null&&task.bina_cust_id!==""){
+    const m=list.find(c=>String(c.bina_customer_id||"")===String(task.bina_cust_id));
+    if(m)return m;
+  }
+  if(task.client_name)return list.find(c=>c.name===task.client_name)||null;
+  return null;
+}
+
+function DeliveryNoteModal({task,clients,user,onClose}){
+  const [client,setClient]=useState(null);
+  const [items,setItems]=useState([]);
+  const [allItems,setAllItems]=useState([]);
+  const [deliveryAddress,setDeliveryAddress]=useState("");
+  const [notes,setNotes]=useState("");
+  const [driverName,setDriverName]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [creating,setCreating]=useState(false);
+  const [createdNote,setCreatedNote]=useState(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const load=async()=>{
+      const c=resolveClientForTask(task,clients);
+      if(c&&!cancelled){
+        setClient(c);
+        setDeliveryAddress(c.address||"");
+      }else if(!cancelled){
+        const parts=[task.bina_cust_address,task.bina_cust_city].filter(Boolean);
+        setDeliveryAddress(parts.join(", ")||"");
+      }
+      try{
+        const ti=await sb(`task_items?task_id=eq.${task.id}&order=id.asc`);
+        if(cancelled)return;
+        if(ti&&ti.length>0){
+          setAllItems(ti);
+          setItems(ti.map(i=>i.id));
+        }else{
+          const fake={id:"task-"+task.id,description:task.title,quantity:1,bina_item_code:null,_isSingleTask:true};
+          setAllItems([fake]);
+          setItems([fake.id]);
+        }
+      }catch(e){
+        if(!cancelled){
+          const fake={id:"task-"+task.id,description:task.title,quantity:1,bina_item_code:null,_isSingleTask:true};
+          setAllItems([fake]);
+          setItems([fake.id]);
+        }
+      }
+      if(!cancelled)setLoading(false);
+    };
+    load();
+    return()=>{cancelled=true};
+  },[task.id,task.title,task.client_name,task.bina_cust_id,clients]);
+
+  const toggleItem=(id)=>{
+    setItems(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+  };
+
+  const handleCreate=async()=>{
+    if(items.length===0){window.alert("יש לבחור לפחות פריט אחד");return;}
+    setCreating(true);
+    try{
+      const selectedItems=allItems.filter(i=>items.includes(i.id)).map(i=>({
+        description:i.description||"",
+        quantity:i.quantity!=null?i.quantity:1,
+        bina_item_code:i.bina_item_code||null,
+      }));
+      const token=(crypto.randomUUID&&crypto.randomUUID())?crypto.randomUUID().replace(/-/g,""):String(Math.random()).slice(2)+Date.now().toString(36);
+      const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+      const payload={
+        task_id:task.id,
+        bina_order_id:task.bina_order_id!=null?String(task.bina_order_id):null,
+        customer_name:client?.name||task.client_name||"לקוח",
+        contact_name:client?.contact_name||null,
+        customer_address:deliveryAddress||null,
+        customer_phone:client?.phone||null,
+        customer_email:client?.orders_email_primary||client?.email||null,
+        items:selectedItems,
+        signature_token:token,
+        signature_token_expires_at:expiresAt,
+        driver_name:driverName.trim()||null,
+        notes:notes.trim()||null,
+        created_by:user?.name||"unknown",
+      };
+      const result=await sb("delivery_notes",{method:"POST",body:JSON.stringify(payload),headers:{Prefer:"return=representation"}});
+      if(result&&result[0])setCreatedNote(result[0]);
+      else window.alert("שגיאה ביצירת התעודה");
+    }catch(e){
+      window.alert("שגיאה ביצירת התעודה: "+(e.message||String(e)));
+    }
+    setCreating(false);
+  };
+
+  const handlePrint=()=>{
+    if(!createdNote)return;
+    const w=window.open("","_blank","width=800,height=900");
+    if(!w)return;
+    w.document.write(generateDeliveryNoteHTML(createdNote));
+    w.document.close();
+    setTimeout(()=>{try{w.print()}catch(e){}},500);
+  };
+
+  const handleCopyLink=()=>{
+    if(!createdNote)return;
+    const u=`${window.location.origin}${window.location.pathname||""}${window.location.search||""}#sign/${createdNote.signature_token}`;
+    navigator.clipboard.writeText(u).then(()=>window.alert("הקישור הועתק! שלח לנהג")).catch(()=>window.alert(u));
+  };
+
+  const handleWhatsApp=()=>{
+    if(!createdNote)return;
+    const u=`${window.location.origin}${window.location.pathname||""}${window.location.search||""}#sign/${createdNote.signature_token}`;
+    const text=`שלום, תעודת משלוח ${createdNote.delivery_number}\nלקוח: ${createdNote.customer_name}\nכתובת: ${createdNote.customer_address||"—"}\nקישור לחתימת מקבל:\n${u}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank");
+  };
+
+  return<Modal open={true} onClose={onClose} title={createdNote?`✅ תעודה ${createdNote.delivery_number} נוצרה!`:`תעודת משלוח חדשה`} maxWidth={640}>
+    {loading?<div style={{textAlign:"center",padding:40}}><Spinner sz={32}/></div>:
+    createdNote?<div style={{direction:"rtl"}}>
+      <p style={{marginBottom:16,color:"var(--text2)",fontSize:14}}>הוצאת תעודת משלוח מס׳ <strong>{createdNote.delivery_number}</strong></p>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+        <button type="button" onClick={handlePrint} style={{padding:"12px 16px",borderRadius:10,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📄 הדפס / שמור PDF</button>
+        <button type="button" onClick={handleCopyLink} style={{padding:"12px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔗 העתק קישור חתימה לנהג</button>
+        <button type="button" onClick={handleWhatsApp} style={{padding:"12px 16px",borderRadius:10,border:"none",background:"#25D366",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📱 שלח לנהג בוואטסאפ</button>
+      </div>
+      <p style={{fontSize:13,color:"var(--text3)"}}>סטטוס: ⏳ ממתין לחתימה</p>
+      <button type="button" onClick={onClose} style={{marginTop:16,padding:"10px 20px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg2)",cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+    </div>:
+    <div style={{direction:"rtl",display:"flex",flexDirection:"column",gap:14}}>
+      {task.bina_order_id&&<div style={{fontSize:13,color:"var(--text2)"}}>הזמנה מס׳: <strong>{task.bina_order_id}</strong></div>}
+      <div>
+        <div style={{fontWeight:700,marginBottom:8}}>👤 פרטי לקוח</div>
+        <div style={{background:"var(--bg2)",padding:12,borderRadius:10,fontSize:13}}>
+          <div><strong>שם:</strong> {client?.name||task.client_name||"—"}</div>
+          <div><strong>קשר:</strong> {client?.contact_name||"—"}</div>
+          <div><strong>טלפון:</strong> {client?.phone||"—"}</div>
+          <div><strong>מייל:</strong> {client?.orders_email_primary||client?.email||"—"}</div>
+        </div>
+      </div>
+      <div>
+        <label style={{display:"block",fontWeight:700,marginBottom:6}}>📍 כתובת משלוח</label>
+        <textarea value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} rows={3} style={{width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}/>
+      </div>
+      <div>
+        <label style={{display:"block",fontWeight:700,marginBottom:6}}>🚚 שם הנהג (אופציונלי)</label>
+        <input value={driverName} onChange={e=>setDriverName(e.target.value)} style={{width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit"}}/>
+      </div>
+      <div>
+        <div style={{fontWeight:700,marginBottom:8}}>📦 פריטים (סמן את אלו לכלול)</div>
+        <div style={{border:"1px solid var(--border)",borderRadius:10,padding:8,maxHeight:220,overflowY:"auto"}}>
+          {allItems.map(it=><label key={it.id} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 4px",cursor:"pointer",fontSize:13}}>
+            <input type="checkbox" checked={items.includes(it.id)} onChange={()=>toggleItem(it.id)}/>
+            <span style={{flex:1}}>{it.description}</span>
+            <span style={{color:"var(--text3)"}}>{it.quantity}</span>
+          </label>)}
+        </div>
+      </div>
+      <div>
+        <label style={{display:"block",fontWeight:700,marginBottom:6}}>💬 הערות (אופציונלי)</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} style={{width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}/>
+      </div>
+      <div style={{display:"flex",gap:10,marginTop:8}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" disabled={creating} onClick={handleCreate} style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#0891b2",color:"#fff",fontWeight:700,cursor:creating?"wait":"pointer",fontFamily:"inherit"}}>{creating?"⏳ יוצר...":"🎯 צור תעודה והדפס"}</button>
+      </div>
+    </div>
+    }
+  </Modal>;
+}
+
+function SignaturePage({token}){
+  const [note,setNote]=useState(null);
+  const [signerName,setSignerName]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [submitting,setSubmitting]=useState(false);
+  const [signed,setSigned]=useState(false);
+  const canvasRef=useRef(null);
+  const padRef=useRef(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const enc=encodeURIComponent(token);
+    sb(`delivery_notes?signature_token=eq.${enc}&limit=1`).then(r=>{
+      if(cancelled)return;
+      if(r?.[0]){
+        setNote(r[0]);
+        if(r[0].signed_at)setSigned(true);
+      }
+      setLoading(false);
+    }).catch(()=>{if(!cancelled)setLoading(false)});
+    return()=>{cancelled=true};
+  },[token]);
+
+  const initPad=()=>{
+    if(!canvasRef.current||!window.SignaturePad)return;
+    const canvas=canvasRef.current;
+    const rect=canvas.parentElement.getBoundingClientRect();
+    canvas.width=Math.max(300,rect.width-4);
+    canvas.height=200;
+    padRef.current=new window.SignaturePad(canvas,{backgroundColor:"rgba(255,255,255,0)",penColor:"#1f2937"});
+  };
+
+  useEffect(()=>{
+    if(loading||signed||!note)return;
+    if(note.signature_token_expires_at&&!note.signed_at&&new Date(note.signature_token_expires_at)<new Date())return;
+    const ensureScript=()=>{
+      if(window.SignaturePad){setTimeout(initPad,80);return;}
+      if(document.querySelector('script[data-signature-pad="1"]')){setTimeout(ensureScript,100);return;}
+      const script=document.createElement("script");
+      script.dataset.signaturePad="1";
+      script.src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js";
+      script.onload=()=>setTimeout(initPad,80);
+      document.head.appendChild(script);
+    };
+    ensureScript();
+  },[loading,signed,note]);
+
+  const handleClear=()=>padRef.current?.clear();
+
+  const handleSubmit=async()=>{
+    if(!padRef.current||padRef.current.isEmpty()){window.alert("נא לחתום");return;}
+    if(!signerName.trim()){window.alert("נא למלא שם מקבל");return;}
+    setSubmitting(true);
+    try{
+      const signatureData=padRef.current.toDataURL("image/png");
+      const enc=encodeURIComponent(token);
+      await sb(`delivery_notes?signature_token=eq.${enc}`,{
+        method:"PATCH",
+        body:JSON.stringify({
+          signature_data:signatureData,
+          signed_at:new Date().toISOString(),
+          signed_by_name:signerName.trim(),
+          status:"signed",
+        }),
+      });
+      setSigned(true);
+    }catch(e){
+      window.alert("שגיאה בשמירה: "+(e.message||String(e)));
+    }
+    setSubmitting(false);
+  };
+
+  if(loading)return<div style={{textAlign:"center",padding:50,fontFamily:"Heebo,sans-serif"}}>טוען...</div>;
+  if(!note)return<div style={{textAlign:"center",padding:50,color:"#dc2626",fontFamily:"Heebo,sans-serif"}}>תעודה לא נמצאה או פגה</div>;
+  if(!note.signed_at&&note.signature_token_expires_at&&new Date(note.signature_token_expires_at)<new Date())return<div style={{textAlign:"center",padding:50,color:"#dc2626",fontFamily:"Heebo,sans-serif"}}>פג תוקף הקישור</div>;
+
+  return<div style={{minHeight:"100vh",padding:20,background:"#f3f4f6",direction:"rtl",fontFamily:"'Heebo',sans-serif"}}>
+    <div style={{maxWidth:600,margin:"0 auto",background:"#fff",borderRadius:12,padding:20,boxShadow:"0 4px 6px rgba(0,0,0,0.1)"}}>
+      <h1 style={{color:"#0e7490",marginBottom:15,fontSize:22}}>📋 תעודת משלוח #{note.delivery_number}</h1>
+      <div style={{background:"#f9fafb",padding:15,borderRadius:6,marginBottom:20,fontSize:14}}>
+        <div><strong>לקוח:</strong> {note.customer_name}</div>
+        {note.customer_address&&<div><strong>כתובת:</strong> {note.customer_address}</div>}
+        <div style={{marginTop:10}}><strong>פריטים:</strong>
+          <ul style={{marginRight:20,marginTop:6}}>
+            {(Array.isArray(note.items)?note.items:[]).map((it,i)=><li key={i}>{it.description} (כמות: {it.quantity})</li>)}
+          </ul>
+        </div>
+      </div>
+      {signed?<div style={{background:"#d1fae5",color:"#065f46",padding:20,borderRadius:8,textAlign:"center"}}>
+        <div style={{fontSize:48}}>✅</div>
+        <h2 style={{margin:"8px 0"}}>החתימה התקבלה!</h2>
+        <p>תודה רבה, התעודה נחתמה בהצלחה.</p>
+      </div>:<>
+        <div style={{marginBottom:15}}>
+          <label style={{display:"block",marginBottom:5,fontWeight:600}}>שם המקבל:</label>
+          <input value={signerName} onChange={e=>setSignerName(e.target.value)} placeholder="שם מלא" style={{width:"100%",padding:10,border:"1px solid #d1d5db",borderRadius:6,fontSize:16,fontFamily:"inherit"}}/>
+        </div>
+        <div style={{marginBottom:15}}>
+          <label style={{display:"block",marginBottom:5,fontWeight:600}}>חתימה:</label>
+          <div style={{border:"2px dashed #d1d5db",borderRadius:8,height:200,position:"relative",background:"#fff"}}>
+            <canvas ref={canvasRef} style={{width:"100%",height:"100%",display:"block",touchAction:"none"}}/>
+          </div>
+          <button type="button" onClick={handleClear} style={{marginTop:8,padding:"6px 12px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>🗑️ נקה</button>
+        </div>
+        <button type="button" onClick={handleSubmit} disabled={submitting} style={{width:"100%",padding:15,background:"#0e7490",color:"#fff",border:"none",borderRadius:8,fontSize:18,fontWeight:600,cursor:"pointer",marginTop:10,fontFamily:"inherit"}}>
+          {submitting?"שולח...":"✅ אשר קבלה"}
+        </button>
+      </>}
+      <div style={{marginTop:30,textAlign:"center",fontSize:12,color:"#9ca3af"}}>נטלי פתרונות הדפסה בע"מ</div>
+    </div>
+  </div>;
+}
 
 // ── LOGIN ──
 function Login({onLogin}){
@@ -406,6 +804,7 @@ function CalendarTab({tasks,taskItems,user,isA,onTaskClick}){
                   {t.title}
                 </div>
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={{...LABEL_PRINT_BTN_STYLE,padding:"2px 6px",flexShrink:0}}>🏷️</button>
+                <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={{...DELIVERY_NOTE_BTN_STYLE,padding:"2px 4px",fontSize:8,whiteSpace:"normal",lineHeight:1.15,textAlign:"center",maxWidth:72}}>📋 תעודת משלוח</button>
               </div>;
             })}
             {dayTasks.length===0&&<div style={{fontSize:10,color:"var(--text3)",textAlign:"center",paddingTop:8}}>—</div>}
@@ -495,6 +894,7 @@ function DeliveryTab({tasks}){
                   {t.notes&&<div style={{fontSize:11,color:"var(--text2)",marginTop:3}}>📝 {t.notes}</div>}
                 </div>
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
+                <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
               </div>
             </div>)}
           </div>
@@ -4885,6 +5285,8 @@ function App(){
   const BCF_DEFAULT=()=>({custName:"",custTz:"",custCity:"",custAddress:"",custGroup:"ישראל",custTel:"",custCel:"",custEmail:"",termsofPayment:"שוטף + 30",notes:""});
   const [bcf,setBcf]=useState(BCF_DEFAULT());
   const [bcfErr,setBcfErr]=useState({});
+  const [hashMode,setHashMode]=useState(()=>typeof window!=="undefined"&&window.location?window.location.hash||"":"");
+  const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
 
   const [showReportModal,setShowReportModal]=useState(false);
   const [reportRecipients,setReportRecipients]=useState([]);
@@ -4896,6 +5298,15 @@ function App(){
   useEffect(()=>{
     window.openBinaClient=()=>setBinaClientOpen(true);
     return()=>{delete window.openBinaClient;};
+  },[]);
+  useEffect(()=>{
+    const fn=()=>setHashMode(window.location.hash||"");
+    window.addEventListener("hashchange",fn);
+    return()=>window.removeEventListener("hashchange",fn);
+  },[]);
+  useEffect(()=>{
+    window.openDeliveryNoteTask=(t)=>setDeliveryNoteModal({task:t});
+    return()=>{delete window.openDeliveryNoteTask;};
   },[]);
   const validateBcf=()=>{
     const er={};
@@ -5121,6 +5532,13 @@ function App(){
       loadArchive();
     }
   },[tab,user]);
+
+  const hm=hashMode||"";
+  if(hm.startsWith("#sign/")){
+    const raw=hm.slice(6);
+    const tok=decodeURIComponent(raw.split(/[?&#]/)[0].replace(/^\/+/,""));
+    if(tok)return<SignaturePage token={tok}/>;
+  }
 
   if(!user)return<Login onLogin={u=>{setUser(u);load(u);}}/>;
 
@@ -5500,6 +5918,7 @@ function App(){
               <Badge status={t.status}/>
             </div>
             <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
+            <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
           </div>)}
           {boardTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)",fontSize:13}}>אין משימות עדיין 🚀</div>}
         </Card>
@@ -5551,6 +5970,7 @@ function App(){
               {<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
               {<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
               {<button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>}
+              {<button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>}
               {
               <button onClick={()=>{
                 const recipients={
@@ -5635,6 +6055,7 @@ function App(){
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <button type="button" onClick={()=>openLabelPrintTask(null,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
+              <button type="button" onClick={()=>openDeliveryNoteFromTask(null,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
               <button type="button" onClick={()=>restoreArchived(t.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>החזר לבורד</button>
               <button type="button" onClick={()=>purgeArchived(t.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>מחק לצמיתות</button>
             </div>
@@ -5739,10 +6160,13 @@ function App(){
 
     <CreateQuoteModal open={quoteModalOpen} onClose={()=>setQuoteModalOpen(false)} onSuccess={()=>{refreshAll();}} clients={clients} sb={sb}/>
 
+    {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
+
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
       {det&&<div>
         <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
           <button type="button" onClick={()=>openLabelPrintTask(null,det)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
+          <button type="button" onClick={()=>openDeliveryNoteFromTask(null,det)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
           {[["לקוח",det.client_name],["מחלקה",det.dept],["אחראי",det.assignee],["עדיפות",det.priority],["תאריך",det.due_date],["הערות",det.notes]].filter(([,v])=>v).map(([l,v])=><div key={l} style={{background:"var(--bg2)",borderRadius:10,padding:"10px 12px"}}>

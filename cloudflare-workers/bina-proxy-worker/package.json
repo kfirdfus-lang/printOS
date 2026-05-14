@@ -1,0 +1,15 @@
+{
+  "name": "bina-proxy-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "start": "wrangler dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "wrangler": "^4.88.0"
+  }
+}

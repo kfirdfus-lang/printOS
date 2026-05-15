@@ -78,6 +78,14 @@ const LABEL_PRINT_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"1px solid 
 const DELIVERY_NOTE_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"none",background:"#0891b2",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"};
 const openLabelPrintTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openLabelPrint==="function")window.openLabelPrint(task);};
 const openDeliveryNoteFromTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openDeliveryNoteTask==="function")window.openDeliveryNoteTask(task);};
+const toLocalDateStr=(d)=>{const x=new Date(d);return`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;};
+const MOVE_TO_DELIVERY_BTN_STYLE={padding:"6px 10px",background:"#7c3aed",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap"};
+const openMoveToDeliveryFromTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openMoveToDelivery==="function")window.openMoveToDelivery(task);};
+function TaskMoveToDeliveryBtn({task}){
+  const ds=task.delivery_status;
+  if(ds&&ds!=="pending")return<span style={{padding:"4px 10px",background:"#ede9fe",color:"#5b21b6",borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>📦 במשלוחים</span>;
+  return<button type="button" onClick={e=>openMoveToDeliveryFromTask(e,task)} style={MOVE_TO_DELIVERY_BTN_STYLE}>📦 למשלוחים</button>;
+}
 const SU="https://pvwcpukfhyrmdpxgfwrk.supabase.co";
 const SA="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d2NwdWtmaHlybWRweGdmd3JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NzIzNzMsImV4cCI6MjA5MjQ0ODM3M30.69GpTOQdwtAgouGN0MIHqQc6bImxAbfQ72xL2S4KaoM";
 const supabaseClient=window.supabase.createClient(SU,SA);
@@ -883,6 +891,143 @@ function DeliveryNoteDetailsModal({note,onClose}){
   </Modal>;
 }
 
+function MoveToDeliveryModal({task,user,onClose,onSuccess}){
+  const [savedAddresses,setSavedAddresses]=useState([]);
+  const [selectedAddressId,setSelectedAddressId]=useState(null);
+  const [address,setAddress]=useState("");
+  const [contactName,setContactName]=useState("");
+  const [phone,setPhone]=useState("");
+  const [scheduledDate,setScheduledDate]=useState("");
+  const [deliveryType,setDeliveryType]=useState("local");
+  const [specialNotes,setSpecialNotes]=useState("");
+  const [drivers,setDrivers]=useState([]);
+  const [driverId,setDriverId]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const fld={width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13};
+  useEffect(()=>{
+    let cancelled=false;
+    const load=async()=>{
+      setLoading(true);
+      let clientData=null;
+      try{
+        if(task.client_id){
+          const r=await sb(`clients?id=eq.${task.client_id}&limit=1`);
+          if(r?.[0])clientData=r[0];
+        }
+        if(!clientData&&task.bina_cust_id){
+          const r=await sb(`clients?bina_customer_id=eq.${task.bina_cust_id}&limit=1`);
+          if(r?.[0])clientData=r[0];
+        }
+        if(!clientData&&task.client_name){
+          const r=await sb(`clients?name=eq.${encodeURIComponent(task.client_name)}&limit=1`);
+          if(r?.[0])clientData=r[0];
+        }
+        if(clientData&&!cancelled){
+          const addrs=await sb(`client_addresses?client_id=eq.${clientData.id}&order=is_default.desc,last_used_at.desc`);
+          const list=Array.isArray(addrs)?addrs:[];
+          if(!cancelled)setSavedAddresses(list);
+          const defaultAddr=list.find(a=>a.is_default)||list[0];
+          if(defaultAddr&&!cancelled){
+            setSelectedAddressId(defaultAddr.id);
+            setAddress(defaultAddr.address);
+          }
+          if(!cancelled){
+            setContactName(clientData.delivery_contact_name||clientData.contact_name||task.contact||"");
+            setPhone(clientData.delivery_contact_phone||clientData.phone||task.bina_cust_phone||"");
+          }
+        }else if(!cancelled){
+          setContactName(task.contact||"");
+          setPhone(task.bina_cust_phone||"");
+          const addrParts=[task.bina_cust_address,task.bina_cust_city].filter(Boolean);
+          if(addrParts.length)setAddress(addrParts.join(", "));
+        }
+        const drs=await sb("drivers?is_active=eq.true&order=name.asc");
+        if(!cancelled)setDrivers(Array.isArray(drs)?drs:[]);
+        if(!cancelled)setScheduledDate(toLocalDateStr(new Date()));
+      }catch(e){console.warn("[shipments]",e);}
+      if(!cancelled)setLoading(false);
+    };
+    load();
+    return()=>{cancelled=true};
+  },[task.id]);
+  const handleMove=async()=>{
+    if(deliveryType!=="pickup"&&!address.trim()){window.alert("יש להזין כתובת");return;}
+    setSaving(true);
+    try{
+      await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({
+        delivery_status:"ready",
+        scheduled_delivery_date:scheduledDate||null,
+        assigned_driver_id:driverId||null,
+        delivery_type:deliveryType,
+        delivery_address_snapshot:deliveryType==="pickup"?null:address.trim(),
+        delivery_contact_snapshot:contactName.trim()||null,
+        delivery_phone_snapshot:phone.trim()||null,
+        delivery_special_notes:specialNotes.trim()||null,
+        delivery_marked_at:new Date().toISOString(),
+        delivery_marked_by:user?.name||"unknown",
+      })});
+      if(selectedAddressId){
+        const current=savedAddresses.find(a=>a.id===selectedAddressId);
+        await sb(`client_addresses?id=eq.${selectedAddressId}`,{method:"PATCH",body:JSON.stringify({
+          usage_count:(current?.usage_count||0)+1,
+          last_used_at:new Date().toISOString(),
+        })});
+      }
+      onSuccess?.();
+      onClose();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+    setSaving(false);
+  };
+  return<Modal open={true} onClose={onClose} title="📦 העבר משימה למשלוחים" maxWidth={600}>
+    {loading?<div style={{textAlign:"center",padding:30}}><Spinner sz={28}/></div>:<div style={{direction:"rtl",display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{background:"#f0f9ff",padding:10,borderRadius:8,fontSize:13}}>
+        <strong>הזמנה:</strong> {task.bina_order_id?`#${task.bina_order_id} — `:""}{task.title}<br/>
+        <strong>לקוח:</strong> {task.client_name||"—"}
+      </div>
+      <div><label style={{display:"block",marginBottom:6,fontWeight:700}}>סוג משלוח:</label>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[{v:"local",label:"🚚 משלוח מקומי",desc:"נהג שלנו"},{v:"courier",label:"📮 שליח/דואר",desc:"מסירה חיצונית"},{v:"pickup",label:"🛒 איסוף עצמי",desc:"לקוח אוסף"}].map(opt=>
+            <button type="button" key={opt.v} onClick={()=>setDeliveryType(opt.v)} style={{flex:1,minWidth:120,padding:12,borderRadius:8,border:deliveryType===opt.v?"2px solid #7c3aed":"2px solid var(--border)",background:deliveryType===opt.v?"#f5f3ff":"#fff",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>
+              <div style={{fontWeight:600}}>{opt.label}</div>
+              <div style={{color:"var(--text3)",marginTop:4}}>{opt.desc}</div>
+            </button>
+          )}
+        </div>
+      </div>
+      {deliveryType!=="pickup"&&<>
+        <div><label style={{display:"block",marginBottom:6,fontWeight:600}}>📍 כתובת:</label>
+          {savedAddresses.length>0&&<select value={selectedAddressId||"custom"} onChange={e=>{
+            const val=e.target.value;
+            if(val==="custom"){setSelectedAddressId(null);setAddress("");}
+            else{const addr=savedAddresses.find(a=>a.id===val);if(addr){setSelectedAddressId(val);setAddress(addr.address);}}
+          }} style={{...fld,marginBottom:6}}>
+            {savedAddresses.map(a=><option key={a.id} value={a.id}>{a.is_default?"⭐ ":""}{a.label?`[${a.label}] `:""}{String(a.address||"").substring(0,60)}</option>)}
+            <option value="custom">✏️ כתובת חדשה</option>
+          </select>}
+          <textarea value={address} onChange={e=>{setAddress(e.target.value);if(selectedAddressId)setSelectedAddressId(null);}} placeholder="רחוב, עיר" rows={3} style={fld}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={{display:"block",marginBottom:4,fontSize:12}}>👤 איש קשר</label><input value={contactName} onChange={e=>setContactName(e.target.value)} style={fld}/></div>
+          <div><label style={{display:"block",marginBottom:4,fontSize:12}}>📱 טלפון</label><input value={phone} onChange={e=>setPhone(e.target.value)} style={{...fld,direction:"ltr"}}/></div>
+        </div>
+      </>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div><label style={{display:"block",marginBottom:4,fontSize:12}}>📅 תאריך משלוח</label><input type="date" value={scheduledDate} onChange={e=>setScheduledDate(e.target.value)} style={fld}/></div>
+        {deliveryType==="local"&&<div><label style={{display:"block",marginBottom:4,fontSize:12}}>🚛 נהג</label><select value={driverId} onChange={e=>setDriverId(e.target.value)} style={fld}>
+          <option value="">-- ללא שיוך --</option>
+          {drivers.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+        </select></div>}
+      </div>
+      <div><label style={{display:"block",marginBottom:4,fontSize:12}}>💬 הערות מיוחדות</label><textarea value={specialNotes} onChange={e=>setSpecialNotes(e.target.value)} rows={2} style={fld} placeholder="למשל: לתאם מראש, שביר..."/></div>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" disabled={saving} onClick={handleMove} style={{flex:2,padding:12,borderRadius:10,border:"none",background:"#7c3aed",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saving?"⏳...":"📦 העבר למשלוחים"}</button>
+      </div>
+    </div>}
+  </Modal>;
+}
+
 function KpiCardShipment({label,value,color,emoji}){
   return<div style={{background:"#fff",padding:16,borderRadius:10,borderRight:`4px solid ${color}`,boxShadow:"var(--shadow)"}}>
     <div style={{fontSize:13,color:"var(--text3)",marginBottom:4}}>{emoji} {label}</div>
@@ -919,6 +1064,7 @@ function ShipmentCard({task,onStatusChange,onCreateDeliveryNote,onViewTask}){
     </div>}
     <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
       <button type="button" onClick={onCreateDeliveryNote} style={{padding:"6px 12px",background:"#0e7490",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit",fontWeight:600}}>📋 תעודת משלוח</button>
+      <TaskMoveToDeliveryBtn task={task}/>
       {status==="pending"&&<button type="button" onClick={()=>onStatusChange("ready")} style={{padding:"6px 12px",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>📦 סמן מוכן</button>}
       {status==="ready"&&<button type="button" onClick={()=>onStatusChange("in_transit")} style={{padding:"6px 12px",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>🚛 יצא למשלוח</button>}
       {status==="in_transit"&&<button type="button" onClick={()=>onStatusChange("delivered")} style={{padding:"6px 12px",background:"#10b981",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit",fontWeight:600}}>✅ נמסר</button>}
@@ -1430,6 +1576,7 @@ function CalendarTab({tasks,taskItems,user,isA,onTaskClick}){
                 </div>
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={{...LABEL_PRINT_BTN_STYLE,padding:"2px 6px",flexShrink:0}}>🏷️</button>
                 <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={{...DELIVERY_NOTE_BTN_STYLE,padding:"2px 4px",fontSize:8,whiteSpace:"normal",lineHeight:1.15,textAlign:"center",maxWidth:72}}>📋 תעודת משלוח</button>
+                <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskMoveToDeliveryBtn task={t}/></div>
               </div>;
             })}
             {dayTasks.length===0&&<div style={{fontSize:10,color:"var(--text3)",textAlign:"center",paddingTop:8}}>—</div>}
@@ -1520,6 +1667,7 @@ function DeliveryTab({tasks}){
                 </div>
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
                 <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
+                <TaskMoveToDeliveryBtn task={t}/>
               </div>
             </div>)}
           </div>
@@ -5912,6 +6060,7 @@ function App(){
   const [bcfErr,setBcfErr]=useState({});
   const [hashMode,setHashMode]=useState(()=>typeof window!=="undefined"&&window.location?window.location.hash||"":"");
   const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
+  const [moveToDeliveryModal,setMoveToDeliveryModal]=useState(null);
   const [editClientDelivery,setEditClientDelivery]=useState(null);
 
   const [showReportModal,setShowReportModal]=useState(false);
@@ -5933,6 +6082,10 @@ function App(){
   useEffect(()=>{
     window.openDeliveryNoteTask=(t)=>setDeliveryNoteModal({task:t});
     return()=>{delete window.openDeliveryNoteTask;};
+  },[]);
+  useEffect(()=>{
+    window.openMoveToDelivery=(t)=>setMoveToDeliveryModal({task:t});
+    return()=>{delete window.openMoveToDelivery;};
   },[]);
   const validateBcf=()=>{
     const er={};
@@ -6564,6 +6717,7 @@ function App(){
             </div>
             <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
             <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
+            <TaskMoveToDeliveryBtn task={t}/>
           </div>)}
           {boardTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)",fontSize:13}}>אין משימות עדיין 🚀</div>}
         </Card>
@@ -6616,6 +6770,7 @@ function App(){
               {<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
               {<button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>}
               {<button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>}
+              <TaskMoveToDeliveryBtn task={t}/>
               {
               <button onClick={()=>{
                 const recipients={
@@ -6700,6 +6855,7 @@ function App(){
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <button type="button" onClick={()=>openLabelPrintTask(null,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
               <button type="button" onClick={()=>openDeliveryNoteFromTask(null,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
+              <TaskMoveToDeliveryBtn task={t}/>
               <button type="button" onClick={()=>restoreArchived(t.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>החזר לבורד</button>
               <button type="button" onClick={()=>purgeArchived(t.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>מחק לצמיתות</button>
             </div>
@@ -6806,6 +6962,8 @@ function App(){
 
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
 
+    {moveToDeliveryModal&&<MoveToDeliveryModal task={moveToDeliveryModal.task} user={user} onClose={()=>setMoveToDeliveryModal(null)} onSuccess={()=>refreshAll()}/>}
+
     {editClientDelivery&&<ClientDeliveryEditModal client={editClientDelivery} user={user} onClose={()=>setEditClientDelivery(null)} onSaved={updated=>{setClients(p=>p.map(c=>c.id===updated.id?updated:c));setEditClientDelivery(null);}}/>}
 
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
@@ -6813,6 +6971,7 @@ function App(){
         <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
           <button type="button" onClick={()=>openLabelPrintTask(null,det)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
           <button type="button" onClick={()=>openDeliveryNoteFromTask(null,det)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
+          <TaskMoveToDeliveryBtn task={det}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
           {[["לקוח",det.client_name],["מחלקה",det.dept],["אחראי",det.assignee],["עדיפות",det.priority],["תאריך",det.due_date],["הערות",det.notes]].filter(([,v])=>v).map(([l,v])=><div key={l} style={{background:"var(--bg2)",borderRadius:10,padding:"10px 12px"}}>

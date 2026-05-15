@@ -793,6 +793,171 @@ function DeliveryNoteDetailsModal({note,onClose}){
   </Modal>;
 }
 
+function KpiCardShipment({label,value,color,emoji}){
+  return<div style={{background:"#fff",padding:16,borderRadius:10,borderRight:`4px solid ${color}`,boxShadow:"var(--shadow)"}}>
+    <div style={{fontSize:13,color:"var(--text3)",marginBottom:4}}>{emoji} {label}</div>
+    <div style={{fontSize:28,fontWeight:800,color}}>{value}</div>
+  </div>;
+}
+
+function ShipmentCard({task,onStatusChange,onCreateDeliveryNote,onViewTask}){
+  const status=task.delivery_status||"pending";
+  const statusConfig={
+    pending:{color:"#f59e0b",bg:"#fef3c7",label:"ממתין",emoji:"⏳"},
+    ready:{color:"#0e7490",bg:"#cffafe",label:"מוכן למשלוח",emoji:"📦"},
+    in_transit:{color:"#8b5cf6",bg:"#ede9fe",label:"בדרך",emoji:"🚛"},
+    delivered:{color:"#10b981",bg:"#d1fae5",label:"נמסר",emoji:"✅"},
+    cancelled:{color:"#64748b",bg:"#f1f5f9",label:"בוטל",emoji:"⛔"},
+  };
+  const cfg=statusConfig[status]||statusConfig.pending;
+  return<div style={{background:"#fff",borderRadius:10,padding:16,boxShadow:"var(--shadow)",borderRight:`4px solid ${cfg.color}`}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:4,color:"var(--text)"}}>{task.client_name||"לקוח ללא שם"}</div>
+        <div style={{fontSize:13,color:"var(--text2)"}}>
+          {task.bina_order_id?`הזמנה #${task.bina_order_id} · `:""}
+          {task.title}
+        </div>
+      </div>
+      <span style={{background:cfg.bg,color:cfg.color,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+        {cfg.emoji} {cfg.label}
+      </span>
+    </div>
+    {task.delivery_items&&task.delivery_items.length>0&&<div style={{background:"var(--bg2)",padding:10,borderRadius:8,fontSize:13,marginBottom:10,color:"var(--text)"}}>
+      <div style={{fontWeight:600,marginBottom:6}}>📦 פריטי משלוח</div>
+      {task.delivery_items.map((item,i)=><div key={item.id||i} style={{marginTop:4}}>• {item.description} ({item.quantity})</div>)}
+    </div>}
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <button type="button" onClick={onCreateDeliveryNote} style={{padding:"6px 12px",background:"#0e7490",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit",fontWeight:600}}>📋 תעודת משלוח</button>
+      {status==="pending"&&<button type="button" onClick={()=>onStatusChange("ready")} style={{padding:"6px 12px",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>📦 סמן מוכן</button>}
+      {status==="ready"&&<button type="button" onClick={()=>onStatusChange("in_transit")} style={{padding:"6px 12px",background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>🚛 יצא למשלוח</button>}
+      {status==="in_transit"&&<button type="button" onClick={()=>onStatusChange("delivered")} style={{padding:"6px 12px",background:"#10b981",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit",fontWeight:600}}>✅ נמסר</button>}
+      {status!=="pending"&&<button type="button" onClick={()=>onStatusChange("pending")} style={{padding:"6px 12px",background:"transparent",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",fontSize:13,color:"var(--text2)",fontFamily:"inherit"}}>↩️ החזר לממתין</button>}
+      <button type="button" onClick={onViewTask} style={{padding:"6px 12px",background:"transparent",border:"1px solid var(--border)",borderRadius:8,cursor:"pointer",fontSize:13,fontFamily:"inherit",marginInlineStart:"auto"}}>👁️ צפה במשימה</button>
+    </div>
+  </div>;
+}
+
+function ShipmentsDashboard({allTasks,clients,user,onTaskClick,refreshAll}){
+  const [shipmentTasks,setShipmentTasks]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filter,setFilter]=useState("pending");
+  const [search,setSearch]=useState("");
+  const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    const loadShipmentTasks=async()=>{
+      setLoading(true);
+      try{
+        const items=await sb(`task_items?bina_item_code=eq.9&select=*`);
+        if(cancelled)return;
+        if(!items||items.length===0){
+          setShipmentTasks([]);
+          setLoading(false);
+          return;
+        }
+        const taskIdSet=new Set(items.map(i=>String(i.task_id)));
+        const matched=(Array.isArray(allTasks)?allTasks:[]).filter(t=>taskIdSet.has(String(t.id)));
+        const enriched=matched.map(task=>({
+          ...task,
+          delivery_items:items.filter(i=>String(i.task_id)===String(task.id)),
+        }));
+        setShipmentTasks(enriched);
+      }catch(e){
+        if(!cancelled)setShipmentTasks([]);
+      }
+      if(!cancelled)setLoading(false);
+    };
+    loadShipmentTasks();
+    return()=>{cancelled=true};
+  },[allTasks]);
+
+  const filtered=useMemo(()=>{
+    return shipmentTasks.filter(t=>{
+      if(filter!=="all"){
+        const st=t.delivery_status||"pending";
+        if(st!==filter)return false;
+      }
+      if(search.trim()){
+        const s=search.trim().toLowerCase();
+        return(String(t.title||"").toLowerCase().includes(s)||String(t.client_name||"").toLowerCase().includes(s)||String(t.bina_order_id||"").includes(s));
+      }
+      return true;
+    });
+  },[shipmentTasks,filter,search]);
+
+  const stats=useMemo(()=>({
+    total:shipmentTasks.length,
+    pending:shipmentTasks.filter(t=>(t.delivery_status||"pending")==="pending").length,
+    ready:shipmentTasks.filter(t=>t.delivery_status==="ready").length,
+    in_transit:shipmentTasks.filter(t=>t.delivery_status==="in_transit").length,
+    delivered:shipmentTasks.filter(t=>t.delivery_status==="delivered").length,
+  }),[shipmentTasks]);
+
+  const updateDeliveryStatus=async(taskId,newStatus)=>{
+    const nowIso=new Date().toISOString();
+    try{
+      await sb(`tasks?id=eq.${taskId}`,{
+        method:"PATCH",
+        body:JSON.stringify({
+          delivery_status:newStatus,
+          delivery_marked_at:nowIso,
+          delivery_marked_by:user?.name||"unknown",
+        }),
+      });
+      setShipmentTasks(prev=>prev.map(t=>t.id===taskId?{...t,delivery_status:newStatus,delivery_marked_at:nowIso,delivery_marked_by:user?.name||"unknown"}:t));
+      if(typeof refreshAll==="function")await refreshAll();
+    }catch(e){
+      window.alert("שגיאה בעדכון סטטוס: "+(e.message||String(e)));
+    }
+  };
+
+  return<div style={{direction:"rtl",padding:4}}>
+    <h1 style={{marginBottom:20,display:"flex",alignItems:"center",gap:10,fontSize:22,fontWeight:800,color:"var(--text)"}}>
+      🚚 משלוחים
+      <span style={{fontSize:14,color:"var(--text3)",fontWeight:500}}>({stats.total} בסה״כ)</span>
+    </h1>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
+      <KpiCardShipment label="ממתינים" value={stats.pending} color="#f59e0b" emoji="⏳"/>
+      <KpiCardShipment label="מוכנים למשלוח" value={stats.ready} color="#0e7490" emoji="📦"/>
+      <KpiCardShipment label="בדרך" value={stats.in_transit} color="#8b5cf6" emoji="🚛"/>
+      <KpiCardShipment label="נמסרו" value={stats.delivered} color="#10b981" emoji="✅"/>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:15,flexWrap:"wrap",background:"#fff",padding:12,borderRadius:10,border:"1px solid var(--border)",alignItems:"center"}}>
+      {["pending","ready","in_transit","delivered","all"].map(f=>
+        <button type="button" key={f} onClick={()=>setFilter(f)} style={{
+          padding:"6px 14px",
+          background:filter===f?"#0e7490":"var(--bg2)",
+          color:filter===f?"#fff":"var(--text2)",
+          border:"1px solid "+(filter===f?"#0e7490":"var(--border)"),
+          borderRadius:20,
+          cursor:"pointer",
+          fontSize:13,
+          fontWeight:filter===f?700:500,
+          fontFamily:"inherit",
+        }}>
+          {f==="pending"&&"⏳ ממתינים"}
+          {f==="ready"&&"📦 מוכנים"}
+          {f==="in_transit"&&"🚛 בדרך"}
+          {f==="delivered"&&"✅ נמסרו"}
+          {f==="all"&&"הכל"}
+        </button>
+      )}
+      <input type="text" placeholder="🔍 חפש לקוח, הזמנה…" value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200,padding:8,border:"1px solid var(--border)",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>
+    </div>
+    {loading?<div style={{textAlign:"center",padding:40,color:"var(--text3)"}}><Spinner sz={28}/> טוען משלוחים…</div>:
+    filtered.length===0?<div style={{textAlign:"center",padding:60,color:"var(--text3)",background:"#fff",borderRadius:10,border:"1px solid var(--border)"}}>
+      <div style={{fontSize:48,marginBottom:10}}>📦</div>
+      <div>אין משלוחים תואמים את הסינון</div>
+    </div>:
+    <div style={{display:"grid",gap:12}}>
+      {filtered.map(task=><ShipmentCard key={task.id} task={task} onStatusChange={st=>updateDeliveryStatus(task.id,st)} onCreateDeliveryNote={()=>setDeliveryNoteModal({task})} onViewTask={()=>onTaskClick&&onTaskClick(task)}/>)}
+    </div>}
+    {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
+  </div>;
+}
+
 // ── LOGIN ──
 function Login({onLogin}){
   const [users,setUsers]=useState([]);
@@ -5657,7 +5822,7 @@ function App(){
     try{
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,department,description,quantity,price,total,status&order=created_at.desc")]);
+      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
       setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
@@ -5753,6 +5918,18 @@ function App(){
   useEffect(()=>{
     if(tab==="delivery-notes"&&(!user||user.role!=="admin")){
       setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
+    if(tab==="shipments"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
+    if(tab==="shipments"&&user?.role==="admin"){
+      loadArchive();
     }
   },[tab,user]);
 
@@ -5968,7 +6145,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
     {id:"delivery",ic:"🚚",lb:"משלוחים"},
-    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"shipments",ic:"🚚",lb:"משלוחים — הזמנות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -6094,6 +6271,8 @@ function App(){
       </div>}
 
       {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
+
+      {tab==="shipments"&&isA&&<ShipmentsDashboard allTasks={[...tasks,...archivedTasks]} clients={clients} user={user} onTaskClick={setDet} refreshAll={refreshAll}/>}
 
       {/* DASHBOARD */}
       {tab==="dashboard"&&<div>

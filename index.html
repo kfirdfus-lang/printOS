@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8"/>
@@ -937,29 +937,18 @@ function ShipmentsDashboard({allTasks,clients,user,onTaskClick,refreshAll}){
 
   useEffect(()=>{
     let cancelled=false;
-    const loadShipmentTasks=async()=>{
+    const run=()=>{
       setLoading(true);
-      try{
-        const items=await sb(`task_items?bina_item_code=eq.9&select=*`);
-        if(cancelled)return;
-        if(!items||items.length===0){
-          setShipmentTasks([]);
-          setLoading(false);
-          return;
-        }
-        const taskIdSet=new Set(items.map(i=>String(i.task_id)));
-        const matched=(Array.isArray(allTasks)?allTasks:[]).filter(t=>taskIdSet.has(String(t.id)));
-        const enriched=matched.map(task=>({
-          ...task,
-          delivery_items:items.filter(i=>String(i.task_id)===String(task.id)),
-        }));
-        setShipmentTasks(enriched);
-      }catch(e){
-        if(!cancelled)setShipmentTasks([]);
+      const matched=(Array.isArray(allTasks)?allTasks:[]).filter(t=>{
+        const st=t.delivery_status||"pending";
+        return st==="ready"||st==="in_transit"||st==="delivered";
+      }).map(t=>({...t,delivery_items:[]}));
+      if(!cancelled){
+        setShipmentTasks(matched);
+        setLoading(false);
       }
-      if(!cancelled)setLoading(false);
     };
-    loadShipmentTasks();
+    run();
     return()=>{cancelled=true};
   },[allTasks]);
 
@@ -6377,8 +6366,7 @@ function App(){
     {id:"dashboard",ic:"⊟",lb:"דשבורד"},
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    {id:"delivery",ic:"🚚",lb:"משלוחים"},
-    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"shipments",ic:"🚚",lb:"משלוחים — הזמנות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -6506,8 +6494,6 @@ function App(){
       {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
 
       {tab==="shipments"&&isA&&<ShipmentsDashboard allTasks={[...tasks,...archivedTasks]} clients={clients} user={user} onTaskClick={setDet} refreshAll={refreshAll}/>}
-
-      {/* DASHBOARD */}
       {tab==="dashboard"&&<div>
         <DepartmentDashboard user={user} allTasks={tasks} taskItems={taskItems} isA={isA} deptFilter={deptFilter}/>
         {isA&&<div style={{display:"flex",gap:8,padding:"12px 0",overflowX:"auto",flexWrap:"wrap"}}>
@@ -6688,9 +6674,6 @@ function App(){
 
       {/* CALENDAR */}
       {tab==="calendar"&&<CalendarTab tasks={tasks} taskItems={taskItems} user={user} isA={isA} onTaskClick={setDet}/>}
-
-      {/* DELIVERY REPORT */}
-      {tab==="delivery"&&isA&&<DeliveryTab tasks={tasks}/>}
 
       {/* ARCHIVE (admin) */}
       {tab==="archive"&&isA&&<div>

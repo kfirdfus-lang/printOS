@@ -326,6 +326,10 @@ function DeliveryNoteModal({task,clients,user,onClose}){
   const [items,setItems]=useState([]);
   const [allItems,setAllItems]=useState([]);
   const [deliveryAddress,setDeliveryAddress]=useState("");
+  const [savedAddresses,setSavedAddresses]=useState([]);
+  const [selectedAddressId,setSelectedAddressId]=useState(null);
+  const [saveAddressForFuture,setSaveAddressForFuture]=useState(false);
+  const [showAddNewAddress,setShowAddNewAddress]=useState(false);
   const [custName,setCustName]=useState("");
   const [custContact,setCustContact]=useState("");
   const [custPhone,setCustPhone]=useState("");
@@ -341,6 +345,9 @@ function DeliveryNoteModal({task,clients,user,onClose}){
     let cancelled=false;
     const run=async()=>{
       setLoading(true);
+      setSavedAddresses([]);
+      setSelectedAddressId(null);
+      setSaveAddressForFuture(false);
       const snap=task.bina_order_id?await loadOrderSnapshotFromDb(task):null;
       if(cancelled)return;
       if(snap)console.log("[delivery-notes] נטען צילום הזמנה מטבלת orders (הזמנה "+String(task.bina_order_id)+")");
@@ -352,15 +359,50 @@ function DeliveryNoteModal({task,clients,user,onClose}){
           if(!cancelled&&row?.[0])c=row[0];
         }catch(e){/* ignore */}
       }
+      if(!c&&task.bina_cust_id){
+        try{
+          const row=await sb(`clients?bina_customer_id=eq.${task.bina_cust_id}&limit=1`);
+          if(!cancelled&&row?.[0])c=row[0];
+        }catch(e){/* ignore */}
+      }
+      if(!c&&task.client_name){
+        try{
+          const row=await sb(`clients?name=eq.${encodeURIComponent(task.client_name)}&limit=1`);
+          if(!cancelled&&row?.[0])c=row[0];
+        }catch(e){/* ignore */}
+      }
       if(!cancelled)setClient(c||null);
 
+      let addresses=[];
+      if(c?.id){
+        try{
+          const addrRows=await sb(`client_addresses?client_id=eq.${c.id}&order=is_default.desc,last_used_at.desc`);
+          if(!cancelled)addresses=Array.isArray(addrRows)?addrRows:[];
+        }catch(e){/* table may not exist yet */}
+      }
+      if(!cancelled)setSavedAddresses(addresses);
+
       const addrFromTask=[task.bina_cust_address,task.bina_cust_city].filter(Boolean).join(", ")||"";
+      const snapAddr=snap?.address||"";
+      const defaultAddr=addresses.find(a=>a.is_default)||addresses[0];
+      const resolvedAddr=defaultAddr?.address||snapAddr||c?.address||addrFromTask||"";
+      const resolvedContact=c?(c.delivery_contact_name||c.contact_name||snap?.contactName||task.contact||""):(snap?.contactName||task.contact||"");
+      const resolvedPhone=c?(c.delivery_contact_phone||c.phone||snap?.phone||task.bina_cust_phone||""):(snap?.phone||task.bina_cust_phone||"");
+      const resolvedEmail=c?(c.delivery_email||c.orders_email_primary||c.email||snap?.email||task.bina_cust_email||""):(snap?.email||task.bina_cust_email||"");
+      const resolvedName=snap?.customerName||c?.name||task.client_name||"";
+
+      if(!cancelled){
+        setCustName(resolvedName);
+        setCustContact(resolvedContact);
+        setCustPhone(resolvedPhone);
+        setCustEmail(resolvedEmail);
+        setDeliveryAddress(resolvedAddr);
+        if(defaultAddr)setSelectedAddressId(defaultAddr.id);
+        else setSelectedAddressId(null);
+        if(c?.delivery_notes)setNotes(c.delivery_notes);
+      }
+
       if(snap&&!cancelled){
-        setCustName(snap.customerName||task.client_name||"");
-        setCustContact(snap.contactName||"");
-        setCustPhone(snap.phone||"");
-        setCustEmail(snap.email||"");
-        setDeliveryAddress(snap.address||addrFromTask);
         if(snap.orderItems&&snap.orderItems.length>0){
           setAllItems(snap.orderItems);
           setItems(snap.orderItems.map(i=>i.id));
@@ -368,20 +410,7 @@ function DeliveryNoteModal({task,clients,user,onClose}){
           await loadTaskItemsFallback();
         }
       }else if(!cancelled){
-        setCustName(c?.name||task.client_name||"");
-        setCustContact(c?.contact_name||task.contact||"");
-        setCustPhone(c?.phone||task.bina_cust_phone||"");
-        setCustEmail(c?.orders_email_primary||c?.email||task.bina_cust_email||"");
-        setDeliveryAddress(c?.address||addrFromTask);
         await loadTaskItemsFallback();
-      }
-
-      if(c&&!cancelled){
-        setCustPhone(p=>p||c.phone||task.bina_cust_phone||"");
-        setCustEmail(e=>e||c.orders_email_primary||c.email||task.bina_cust_email||"");
-        setCustContact(ct=>ct||c.contact_name||task.contact||"");
-        setCustName(n=>n||c.name||task.client_name||"");
-        setDeliveryAddress(a=>a||c.address||addrFromTask);
       }
 
       async function loadTaskItemsFallback(){
@@ -446,8 +475,26 @@ function DeliveryNoteModal({task,clients,user,onClose}){
         created_by:user?.name||"unknown",
       };
       const result=await sb("delivery_notes",{method:"POST",body:JSON.stringify(payload),headers:{Prefer:"return=representation"}});
-      if(result&&result[0])setCreatedNote(result[0]);
-      else window.alert("שגיאה ביצירת התעודה");
+      if(result&&result[0]){
+        setCreatedNote(result[0]);
+        try{
+          if(saveAddressForFuture&&client&&deliveryAddress.trim()&&!selectedAddressId){
+            await sb("client_addresses",{method:"POST",body:JSON.stringify({
+              client_id:client.id,
+              address:deliveryAddress.trim(),
+              is_default:false,
+              created_by:user?.name||"unknown",
+            })});
+          }
+          if(selectedAddressId){
+            const current=savedAddresses.find(a=>a.id===selectedAddressId);
+            await sb(`client_addresses?id=eq.${selectedAddressId}`,{method:"PATCH",body:JSON.stringify({
+              usage_count:(current?.usage_count||0)+1,
+              last_used_at:new Date().toISOString(),
+            })});
+          }
+        }catch(addrErr){console.warn("[delivery-notes] address save:",addrErr);}
+      }else window.alert("שגיאה ביצירת התעודה");
     }catch(e){
       window.alert("שגיאה ביצירת התעודה: "+(e.message||String(e)));
     }
@@ -520,9 +567,52 @@ function DeliveryNoteModal({task,clients,user,onClose}){
         </div>
       </div>
       <div>
-        <label style={{display:"block",fontWeight:700,marginBottom:6}}>📍 כתובת משלוח</label>
-        <textarea value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} rows={3} style={{width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}/>
+        <label style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontWeight:700,marginBottom:6}}>
+          <span>📍 כתובת משלוח</span>
+          {client&&<button type="button" onClick={()=>setShowAddNewAddress(true)} style={{fontSize:11,padding:"4px 8px",cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:6,background:"#fff"}}>+ כתובת חדשה</button>}
+        </label>
+        {savedAddresses.length>0&&<select
+          value={selectedAddressId||"custom"}
+          onChange={e=>{
+            const val=e.target.value;
+            if(val==="custom"){
+              setSelectedAddressId(null);
+              setDeliveryAddress("");
+            }else{
+              const addr=savedAddresses.find(a=>a.id===val);
+              if(addr){
+                setSelectedAddressId(val);
+                setDeliveryAddress(addr.address);
+              }
+            }
+          }}
+          style={{width:"100%",padding:8,marginBottom:8,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}>
+          {savedAddresses.map(addr=><option key={addr.id} value={addr.id}>
+            {addr.is_default?"⭐ ":""}{addr.label?`[${addr.label}] `:""}{String(addr.address||"").substring(0,60)}
+          </option>)}
+          <option value="custom">✏️ כתובת חופשית (חד פעמית)</option>
+        </select>}
+        <textarea value={deliveryAddress} onChange={e=>{
+          setDeliveryAddress(e.target.value);
+          if(selectedAddressId)setSelectedAddressId(null);
+        }} rows={3} placeholder={savedAddresses.length===0?"הזן כתובת משלוח":"או הזן כתובת חדשה"} style={{width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}/>
+        {client&&deliveryAddress.trim()&&!selectedAddressId&&<label style={{display:"flex",alignItems:"center",marginTop:6,fontSize:13,gap:6,cursor:"pointer"}}>
+          <input type="checkbox" checked={saveAddressForFuture} onChange={e=>setSaveAddressForFuture(e.target.checked)}/>
+          💾 שמור כתובת זו ללקוח לשימוש עתידי
+        </label>}
       </div>
+      {showAddNewAddress&&client&&<AddAddressModal clientId={client.id} user={user} onClose={()=>setShowAddNewAddress(false)} onAdd={async()=>{
+        try{
+          const addrRows=await sb(`client_addresses?client_id=eq.${client.id}&order=is_default.desc,last_used_at.desc`);
+          const list=Array.isArray(addrRows)?addrRows:[];
+          setSavedAddresses(list);
+          const def=list.find(a=>a.is_default)||list[0];
+          if(def){
+            setSelectedAddressId(def.id);
+            setDeliveryAddress(def.address);
+          }
+        }catch(e){/* ignore */}
+      }}/>}
       <div>
         <label style={{display:"block",fontWeight:700,marginBottom:6}}>🚚 שם הנהג (אופציונלי)</label>
         <input value={driverName} onChange={e=>setDriverName(e.target.value)} style={{width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit"}}/>
@@ -956,6 +1046,148 @@ function ShipmentsDashboard({allTasks,clients,user,onTaskClick,refreshAll}){
     </div>}
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
   </div>;
+}
+
+function AddAddressModal({clientId,user,onClose,onAdd}){
+  const [address,setAddress]=useState("");
+  const [label,setLabel]=useState("");
+  const [isDefault,setIsDefault]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const addrIS={width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13};
+  const handleAdd=async()=>{
+    if(!address.trim()){window.alert("יש להזין כתובת");return;}
+    setSaving(true);
+    try{
+      if(isDefault){
+        await sb(`client_addresses?client_id=eq.${clientId}`,{method:"PATCH",body:JSON.stringify({is_default:false})});
+      }
+      await sb("client_addresses",{method:"POST",body:JSON.stringify({
+        client_id:clientId,
+        address:address.trim(),
+        label:label.trim()||null,
+        is_default:isDefault,
+        created_by:user?.name||"unknown",
+      })});
+      onAdd?.();
+      onClose();
+    }catch(e){
+      window.alert("שגיאה בשמירה: "+(e.message||String(e)));
+    }
+    setSaving(false);
+  };
+  return<Modal open={true} onClose={onClose} title="➕ הוספת כתובת משלוח" maxWidth={480}>
+    <div style={{display:"flex",flexDirection:"column",gap:14,direction:"rtl"}}>
+      <div><label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:5}}>כתובת מלאה *</label><textarea value={address} onChange={e=>setAddress(e.target.value)} placeholder="רחוב + מספר, עיר, מיקוד" rows={4} style={addrIS}/></div>
+      <div><label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:5}}>תווית (אופציונלי)</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="למשל: אסם, משרד ראשי" style={addrIS}/></div>
+      <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}>
+        <input type="checkbox" checked={isDefault} onChange={e=>setIsDefault(e.target.checked)}/>
+        סמן ככתובת ברירת מחדל
+      </label>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" disabled={saving} onClick={handleAdd} style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saving?"⏳...":"➕ הוסף"}</button>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function ClientAddressesList({clientId}){
+  const [addresses,setAddresses]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const loadAddresses=async()=>{
+    setLoading(true);
+    try{
+      const data=await sb(`client_addresses?client_id=eq.${clientId}&order=is_default.desc,last_used_at.desc`);
+      setAddresses(Array.isArray(data)?data:[]);
+    }catch(e){setAddresses([]);}
+    setLoading(false);
+  };
+  useEffect(()=>{if(clientId)loadAddresses();},[clientId]);
+  const setDefault=async(addressId)=>{
+    try{
+      await sb(`client_addresses?client_id=eq.${clientId}`,{method:"PATCH",body:JSON.stringify({is_default:false})});
+      await sb(`client_addresses?id=eq.${addressId}`,{method:"PATCH",body:JSON.stringify({is_default:true})});
+      loadAddresses();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const deleteAddress=async(addressId)=>{
+    if(!window.confirm("למחוק את הכתובת?"))return;
+    try{
+      await sb(`client_addresses?id=eq.${addressId}`,{method:"DELETE"});
+      loadAddresses();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  if(loading)return<div style={{padding:12,color:"var(--text3)",fontSize:13}}><Spinner sz={16}/> טוען כתובות…</div>;
+  if(addresses.length===0)return<div style={{padding:15,background:"#fef3c7",borderRadius:8,fontSize:13,color:"#78350f",marginTop:8}}>⚠️ אין כתובות משלוח שמורות. לחץ &quot;הוסף כתובת&quot; כדי להתחיל.</div>;
+  return<div style={{marginTop:8}}>
+    {addresses.map(addr=><div key={addr.id} style={{padding:10,background:"#fff",border:"1px solid var(--border)",borderRadius:8,marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:addr.is_default?700:400,fontSize:13}}>
+          {addr.is_default&&"⭐ "}
+          {addr.label&&<strong>[{addr.label}] </strong>}
+          {addr.address}
+        </div>
+        <div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>
+          שימוש {addr.usage_count||0} פעמים · אחרון: {addr.last_used_at?new Date(addr.last_used_at).toLocaleDateString("he-IL"):"—"}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:6,flexShrink:0}}>
+        {!addr.is_default&&<button type="button" onClick={()=>setDefault(addr.id)} style={{fontSize:11,padding:"4px 8px",cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:6,background:"#fff"}}>ברירת מחדל</button>}
+        <button type="button" onClick={()=>deleteAddress(addr.id)} style={{fontSize:11,padding:"4px 8px",cursor:"pointer",color:"#ef4444",border:"none",background:"transparent"}}>🗑️</button>
+      </div>
+    </div>)}
+  </div>;
+}
+
+function ClientDeliveryEditModal({client,user,onClose,onSaved}){
+  const [form,setForm]=useState({...client});
+  const [showAddAddress,setShowAddAddress]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [addrKey,setAddrKey]=useState(0);
+  const fldIS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
+  const fldLS={color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:5,display:"block"};
+  const updateField=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const handleSave=async()=>{
+    setSaving(true);
+    try{
+      await sb(`clients?id=eq.${client.id}`,{method:"PATCH",body:JSON.stringify({
+        delivery_contact_name:form.delivery_contact_name?.trim()||null,
+        delivery_contact_phone:form.delivery_contact_phone?.trim()||null,
+        delivery_email:form.delivery_email?.trim()||null,
+        delivery_notes:form.delivery_notes?.trim()||null,
+      })});
+      onSaved?.({...client,...form});
+      onClose();
+    }catch(e){
+      window.alert("שגיאה בשמירה: "+(e.message||String(e)));
+    }
+    setSaving(false);
+  };
+  return<Modal open={true} onClose={onClose} title={`🚚 פרטי משלוח — ${client.name}`} maxWidth={560}>
+    <div style={{direction:"rtl",display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{padding:15,background:"#f0f9ff",borderRadius:10,borderRight:"4px solid #0e7490"}}>
+        <h3 style={{margin:"0 0 12px",color:"#0e7490",fontSize:15,fontWeight:700}}>🚚 פרטי משלוח</h3>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div><label style={fldLS}>איש קשר למשלוח</label><input value={form.delivery_contact_name||""} onChange={e=>updateField("delivery_contact_name",e.target.value)} placeholder="שם איש הקשר" style={fldIS}/></div>
+          <div><label style={fldLS}>טלפון למשלוח</label><input value={form.delivery_contact_phone||""} onChange={e=>updateField("delivery_contact_phone",e.target.value)} placeholder="050-1234567" type="tel" style={fldIS}/></div>
+        </div>
+        <div style={{marginBottom:10}}><label style={fldLS}>מייל למשלוחים</label><input value={form.delivery_email||""} onChange={e=>updateField("delivery_email",e.target.value)} placeholder="delivery@example.com" type="email" style={fldIS}/></div>
+        <div style={{marginTop:12}}>
+          <label style={{...fldLS,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>📍 כתובות משלוח</span>
+            <button type="button" onClick={()=>setShowAddAddress(true)} style={{fontSize:12,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:6,background:"#fff"}}>+ הוסף כתובת</button>
+          </label>
+          <ClientAddressesList key={addrKey} clientId={client.id}/>
+        </div>
+        <div style={{marginTop:10}}><label style={fldLS}>💬 הערות פנימיות למשלוח</label><textarea value={form.delivery_notes||""} onChange={e=>updateField("delivery_notes",e.target.value)} placeholder="הערות שיופיעו בתעודות משלוח…" rows={3} style={{...fldIS,minHeight:60}}/></div>
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" disabled={saving} onClick={handleSave} style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saving?"⏳ שומר...":"💾 שמור"}</button>
+      </div>
+    </div>
+    {showAddAddress&&<AddAddressModal clientId={client.id} user={user} onClose={()=>setShowAddAddress(false)} onAdd={()=>setAddrKey(k=>k+1)}/>}
+  </Modal>;
 }
 
 // ── LOGIN ──
@@ -5691,6 +5923,7 @@ function App(){
   const [bcfErr,setBcfErr]=useState({});
   const [hashMode,setHashMode]=useState(()=>typeof window!=="undefined"&&window.location?window.location.hash||"":"");
   const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
+  const [editClientDelivery,setEditClientDelivery]=useState(null);
 
   const [showReportModal,setShowReportModal]=useState(false);
   const [reportRecipients,setReportRecipients]=useState([]);
@@ -6440,8 +6673,10 @@ function App(){
                   {c.email&&<span style={{color:"var(--text2)",fontSize:12}}>✉️ {c.email}</span>}
                   {c.address&&<span style={{color:"var(--text2)",fontSize:12}}>📍 {c.address}</span>}
                   {c.payment_terms&&<span style={{background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20}}>{c.payment_terms}</span>}
+                  {(c.delivery_contact_name||c.delivery_contact_phone)&&<span style={{color:"#0e7490",fontSize:12}}>🚚 {c.delivery_contact_name||c.delivery_contact_phone}</span>}
                 </div>
               </div>
+              <button type="button" onClick={()=>setEditClientDelivery(c)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #0e7490",background:"#ecfeff",color:"#0e7490",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🚚 משלוח</button>
             </div>
           </Card>)}
           {clients.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
@@ -6587,6 +6822,8 @@ function App(){
     <CreateQuoteModal open={quoteModalOpen} onClose={()=>setQuoteModalOpen(false)} onSuccess={()=>{refreshAll();}} clients={clients} sb={sb}/>
 
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
+
+    {editClientDelivery&&<ClientDeliveryEditModal client={editClientDelivery} user={user} onClose={()=>setEditClientDelivery(null)} onSaved={updated=>{setClients(p=>p.map(c=>c.id===updated.id?updated:c));setEditClientDelivery(null);}}/>}
 
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
       {det&&<div>

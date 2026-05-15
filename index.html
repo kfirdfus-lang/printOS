@@ -192,6 +192,7 @@ function generateDeliveryNoteHTML(note,_isSigningView=false){
     .items-table td{padding:10px;border-bottom:1px solid #e5e7eb}
     .items-table tr:nth-child(even){background:#f9fafb}
     .qty-col{width:100px;text-align:center}
+    .idx-col{width:60px;text-align:center}
     .order-ref{background:#fef3c7;padding:10px 15px;border-radius:6px;margin-top:15px;font-size:14px}
     .signature-section{margin-top:40px;padding:20px;border:2px dashed #d1d5db;border-radius:8px}
     .signature-box{display:flex;gap:30px;align-items:flex-end}
@@ -231,7 +232,7 @@ function generateDeliveryNoteHTML(note,_isSigningView=false){
   <div class="section">
     <div class="section-title">לכבוד</div>
     <div class="customer-box">
-      <div class="customer-row"><span class="customer-label">שם:</span><span>${escHtml(note.customer_name)}</span></div>
+      ${String(note.customer_name||"").trim()?`<div class="customer-row"><span class="customer-label">שם:</span><span>${escHtml(note.customer_name)}</span></div>`:""}
       ${note.contact_name?`<div class="customer-row"><span class="customer-label">איש קשר:</span><span>${escHtml(note.contact_name)}</span></div>`:""}
       ${note.customer_address?`<div class="customer-row"><span class="customer-label">כתובת:</span><span>${escHtml(note.customer_address)}</span></div>`:""}
       ${note.customer_phone?`<div class="customer-row"><span class="customer-label">טלפון:</span><span class="ltr">${escHtml(note.customer_phone)}</span></div>`:""}
@@ -242,8 +243,9 @@ function generateDeliveryNoteHTML(note,_isSigningView=false){
   <div class="section">
     <div class="section-title">פירוט פריטים למשלוח</div>
     <table class="items-table">
-      <thead><tr><th>תיאור</th><th class="qty-col">כמות</th></tr></thead>
-      <tbody>${items.map(it=>`<tr><td>${escHtml(it.description)}</td><td class="qty-col"><span class="ltr">${escHtml(it.quantity)}</span></td></tr>`).join("")}</tbody>
+      <thead><tr><th class="idx-col">#</th><th>תיאור פריט</th><th class="qty-col">כמות</th></tr></thead>
+      <tbody>${items.map((it,idx)=>`<tr><td class="idx-col" style="text-align:center">${idx+1}</td><td>${escHtml(it.description)}</td><td class="qty-col"><span class="ltr">${escHtml(it.quantity)}</span></td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="2" style="text-align:left;font-weight:600;padding:12px">סה״כ פריטים:</td><td class="qty-col" style="text-align:center;font-weight:600"><span class="ltr">${items.reduce((s,it)=>s+Number(it.quantity??0),0)}</span></td></tr></tfoot>
     </table>
   </div>
   ${note.notes?`<div class="section"><div class="section-title">הערות</div><div style="padding:10px;background:#f9fafb;border-radius:6px">${escHtml(note.notes)}</div></div>`:""}
@@ -272,6 +274,10 @@ function generateDeliveryNoteHTML(note,_isSigningView=false){
 
 function resolveClientForTask(task,clients){
   const list=Array.isArray(clients)?clients:[];
+  if(task.client_id!=null&&task.client_id!==""){
+    const m=list.find(c=>String(c.id)===String(task.client_id));
+    if(m)return m;
+  }
   if(task.bina_cust_id!=null&&task.bina_cust_id!==""){
     const m=list.find(c=>String(c.bina_customer_id||"")===String(task.bina_cust_id));
     if(m)return m;
@@ -280,55 +286,137 @@ function resolveClientForTask(task,clients){
   return null;
 }
 
+/** צילום הזמנה מטבלאות PrintOS (נשמרו מבינה בסנכרון / יצירת הזמנה) — בלי Edge Function חדש */
+async function loadOrderSnapshotFromDb(task){
+  const oid=task.bina_order_id;
+  if(oid==null||oid==="")return null;
+  try{
+    let ord=null;
+    const byBina=await sb(`orders?bina_doc_id=eq.${oid}&limit=1`);
+    if(Array.isArray(byBina)&&byBina[0])ord=byBina[0];
+    if(!ord){
+      const byTask=await sb(`orders?task_id=eq.${task.id}&limit=1`);
+      if(Array.isArray(byTask)&&byTask[0])ord=byTask[0];
+    }
+    if(!ord)return null;
+    const addrParts=[ord.bina_cust_address,ord.bina_cust_city].filter(Boolean);
+    const oItems=await sb(`order_items?order_id=eq.${ord.id}&order=line_number.asc`);
+    const lines=(Array.isArray(oItems)?oItems:[]).map(oi=>({
+      id:oi.id,
+      description:String(oi.description||"").trim()||"—",
+      quantity:oi.quantity!=null?oi.quantity:1,
+      bina_item_code:null,
+    }));
+    return{
+      customerName:String(ord.bina_cust_name||"").trim()||(task.client_name||""),
+      contactName:String(ord.contact_person||"").trim()||(task.contact||""),
+      phone:ord.bina_cust_phone||task.bina_cust_phone||"",
+      email:ord.bina_cust_email||task.bina_cust_email||"",
+      address:addrParts.join(", ")||"",
+      orderItems:lines.length>0?lines:null,
+    };
+  }catch(e){
+    console.warn("[delivery-notes] order snapshot:",e);
+    return null;
+  }
+}
+
 function DeliveryNoteModal({task,clients,user,onClose}){
   const [client,setClient]=useState(null);
   const [items,setItems]=useState([]);
   const [allItems,setAllItems]=useState([]);
   const [deliveryAddress,setDeliveryAddress]=useState("");
+  const [custName,setCustName]=useState("");
+  const [custContact,setCustContact]=useState("");
+  const [custPhone,setCustPhone]=useState("");
+  const [custEmail,setCustEmail]=useState("");
   const [notes,setNotes]=useState("");
   const [driverName,setDriverName]=useState("");
   const [loading,setLoading]=useState(true);
   const [creating,setCreating]=useState(false);
   const [createdNote,setCreatedNote]=useState(null);
+  const [copySuccess,setCopySuccess]=useState(false);
 
   useEffect(()=>{
     let cancelled=false;
-    const load=async()=>{
-      const c=resolveClientForTask(task,clients);
-      if(c&&!cancelled){
-        setClient(c);
-        setDeliveryAddress(c.address||"");
-      }else if(!cancelled){
-        const parts=[task.bina_cust_address,task.bina_cust_city].filter(Boolean);
-        setDeliveryAddress(parts.join(", ")||"");
+    const run=async()=>{
+      setLoading(true);
+      const snap=task.bina_order_id?await loadOrderSnapshotFromDb(task):null;
+      if(cancelled)return;
+      if(snap)console.log("[delivery-notes] נטען צילום הזמנה מטבלת orders (הזמנה "+String(task.bina_order_id)+")");
+
+      let c=resolveClientForTask(task,clients);
+      if(!c&&task.client_id){
+        try{
+          const row=await sb(`clients?id=eq.${task.client_id}&limit=1`);
+          if(!cancelled&&row?.[0])c=row[0];
+        }catch(e){/* ignore */}
       }
-      try{
-        const ti=await sb(`task_items?task_id=eq.${task.id}&order=id.asc`);
-        if(cancelled)return;
-        if(ti&&ti.length>0){
-          setAllItems(ti);
-          setItems(ti.map(i=>i.id));
+      if(!cancelled)setClient(c||null);
+
+      const addrFromTask=[task.bina_cust_address,task.bina_cust_city].filter(Boolean).join(", ")||"";
+      if(snap&&!cancelled){
+        setCustName(snap.customerName||task.client_name||"");
+        setCustContact(snap.contactName||"");
+        setCustPhone(snap.phone||"");
+        setCustEmail(snap.email||"");
+        setDeliveryAddress(snap.address||addrFromTask);
+        if(snap.orderItems&&snap.orderItems.length>0){
+          setAllItems(snap.orderItems);
+          setItems(snap.orderItems.map(i=>i.id));
         }else{
-          const fake={id:"task-"+task.id,description:task.title,quantity:1,bina_item_code:null,_isSingleTask:true};
-          setAllItems([fake]);
-          setItems([fake.id]);
+          await loadTaskItemsFallback();
         }
-      }catch(e){
-        if(!cancelled){
-          const fake={id:"task-"+task.id,description:task.title,quantity:1,bina_item_code:null,_isSingleTask:true};
-          setAllItems([fake]);
-          setItems([fake.id]);
+      }else if(!cancelled){
+        setCustName(c?.name||task.client_name||"");
+        setCustContact(c?.contact_name||task.contact||"");
+        setCustPhone(c?.phone||task.bina_cust_phone||"");
+        setCustEmail(c?.orders_email_primary||c?.email||task.bina_cust_email||"");
+        setDeliveryAddress(c?.address||addrFromTask);
+        await loadTaskItemsFallback();
+      }
+
+      if(c&&!cancelled){
+        setCustPhone(p=>p||c.phone||task.bina_cust_phone||"");
+        setCustEmail(e=>e||c.orders_email_primary||c.email||task.bina_cust_email||"");
+        setCustContact(ct=>ct||c.contact_name||task.contact||"");
+        setCustName(n=>n||c.name||task.client_name||"");
+        setDeliveryAddress(a=>a||c.address||addrFromTask);
+      }
+
+      async function loadTaskItemsFallback(){
+        if(cancelled)return;
+        try{
+          const ti=await sb(`task_items?task_id=eq.${task.id}&order=id.asc`);
+          if(cancelled)return;
+          if(ti&&ti.length>0){
+            setAllItems(ti);
+            setItems(ti.map(i=>i.id));
+          }else{
+            const fake={id:"task-"+task.id,description:task.title,quantity:1,bina_item_code:null,_isSingleTask:true};
+            setAllItems([fake]);
+            setItems([fake.id]);
+          }
+        }catch(e){
+          if(!cancelled){
+            const fake={id:"task-"+task.id,description:task.title,quantity:1,bina_item_code:null,_isSingleTask:true};
+            setAllItems([fake]);
+            setItems([fake.id]);
+          }
         }
       }
+
       if(!cancelled)setLoading(false);
     };
-    load();
+    run();
     return()=>{cancelled=true};
-  },[task.id,task.title,task.client_name,task.bina_cust_id,clients]);
+  },[task.id,task.title,task.client_name,task.client_id,task.bina_cust_id,task.bina_order_id,task.contact,task.bina_cust_phone,task.bina_cust_email,task.bina_cust_address,task.bina_cust_city,clients]);
 
   const toggleItem=(id)=>{
     setItems(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
   };
+
+  const signUrl=createdNote?`${typeof window!=="undefined"&&window.location?window.location.origin:""}${window.location.pathname||""}${window.location.search||""}#sign/${createdNote.signature_token}`:"";
 
   const handleCreate=async()=>{
     if(items.length===0){window.alert("יש לבחור לפחות פריט אחד");return;}
@@ -341,14 +429,15 @@ function DeliveryNoteModal({task,clients,user,onClose}){
       }));
       const token=(crypto.randomUUID&&crypto.randomUUID())?crypto.randomUUID().replace(/-/g,""):String(Math.random()).slice(2)+Date.now().toString(36);
       const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+      const nm=custName.trim()||task.client_name||"לקוח";
       const payload={
         task_id:task.id,
         bina_order_id:task.bina_order_id!=null?String(task.bina_order_id):null,
-        customer_name:client?.name||task.client_name||"לקוח",
-        contact_name:client?.contact_name||null,
-        customer_address:deliveryAddress||null,
-        customer_phone:client?.phone||null,
-        customer_email:client?.orders_email_primary||client?.email||null,
+        customer_name:nm,
+        contact_name:custContact.trim()||null,
+        customer_address:deliveryAddress.trim()||null,
+        customer_phone:custPhone.trim()||null,
+        customer_email:custEmail.trim()||null,
         items:selectedItems,
         signature_token:token,
         signature_token_expires_at:expiresAt,
@@ -374,40 +463,60 @@ function DeliveryNoteModal({task,clients,user,onClose}){
     setTimeout(()=>{try{w.print()}catch(e){}},500);
   };
 
-  const handleCopyLink=()=>{
+  const handleCopyLink=async()=>{
     if(!createdNote)return;
-    const u=`${window.location.origin}${window.location.pathname||""}${window.location.search||""}#sign/${createdNote.signature_token}`;
-    navigator.clipboard.writeText(u).then(()=>window.alert("הקישור הועתק! שלח לנהג")).catch(()=>window.alert(u));
+    const u=signUrl;
+    try{
+      await navigator.clipboard.writeText(u);
+      setCopySuccess(true);
+      setTimeout(()=>setCopySuccess(false),2000);
+    }catch(e){
+      window.alert("שגיאה בהעתקה. נסה שוב.");
+    }
   };
 
   const handleWhatsApp=()=>{
     if(!createdNote)return;
-    const u=`${window.location.origin}${window.location.pathname||""}${window.location.search||""}#sign/${createdNote.signature_token}`;
+    const u=signUrl;
     const text=`שלום, תעודת משלוח ${createdNote.delivery_number}\nלקוח: ${createdNote.customer_name}\nכתובת: ${createdNote.customer_address||"—"}\nקישור לחתימת מקבל:\n${u}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank");
   };
 
+  const secondaryCreatedBtn={padding:"12px 10px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13};
+
   return<Modal open={true} onClose={onClose} title={createdNote?`✅ תעודה ${createdNote.delivery_number} נוצרה!`:`תעודת משלוח חדשה`} maxWidth={640}>
-    {loading?<div style={{textAlign:"center",padding:40}}><Spinner sz={32}/></div>:
+    {loading?<div style={{textAlign:"center",padding:40}}>
+      <Spinner sz={32}/>
+      {task.bina_order_id?<p style={{marginTop:16,color:"var(--text2)",fontSize:14}}>טוען נתונים מהזמנה…</p>:null}
+    </div>:
     createdNote?<div style={{direction:"rtl"}}>
-      <p style={{marginBottom:16,color:"var(--text2)",fontSize:14}}>הוצאת תעודת משלוח מס׳ <strong>{createdNote.delivery_number}</strong></p>
-      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
-        <button type="button" onClick={handlePrint} style={{padding:"12px 16px",borderRadius:10,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📄 הדפס / שמור PDF</button>
-        <button type="button" onClick={handleCopyLink} style={{padding:"12px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔗 העתק קישור חתימה לנהג</button>
-        <button type="button" onClick={handleWhatsApp} style={{padding:"12px 16px",borderRadius:10,border:"none",background:"#25D366",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📱 שלח לנהג בוואטסאפ</button>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <div style={{fontSize:48}}>✅</div>
+        <h2 style={{margin:"8px 0",fontSize:20,fontWeight:800,color:"var(--text)"}}>תעודה {createdNote.delivery_number} נוצרה!</h2>
+      </div>
+      <button type="button" onClick={handleCopyLink} style={{width:"100%",padding:16,background:"#0e7490",color:"#fff",border:"none",borderRadius:10,fontSize:17,fontWeight:700,cursor:"pointer",marginBottom:10,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+        {copySuccess?"✔ הועתק!":"🔗 העתק קישור חתימה לנהג"}
+      </button>
+      {signUrl?<div style={{background:"#f3f4f6",padding:10,borderRadius:6,fontSize:12,color:"#6b7280",wordBreak:"break-all",direction:"ltr",textAlign:"left",marginBottom:14}}>{signUrl}</div>:null}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+        <button type="button" onClick={handlePrint} style={secondaryCreatedBtn}>🖨️ הדפס PDF</button>
+        <button type="button" onClick={handleWhatsApp} style={secondaryCreatedBtn}>📱 WhatsApp</button>
+      </div>
+      <div style={{padding:12,background:"#fef3c7",borderRadius:8,fontSize:13,color:"#78350f",marginBottom:16}}>
+        💡 <strong>איך זה עובד:</strong> העתק את הקישור ושלח לנהג. כשיחתום מהטלפון — התעודה תסומן כחתומה בדשבורד תעודות משלוח (רענון אוטומטי).
       </div>
       <p style={{fontSize:13,color:"var(--text3)"}}>סטטוס: ⏳ ממתין לחתימה</p>
-      <button type="button" onClick={onClose} style={{marginTop:16,padding:"10px 20px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg2)",cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+      <button type="button" onClick={onClose} style={{marginTop:12,padding:"10px 20px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg2)",cursor:"pointer",fontFamily:"inherit",width:"100%"}}>סגור</button>
     </div>:
     <div style={{direction:"rtl",display:"flex",flexDirection:"column",gap:14}}>
       {task.bina_order_id&&<div style={{fontSize:13,color:"var(--text2)"}}>הזמנה מס׳: <strong>{task.bina_order_id}</strong></div>}
       <div>
         <div style={{fontWeight:700,marginBottom:8}}>👤 פרטי לקוח</div>
-        <div style={{background:"var(--bg2)",padding:12,borderRadius:10,fontSize:13}}>
-          <div><strong>שם:</strong> {client?.name||task.client_name||"—"}</div>
-          <div><strong>קשר:</strong> {client?.contact_name||"—"}</div>
-          <div><strong>טלפון:</strong> {client?.phone||"—"}</div>
-          <div><strong>מייל:</strong> {client?.orders_email_primary||client?.email||"—"}</div>
+        <div style={{background:"var(--bg2)",padding:12,borderRadius:10,fontSize:13,display:"flex",flexDirection:"column",gap:8}}>
+          <div><label style={{fontSize:11,color:"var(--text3)",display:"block"}}>שם</label><input value={custName} onChange={e=>setCustName(e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"}}/></div>
+          <div><label style={{fontSize:11,color:"var(--text3)",display:"block"}}>איש קשר</label><input value={custContact} onChange={e=>setCustContact(e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"}}/></div>
+          <div><label style={{fontSize:11,color:"var(--text3)",display:"block"}}>טלפון</label><input value={custPhone} onChange={e=>setCustPhone(e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"ltr"}}/></div>
+          <div><label style={{fontSize:11,color:"var(--text3)",display:"block"}}>מייל</label><input value={custEmail} onChange={e=>setCustEmail(e.target.value)} type="email" style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"ltr"}}/></div>
         </div>
       </div>
       <div>
@@ -552,6 +661,136 @@ function SignaturePage({token}){
       <div style={{marginTop:30,textAlign:"center",fontSize:12,color:"#9ca3af"}}>נטלי פתרונות הדפסה בע"מ</div>
     </div>
   </div>;
+}
+
+function DeliveryNotesDashboard(){
+  const [notes,setNotes]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filter,setFilter]=useState("all");
+  const [search,setSearch]=useState("");
+  const [selectedNote,setSelectedNote]=useState(null);
+
+  const loadNotes=async()=>{
+    setLoading(true);
+    try{
+      const data=await sb("delivery_notes?order=created_at.desc&limit=800");
+      setNotes(Array.isArray(data)?data:[]);
+    }catch(e){setNotes([]);}
+    setLoading(false);
+  };
+
+  useEffect(()=>{
+    loadNotes();
+    const t=setInterval(loadNotes,30000);
+    return()=>clearInterval(t);
+  },[]);
+
+  const filtered=useMemo(()=>{
+    return notes.filter(n=>{
+      if(filter==="created"&&n.signed_at)return false;
+      if(filter==="signed"&&!n.signed_at)return false;
+      if(search.trim()){
+        const s=search.trim().toLowerCase();
+        return String(n.delivery_number||"").includes(s)||(n.customer_name||"").toLowerCase().includes(s)||String(n.bina_order_id||"").toLowerCase().includes(s);
+      }
+      return true;
+    });
+  },[notes,filter,search]);
+
+  const stats=useMemo(()=>({
+    total:notes.length,
+    waiting:notes.filter(n=>!n.signed_at).length,
+    signed:notes.filter(n=>n.signed_at).length,
+  }),[notes]);
+
+  const fbtn=(f,label)=>{
+    const active=filter===f;
+    return<button type="button" key={f} onClick={()=>setFilter(f)} style={{padding:"8px 14px",borderRadius:9,border:`1px solid ${active?"#0e7490":"var(--border)"}`,background:active?"#ecfeff":"#fff",color:active?"#0e7490":"var(--text2)",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>;
+  };
+
+  return<div style={{direction:"rtl"}}>
+    <h1 style={{fontSize:22,fontWeight:800,margin:"0 0 16px",color:"var(--text)"}}>📋 תעודות משלוח</h1>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+      <Card style={{padding:16}}><div style={{fontSize:12,color:"var(--text3)"}}>סה״כ תעודות</div><div style={{fontSize:26,fontWeight:800,color:"#0e7490"}}>{stats.total}</div></Card>
+      <Card style={{padding:16}}><div style={{fontSize:12,color:"var(--text3)"}}>ממתינות לחתימה</div><div style={{fontSize:26,fontWeight:800,color:"#f59e0b"}}>{stats.waiting}</div></Card>
+      <Card style={{padding:16}}><div style={{fontSize:12,color:"var(--text3)"}}>חתומות</div><div style={{fontSize:26,fontWeight:800,color:"#10b981"}}>{stats.signed}</div></Card>
+    </div>
+    <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+      {fbtn("all",`הכל (${stats.total})`)}
+      {fbtn("created",`⏳ ממתינות (${stats.waiting})`)}
+      {fbtn("signed",`✅ חתומות (${stats.signed})`)}
+      <input type="search" placeholder="חיפוש לפי מספר, לקוח, הזמנה…" value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200,padding:10,borderRadius:8,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}/>
+    </div>
+    {loading?<div style={{padding:40,textAlign:"center",color:"var(--text3)"}}><Spinner sz={28}/> טוען…</div>:
+    filtered.length===0?<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין תעודות תואמות</div>:
+    <div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,overflow:"hidden",boxShadow:"var(--shadow)"}}>
+      {filtered.map(n=>
+        <button type="button" key={n.id} onClick={()=>setSelectedNote(n)} style={{display:"flex",width:"100%",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",border:"none",borderBottom:"1px solid var(--border)",cursor:"pointer",background:"#fff",fontFamily:"inherit",textAlign:"right"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:"var(--text)"}}>#{n.delivery_number} — {n.customer_name}</div>
+            <div style={{fontSize:12,color:"var(--text3)",marginTop:4}}>
+              {n.created_at?new Date(n.created_at).toLocaleString("he-IL"):""}
+              {n.bina_order_id?` · הזמנה ${n.bina_order_id}`:""}
+              {n.driver_name?` · נהג: ${n.driver_name}`:""}
+            </div>
+          </div>
+          <span style={{padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600,background:n.signed_at?"#d1fae5":"#fef3c7",color:n.signed_at?"#065f46":"#78350f"}}>
+            {n.signed_at?"✅ חתום":"⏳ ממתין"}
+          </span>
+        </button>
+      )}
+    </div>}
+    {selectedNote&&<DeliveryNoteDetailsModal note={selectedNote} onClose={()=>setSelectedNote(null)}/>}
+  </div>;
+}
+
+function DeliveryNoteDetailsModal({note,onClose}){
+  const isSigned=!!note.signed_at;
+  const signUrl=`${typeof window!=="undefined"&&window.location?window.location.origin:""}${window.location.pathname||""}${window.location.search||""}#sign/${note.signature_token}`;
+  const handlePrint=()=>{
+    const w=window.open("","_blank","width=800,height=900");
+    if(!w)return;
+    w.document.write(generateDeliveryNoteHTML(note));
+    w.document.close();
+    setTimeout(()=>{try{w.print()}catch(e){}},500);
+  };
+  const doCopy=async()=>{
+    try{
+      await navigator.clipboard.writeText(signUrl);
+      window.alert("הקישור הועתק");
+    }catch(e){window.alert("שגיאה בהעתקה");}
+  };
+  const doWa=()=>{
+    const text=`תעודת משלוח ${note.delivery_number}\nלקוח: ${note.customer_name}\nקישור לחתימה:\n${signUrl}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank");
+  };
+  return<Modal open={true} onClose={onClose} title={`תעודה #${note.delivery_number}`} maxWidth={520}>
+    <div style={{direction:"rtl",fontSize:14,color:"var(--text)",display:"flex",flexDirection:"column",gap:10}}>
+      <div><strong>לקוח:</strong> {note.customer_name}</div>
+      {note.contact_name?<div><strong>איש קשר:</strong> {note.contact_name}</div>:null}
+      {note.customer_address?<div><strong>כתובת:</strong> {note.customer_address}</div>:null}
+      {note.customer_phone?<div><strong>טלפון:</strong> {note.customer_phone}</div>:null}
+      {note.customer_email?<div><strong>מייל:</strong> {note.customer_email}</div>:null}
+      {note.driver_name?<div><strong>נהג:</strong> {note.driver_name}</div>:null}
+      <div><strong>תאריך יצירה:</strong> {note.created_at?new Date(note.created_at).toLocaleString("he-IL"):"—"}</div>
+      {isSigned?<div style={{marginTop:8,padding:12,background:"#d1fae5",borderRadius:8,color:"#065f46"}}>
+        ✅ נחתם ב-{note.signed_at?new Date(note.signed_at).toLocaleString("he-IL"):""}
+        {note.signed_by_name?` · ${note.signed_by_name}`:""}
+      </div>:null}
+      <div style={{marginTop:14}}>
+        <div style={{fontWeight:700,marginBottom:8}}>פריטים</div>
+        <div style={{border:"1px solid var(--border)",borderRadius:8,padding:10,maxHeight:200,overflowY:"auto",fontSize:13}}>
+          {(Array.isArray(note.items)?note.items:[]).map((it,i)=><div key={i}>• {it.description} <span style={{color:"var(--text3)"}}>(כמות: {it.quantity})</span></div>)}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>
+        <button type="button" onClick={handlePrint} style={{flex:1,minWidth:120,padding:12,borderRadius:10,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🖨️ הדפס PDF</button>
+        {!isSigned&&<button type="button" onClick={doCopy} style={{flex:1,minWidth:120,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔗 העתק קישור</button>}
+        {!isSigned&&<button type="button" onClick={doWa} style={{flex:1,minWidth:120,padding:12,borderRadius:10,border:"none",background:"#25D366",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>📱 WhatsApp</button>}
+      </div>
+      <button type="button" onClick={onClose} style={{marginTop:16,padding:12,borderRadius:10,border:"1px solid var(--border)",width:"100%",background:"var(--bg2)",cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+    </div>
+  </Modal>;
 }
 
 // ── LOGIN ──
@@ -5512,6 +5751,12 @@ function App(){
   };
 
   useEffect(()=>{
+    if(tab==="delivery-notes"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="archive"){
       if(!user||user.role!=="admin"){setTab("dashboard");return;}
       loadArchive();
@@ -5723,7 +5968,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
     {id:"delivery",ic:"🚚",lb:"משלוחים"},
-    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"}]:[]),
+    ...(isA?[{id:"clients",ic:"◎",lb:"לקוחות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -5847,6 +6092,8 @@ function App(){
         <span style={{color:"var(--text3)"}}>›</span>
         <span style={{fontSize:13,fontWeight:600,color:"var(--text)"}}>{navs.find(n=>n.id===tab)?.lb}</span>
       </div>}
+
+      {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
 
       {/* DASHBOARD */}
       {tab==="dashboard"&&<div>

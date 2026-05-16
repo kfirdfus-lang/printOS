@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { to, subject, html, text } = await req.json();
+    const { to, cc, subject, html, text, from } = await req.json();
     if (!to || !subject || (!html && !text)) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: to, subject, and html or text" }),
@@ -44,8 +44,11 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         // TODO: Temporary sender until dfusnatalie.com is verified in Resend; switch back to orders@dfusnatalie.com afterward.
-        from: "onboarding@resend.dev",
+        from: from || "onboarding@resend.dev",
         to: Array.isArray(to) ? to : [to],
+        ...(cc && (Array.isArray(cc) ? cc.length : true)
+          ? { cc: Array.isArray(cc) ? cc : [cc] }
+          : {}),
         subject,
         html,
         text,

@@ -78,9 +78,9 @@ const LABEL_PRINT_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"1px solid 
 const DELIVERY_NOTE_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"none",background:"#0891b2",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"};
 const openLabelPrintTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openLabelPrint==="function")window.openLabelPrint(task);};
 const openDeliveryNoteFromTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openDeliveryNoteTask==="function")window.openDeliveryNoteTask(task);};
-const toLocalDateStr=(d)=>{const x=new Date(d);return`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;};
 const MOVE_TO_DELIVERY_BTN_STYLE={padding:"6px 10px",background:"#7c3aed",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap"};
 const openMoveToDeliveryFromTask=(e,task)=>{if(e)e.stopPropagation();if(typeof window.openMoveToDelivery==="function")window.openMoveToDelivery(task);};
+const toLocalDateStr=(d)=>{const x=new Date(d);return`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;};
 function TaskMoveToDeliveryBtn({task}){
   const ds=task.delivery_status;
   if(ds&&ds!=="pending")return<span style={{padding:"4px 10px",background:"#ede9fe",color:"#5b21b6",borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>📦 במשלוחים</span>;
@@ -892,20 +892,9 @@ function DeliveryNoteDetailsModal({note,onClose}){
 }
 
 function formatSingleShipmentText(task){
-  let text=`📦 *משלוח - ${task.client_name||"לקוח"}*\n`;
-  if(task.bina_order_id)text+=`📝 הזמנה #${task.bina_order_id}\n`;
-  if(task.sales_agent)text+=`👤 סוכן: ${task.sales_agent}\n`;
-  text+="\n";
+  let text=`📦 *משלוח - ${task.client_name||"לקוח"}*\n\n`;
   if(task.delivery_address_snapshot)text+=`📍 ${task.delivery_address_snapshot}\n`;
-  if(task.delivery_contact_snapshot||task.delivery_phone_snapshot){
-    const contactLine=`${task.delivery_contact_snapshot||""} ${task.delivery_phone_snapshot||""}`.trim();
-    if(contactLine)text+=`📞 ${contactLine}\n`;
-  }
-  const items=Array.isArray(task.items)?task.items:[];
-  if(items.length>0){
-    text+=`\n📦 פריטים למסירה:\n`;
-    items.forEach(item=>{text+=`• ${item.description||"—"} (×${item.quantity??0})\n`;});
-  }
+  if(task.delivery_contact_snapshot||task.delivery_phone_snapshot)text+=`👤 ${task.delivery_contact_snapshot||""} ${task.delivery_phone_snapshot||""}\n`.trim()+"\n";
   if(task.delivery_special_notes)text+=`\n💬 ${task.delivery_special_notes}\n`;
   return text.trim();
 }
@@ -921,7 +910,6 @@ function MoveToDeliveryModal({task,user,onClose,onSuccess}){
   const [specialNotes,setSpecialNotes]=useState("");
   const [drivers,setDrivers]=useState([]);
   const [driverId,setDriverId]=useState("");
-  const [moveItems,setMoveItems]=useState([]);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const fld={width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13};
@@ -929,7 +917,6 @@ function MoveToDeliveryModal({task,user,onClose,onSuccess}){
     let cancelled=false;
     const load=async()=>{
       setLoading(true);
-      setMoveItems([]);
       let clientData=null;
       try{
         if(task.client_id){
@@ -965,8 +952,6 @@ function MoveToDeliveryModal({task,user,onClose,onSuccess}){
         }
         const drs=await sb("drivers?is_active=eq.true&order=name.asc");
         if(!cancelled)setDrivers(Array.isArray(drs)?drs:[]);
-        const taskItems=await sb(`task_items?task_id=eq.${task.id}&order=id.asc`);
-        if(!cancelled)setMoveItems(Array.isArray(taskItems)?taskItems:[]);
         if(!cancelled)setScheduledDate(toLocalDateStr(new Date()));
       }catch(e){console.warn("[shipments]",e);}
       if(!cancelled)setLoading(false);
@@ -1035,13 +1020,6 @@ function MoveToDeliveryModal({task,user,onClose,onSuccess}){
           <div><label style={{display:"block",marginBottom:4,fontSize:12}}>📱 טלפון</label><input value={phone} onChange={e=>setPhone(e.target.value)} style={{...fld,direction:"ltr"}}/></div>
         </div>
       </>}
-      {moveItems.length>0&&<div style={{marginBottom:15,padding:12,background:"#f9fafb",borderRadius:8,border:"1px solid var(--border)"}}>
-        <div style={{fontWeight:600,marginBottom:8,color:"var(--text2)"}}>📦 פריטים שיועברו למשלוח:</div>
-        {moveItems.map((item,i)=><div key={item.id||i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,gap:8}}>
-          <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>• {item.description||"—"}</span>
-          <span style={{fontWeight:600,direction:"ltr",flexShrink:0}}>×{item.quantity??0}</span>
-        </div>)}
-      </div>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <div><label style={{display:"block",marginBottom:4,fontSize:12}}>📅 תאריך משלוח</label><input type="date" value={scheduledDate} onChange={e=>setScheduledDate(e.target.value)} style={fld}/></div>
         {deliveryType==="local"&&<div><label style={{display:"block",marginBottom:4,fontSize:12}}>🚛 נהג</label><select value={driverId} onChange={e=>setDriverId(e.target.value)} style={fld}>
@@ -1086,48 +1064,15 @@ function DriverManagerModal({drivers,onClose,onUpdate}){
 function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote}){
   const [saving,setSaving]=useState(false);
   const driver=drivers.find(d=>d.id===task.assigned_driver_id);
-  const items=Array.isArray(task.items)?task.items:[];
-  const itemsQtySum=items.reduce((s,i)=>s+Number(i.quantity||0),0);
-  return<Modal open={true} onClose={onClose} title="📦 פרטי משלוח" maxWidth={600}>
-    <div style={{direction:"rtl",fontSize:14,display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:"#f0f9ff",padding:12,borderRadius:8}}>
-        <div style={{fontSize:17,fontWeight:700,marginBottom:6}}>{task.client_name}</div>
-        {(task.bina_order_id||task.sales_agent)&&<div style={{display:"flex",gap:15,flexWrap:"wrap",fontSize:13,color:"var(--text2)"}}>
-          {task.bina_order_id&&<div>📝 <strong>הזמנה:</strong> <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></div>}
-          {task.sales_agent&&<div>👤 <strong>סוכן:</strong> {task.sales_agent}</div>}
-        </div>}
-      </div>
-      <div>
-        {task.delivery_address_snapshot&&<div style={{marginBottom:6}}><strong>📍 כתובת:</strong> {task.delivery_address_snapshot}</div>}
-        {task.delivery_contact_snapshot&&<div style={{marginBottom:6}}><strong>👤 איש קשר:</strong> {task.delivery_contact_snapshot}</div>}
-        {task.delivery_phone_snapshot&&<div style={{marginBottom:6}}><strong>📞 טלפון:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{task.delivery_phone_snapshot}</span></div>}
-        {task.delivery_special_notes&&<div style={{marginTop:10,padding:10,background:"#fef3c7",borderRadius:6,color:"#78350f"}}><strong>💬 הערות:</strong> {task.delivery_special_notes}</div>}
-      </div>
-      {driver&&<div style={{color:driver.color,fontWeight:600,fontSize:13}}>🚛 {driver.name}</div>}
-      {items.length>0&&<div>
-        <h3 style={{margin:"0 0 8px",fontSize:15}}>📦 פריטים למסירה ({items.length})</h3>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead>
-            <tr style={{background:"#f3f4f6"}}>
-              <th style={{padding:8,textAlign:"right",border:"1px solid var(--border)"}}>תיאור</th>
-              <th style={{padding:8,textAlign:"center",width:80,border:"1px solid var(--border)"}}>כמות</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item,i)=><tr key={item.id||i} style={{borderBottom:"1px solid var(--border)"}}>
-              <td style={{padding:8,border:"1px solid var(--border)"}}>{item.description||"—"}</td>
-              <td style={{padding:8,textAlign:"center",fontWeight:600,border:"1px solid var(--border)"}}><span style={{direction:"ltr",display:"inline-block"}}>×{item.quantity??0}</span></td>
-            </tr>)}
-          </tbody>
-          <tfoot>
-            <tr style={{background:"#f9fafb",fontWeight:600}}>
-              <td style={{padding:8,textAlign:"left",border:"1px solid var(--border)"}}>סה״כ פריטים:</td>
-              <td style={{padding:8,textAlign:"center",border:"1px solid var(--border)"}}><span style={{direction:"ltr",display:"inline-block"}}>{itemsQtySum}</span></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>}
-      <div><label style={{fontSize:12,fontWeight:600}}>🚛 נהג:</label>
+  return<Modal open={true} onClose={onClose} title="📦 פרטי משלוח" maxWidth={480}>
+    <div style={{direction:"rtl",fontSize:14,display:"flex",flexDirection:"column",gap:10}}>
+      <div><strong>לקוח:</strong> {task.client_name}</div>
+      {task.delivery_address_snapshot&&<div><strong>כתובת:</strong> {task.delivery_address_snapshot}</div>}
+      {task.delivery_contact_snapshot&&<div><strong>איש קשר:</strong> {task.delivery_contact_snapshot}</div>}
+      {task.delivery_phone_snapshot&&<div><strong>טלפון:</strong> <span style={{direction:"ltr"}}>{task.delivery_phone_snapshot}</span></div>}
+      {task.delivery_special_notes&&<div><strong>הערות:</strong> {task.delivery_special_notes}</div>}
+      {driver&&<div style={{color:driver.color,fontWeight:600}}>🚛 {driver.name}</div>}
+      <div style={{marginTop:8}}><label style={{fontSize:12,fontWeight:600}}>נהג:</label>
         <select value={task.assigned_driver_id||""} onChange={async e=>{
           setSaving(true);
           await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({assigned_driver_id:e.target.value||null})});
@@ -1138,7 +1083,7 @@ function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote}
           {drivers.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:12}}>
         {onOpenDeliveryNote&&<button type="button" onClick={()=>{onOpenDeliveryNote(task);onClose();}} style={{flex:1,minWidth:120,padding:10,borderRadius:8,border:"none",background:"#0891b2",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>📋 תעודת משלוח</button>}
         <button type="button" onClick={async()=>{
           setSaving(true);
@@ -1162,7 +1107,6 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
   const driver=drivers.find(d=>d.id===task.assigned_driver_id);
   const typeIcon={local:"🚚",courier:"📮",pickup:"🛒"}[task.delivery_type||"local"]||"🚚";
   const cubeColor=driver?.color||"#6b7280";
-  const items=Array.isArray(task.items)?task.items:[];
   const handleCopySingle=async e=>{
     e.stopPropagation();
     try{await navigator.clipboard.writeText(formatSingleShipmentText(task));setCopied(true);setTimeout(()=>setCopied(false),1500);}catch(err){window.alert("שגיאה בהעתקה");}
@@ -1172,29 +1116,16 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
     window.open(`https://wa.me/?text=${encodeURIComponent(formatSingleShipmentText(task))}`,"_blank");
   };
   return<>
-    <div draggable={!readonly} onDragStart={onDragStart} onClick={()=>setShowDetails(true)} style={{background:"#fff",border:`2px solid ${cubeColor}`,borderRadius:8,padding:compact?6:10,cursor:readonly?"pointer":"grab",fontSize:compact?11:12,position:"relative"}}>
+    <div draggable={!readonly} onDragStart={onDragStart} onClick={()=>setShowDetails(true)} style={{background:"#fff",border:`2px solid ${cubeColor}`,borderRadius:8,padding:compact?6:8,cursor:readonly?"pointer":"grab",fontSize:compact?11:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:4}}>
         <span style={{fontSize:14}}>{typeIcon}</span>
         <span style={{fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{task.client_name||"—"}</span>
       </div>
-      {!compact&&(task.bina_order_id||task.sales_agent)&&<div style={{fontSize:10,color:"var(--text3)",marginTop:3,display:"flex",justifyContent:"space-between",gap:6}}>
-        {task.bina_order_id&&<span>📝 <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></span>}
-        {task.sales_agent&&<span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"60%"}}>👤 {task.sales_agent}</span>}
-      </div>}
-      {!compact&&task.delivery_address_snapshot&&<div style={{fontSize:10,color:"var(--text3)",marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {task.delivery_address_snapshot}</div>}
-      {!compact&&items.length>0&&<div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed #e5e7eb",fontSize:10,color:"#374151"}}>
-        <div style={{fontWeight:600,marginBottom:3,color:"var(--text3)"}}>📦 פריטים למסירה:</div>
-        {items.slice(0,3).map((item,i)=><div key={item.id||i} style={{display:"flex",justifyContent:"space-between",padding:"1px 0",gap:4}}>
-          <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:6}}>• {item.description||"—"}</span>
-          <span style={{fontWeight:600,direction:"ltr",flexShrink:0}}>×{item.quantity??0}</span>
-        </div>)}
-        {items.length>3&&<div style={{fontSize:9,color:"#9ca3af",marginTop:2}}>+{items.length-3} פריטים נוספים...</div>}
-      </div>}
-      {driver&&<div style={{fontSize:10,color:driver.color,marginTop:4,fontWeight:600}}>🚛 {driver.name}</div>}
-      {!compact&&task.delivery_special_notes&&<div style={{fontSize:10,marginTop:4,padding:4,background:"#fef3c7",borderRadius:4,color:"#78350f"}}>💬 {task.delivery_special_notes}</div>}
+      {!compact&&task.delivery_address_snapshot&&<div style={{fontSize:10,color:"var(--text3)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {task.delivery_address_snapshot}</div>}
+      {driver&&<div style={{fontSize:10,color:driver.color,marginTop:2,fontWeight:600}}>🚛 {driver.name}</div>}
       {!readonly&&!compact&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)"}} onClick={e=>e.stopPropagation()}>
-        <button type="button" onClick={handleCopySingle} title="העתק משלוח זה" style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅ הועתק":"📋 העתק"}</button>
-        <button type="button" onClick={handleWhatsAppSingle} title="שלח ב-WhatsApp" style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
+        <button type="button" onClick={handleCopySingle} style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅":"📋"}</button>
+        <button type="button" onClick={handleWhatsAppSingle} style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱</button>
       </div>}
     </div>
     {showDetails&&<ShipmentDetailsModal task={task} drivers={drivers} onClose={()=>setShowDetails(false)} onUpdate={onRefresh} onOpenDeliveryNote={onOpenDeliveryNote}/>}
@@ -1236,15 +1167,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
       const drs=await sb("drivers?is_active=eq.true&order=name.asc");
       setDrivers(Array.isArray(drs)?drs:[]);
       const data=await sb("tasks?archived_at=is.null&delivery_status=in.(ready,in_transit,delivered)&order=scheduled_delivery_date.asc,delivery_order.asc");
-      let enriched=Array.isArray(data)?data:[];
-      if(enriched.length>0){
-        const taskIds=enriched.map(t=>t.id);
-        const idsParam=taskIds.join(",");
-        const itemsRows=await sb(`task_items?task_id=in.(${idsParam})&order=id.asc`);
-        const allItems=Array.isArray(itemsRows)?itemsRows:[];
-        enriched=enriched.map(t=>({...t,items:allItems.filter(i=>String(i.task_id)===String(t.id))}));
-      }
-      setTasks(enriched);
+      setTasks(Array.isArray(data)?data:[]);
     }catch(e){setTasks([]);setDrivers([]);}
     setLoading(false);
   };
@@ -1282,41 +1205,31 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
       if(refreshAll)await refreshAll();
     }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
   };
-  const formatShipmentDayText=(date,dayTasks)=>{
-    const dateStr=date.toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
-    let text=`📦 *משלוחי יום ${dateStr}*\n`;
-    text+=`סה"כ: ${dayTasks.length} משלוחים\n\n`;
-    text+="━━━━━━━━━━━━━━\n\n";
+  const buildDayText=dayTasks=>{
+    const dateStr=dayTasks._dateLabel||"";
+    let text=`📦 *משלוחי יום ${dateStr}*\n\n`;
     dayTasks.forEach((t,i)=>{
-      text+=`*${i+1}. ${t.client_name||"—"}*\n`;
-      if(t.bina_order_id)text+=`📝 הזמנה #${t.bina_order_id}\n`;
-      if(t.sales_agent)text+=`👤 סוכן: ${t.sales_agent}\n`;
+      text+=`${i+1}️⃣ ${t.client_name}\n`;
       if(t.delivery_address_snapshot)text+=`📍 ${t.delivery_address_snapshot}\n`;
-      if(t.delivery_contact_snapshot||t.delivery_phone_snapshot){
-        const contactLine=`${t.delivery_contact_snapshot||""} ${t.delivery_phone_snapshot||""}`.trim();
-        if(contactLine)text+=`📞 ${contactLine}\n`;
-      }
-      const dayItems=Array.isArray(t.items)?t.items:[];
-      if(dayItems.length>0){
-        text+=`\n📦 פריטים:\n`;
-        dayItems.forEach(item=>{text+=`   • ${item.description||"—"} (×${item.quantity??0})\n`;});
-      }
-      if(t.delivery_special_notes)text+=`\n💬 ${t.delivery_special_notes}\n`;
-      text+="\n━━━━━━━━━━━━━━\n\n";
+      if(t.delivery_contact_snapshot||t.delivery_phone_snapshot)text+=`👤 ${t.delivery_contact_snapshot||""} ${t.delivery_phone_snapshot||""}\n`;
+      if(t.delivery_special_notes)text+=`💬 ${t.delivery_special_notes}\n`;
+      text+="\n";
     });
     return text;
   };
   const copyDayToClipboard=date=>{
     const dayTasks=getTasksForDay(date);
     if(dayTasks.length===0){window.alert("אין משלוחים ביום זה");return;}
-    const text=formatShipmentDayText(date,dayTasks);
-    navigator.clipboard.writeText(text).then(()=>window.alert(`✅ הועתק! ${dayTasks.length} משלוחים`)).catch(()=>window.alert("שגיאה בהעתקה"));
+    const dateStr=date.toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
+    const list=[...dayTasks];list._dateLabel=dateStr;
+    navigator.clipboard.writeText(buildDayText(list)).then(()=>window.alert(`✅ הועתק! ${dayTasks.length} משלוחים`)).catch(()=>window.alert("שגיאה בהעתקה"));
   };
   const sendDayWhatsApp=date=>{
     const dayTasks=getTasksForDay(date);
     if(dayTasks.length===0)return;
-    const text=formatShipmentDayText(date,dayTasks);
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank");
+    const dateStr=date.toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
+    const list=[...dayTasks];list._dateLabel=dateStr;
+    window.open(`https://wa.me/?text=${encodeURIComponent(buildDayText(list))}`,"_blank");
   };
   const openNote=task=>{
     if(onOpenDeliveryNote)onOpenDeliveryNote(task);
@@ -1356,7 +1269,6 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
   </div>;
 }
-
 function AddAddressModal({clientId,user,onClose,onAdd}){
   const [address,setAddress]=useState("");
   const [label,setLabel]=useState("");
@@ -1750,7 +1662,7 @@ function CalendarTab({tasks,taskItems,user,isA,onTaskClick}){
                 </div>
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={{...LABEL_PRINT_BTN_STYLE,padding:"2px 6px",flexShrink:0}}>🏷️</button>
                 <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={{...DELIVERY_NOTE_BTN_STYLE,padding:"2px 4px",fontSize:8,whiteSpace:"normal",lineHeight:1.15,textAlign:"center",maxWidth:72}}>📋 תעודת משלוח</button>
-                <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskMoveToDeliveryBtn task={t}/></div>
+                <TaskMoveToDeliveryBtn task={t}/>
               </div>;
             })}
             {dayTasks.length===0&&<div style={{fontSize:10,color:"var(--text3)",textAlign:"center",paddingTop:8}}>—</div>}
@@ -1841,7 +1753,7 @@ function DeliveryTab({tasks}){
                 </div>
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
                 <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
-                <TaskMoveToDeliveryBtn task={t}/>
+            <TaskMoveToDeliveryBtn task={t}/>
               </div>
             </div>)}
           </div>
@@ -6820,7 +6732,9 @@ function App(){
 
       {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
 
-      {tab==="shipments"&&isA&&<ShipmentsDashboard clients={clients} user={user} onOpenDeliveryNote={t=>setDeliveryNoteModal({task:t})} refreshAll={refreshAll}/>}
+      {tab==="shipments"&&isA&&<ShipmentsDashboard user={user} clients={clients} onOpenDeliveryNote={t=>setDeliveryNoteModal({task:t})} refreshAll={refreshAll}/>}
+
+      {/* DASHBOARD */}
       {tab==="dashboard"&&<div>
         <DepartmentDashboard user={user} allTasks={tasks} taskItems={taskItems} isA={isA} deptFilter={deptFilter}/>
         {isA&&<div style={{display:"flex",gap:8,padding:"12px 0",overflowX:"auto",flexWrap:"wrap"}}>

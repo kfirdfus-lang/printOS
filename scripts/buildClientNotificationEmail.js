@@ -1,0 +1,32 @@
+// Paste into index.html — built by patch-email-design.js
+function buildClientNotificationEmail({task,itemsList,clientData,notificationType}){
+  const items=itemsList;
+  const type=notificationType;
+  const orderNum=task.bina_order_id||String(task.id||"").substring(0,8)||"---";
+  const contactName=task.delivery_contact_snapshot||clientData?.delivery_contact_name||clientData?.contact_name||task.contact||task.client_name||"לקוח יקר";
+  const agent=task.sales_agent||"";
+  const address=task.delivery_address_snapshot||"";
+  const fullTitle=(task.title||"").trim();
+  const shortTitle=fullTitle.length>50?fullTitle.substring(0,47)+"...":fullTitle;
+  const logoSvg=`<svg width="120" height="60" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto;"><text x="100" y="55" text-anchor="middle" font-family="Arial,sans-serif" font-size="36" font-weight="bold" fill="#0d9488" letter-spacing="2">NATALIE</text><text x="100" y="80" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#134e4a">פתרונות הדפסה</text></svg>`;
+  const itemsHtml=(items&&items.length>0)?items.map(i=>`<li style="padding:6px 0;border-bottom:1px solid #e2e8f0;"><span style="color:#134e4a;">${escHtml(i.description||"—")}</span><span style="float:left;color:#0d9488;font-weight:600;direction:ltr;">×${escHtml(i.quantity??0)}</span></li>`).join(""):`<li style="padding:6px 0;color:#134e4a;">${escHtml(task.title||"פריט")}</li>`;
+  let title,emoji,mainMessage,locationBlock="";
+  if(type==="ready"){
+    title="ההזמנה שלך מוכנה לאיסוף";emoji="📦";
+    mainMessage="אנחנו שמחים לעדכן שההזמנה שלך מוכנה לאיסוף עצמי בדפוס נטלי.";
+    locationBlock=`<motion.div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><motion.div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">🏢 פרטי איסוף</motion.div><motion.div style="color:#134e4a;line-height:1.8;">שד׳ הר ציון 104, תל אביב<br/>☎️ <span style="direction:ltr;display:inline-block;">03-6815703</span><br/>🕒 ימים א׳-ה׳, 09:00-17:00</motion.div></motion.div>`;
+  }else if(type==="shipped"){
+    title="ההזמנה שלך בדרך אליך";emoji="🚚";
+    mainMessage="שמחים לעדכן שההזמנה שלך יצאה לדרך והיא בדרך אליך.";
+    locationBlock=address?`<motion.div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><motion.div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">📍 כתובת משלוח</motion.div><motion.div style="color:#134e4a;line-height:1.6;">${escHtml(address)}</motion.div></motion.div>`:"";
+  }else{
+    title="ההזמנה שלך סופקה בהצלחה";emoji="✅";
+    mainMessage="ההזמנה שלך נמסרה בהצלחה. אנו מקווים שאתה מרוצה מהשירות שלנו!";
+    locationBlock=address?`<motion.div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><motion.div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">📍 נמסר ל</motion.div><motion.div style="color:#134e4a;line-height:1.6;">${escHtml(address)}</motion.div></motion.div>`:"";
+  }
+  const subject=shortTitle?`${emoji} הזמנה #${orderNum} - ${shortTitle} - ${title}`:`${emoji} הזמנה #${orderNum} - ${title} - דפוס נטלי`;
+  const html=`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${escHtml(title)}</title></head><body style="margin:0;padding:0;background:#f8fafc;font-family:'Segoe UI',Arial,sans-serif;direction:rtl;"><motion.div style="max-width:600px;margin:0 auto;background:#ffffff;"><motion.div style="background:#ffffff;padding:30px 20px;text-align:center;">${logoSvg}</motion.div><motion.div style="height:4px;background:linear-gradient(90deg,#2dd4bf 0%,#0d9488 100%);"></motion.div><motion.div style="padding:30px 28px;"><h1 style="margin:0 0 8px 0;color:#0d9488;font-size:24px;font-weight:700;text-align:right;">${emoji} ${escHtml(title)}</h1>${shortTitle?`<motion.div style="margin:0 0 20px 0;color:#64748b;font-size:15px;text-align:right;font-weight:500;">${escHtml(shortTitle)}</motion.div>`:'<motion.div style="margin-bottom:20px;"></motion.div>'}<p style="margin:0 0 16px 0;color:#134e4a;font-size:16px;line-height:1.6;text-align:right;">שלום ${escHtml(contactName)},</p><p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.7;text-align:right;">${escHtml(mainMessage)}</p><motion.div style="background:#f8fafc;border-radius:8px;padding:20px;margin:0 0 20px 0;"><motion.div style="color:#64748b;font-size:13px;margin-bottom:6px;text-align:right;">מספר הזמנה</motion.div><motion.div style="color:#0d9488;font-size:22px;font-weight:700;direction:ltr;text-align:right;">#${escHtml(orderNum)}</motion.div><motion.div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;"><motion.div style="color:#64748b;font-size:13px;margin-bottom:10px;text-align:right;">📦 פריטים</motion.div><ul style="list-style:none;padding:0;margin:0;text-align:right;">${itemsHtml}</ul></motion.div></motion.div>${locationBlock}<motion.div style="margin-top:30px;padding-top:20px;border-top:2px solid #f0fdfa;"><p style="margin:0 0 4px 0;color:#475569;font-size:14px;text-align:right;">בברכה,</p>${agent?`<p style="margin:0 0 4px 0;color:#134e4a;font-size:16px;font-weight:600;text-align:right;">${escHtml(agent)}</p>`:""}<p style="margin:0;color:#0d9488;font-size:14px;font-weight:600;text-align:right;">דפוס נטלי</p></motion.div></motion.div><motion.div style="height:3px;background:linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%);"></motion.div><motion.div style="background:#f8fafc;padding:18px 20px;text-align:center;"><p style="margin:0 0 4px 0;color:#64748b;font-size:13px;"><a href="https://natalie-print.com" style="color:#0d9488;text-decoration:none;font-weight:600;">natalie-print.com</a> &nbsp;•&nbsp; <span style="direction:ltr;display:inline-block;">03-6815703</span></p><p style="margin:6px 0 0 0;color:#94a3b8;font-size:11px;">שד׳ הר ציון 104, תל אביב</p></motion.div></motion.div></body></html>`.replace(/motion\.div/g,"motion.div").replace(/motion\.div/g,"div");
+  const itemsText=(items&&items.length>0)?items.map(i=>`• ${i.description||"—"} (כמות: ${i.quantity??0})`).join("\n"):`• ${task.title||"פריט"}`;
+  const text=`שלום ${contactName},\n\n${mainMessage}\n\nמספר הזמנה: #${orderNum}\n\nפריטים:\n${itemsText}\n\n${address?`כתובת: ${address}\n`:""}\nבברכה,\n${agent?agent+"\n":""}דפוס נטלי\n03-6815703\nnatalie-print.com`;
+  return{subject,html,text};
+}

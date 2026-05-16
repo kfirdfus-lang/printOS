@@ -43,8 +43,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        // TODO: Temporary sender until dfusnatalie.com is verified in Resend; switch back to orders@dfusnatalie.com afterward.
-        from: from || "onboarding@resend.dev",
+        from: from || "דפוס נטלי <orders@natalie-print.com>",
         to: Array.isArray(to) ? to : [to],
         ...(cc && (Array.isArray(cc) ? cc.length : true)
           ? { cc: Array.isArray(cc) ? cc : [cc] }

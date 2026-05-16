@@ -99,8 +99,9 @@ const AGENT_EMAIL_BY_NAME={
   "איריס":"iris.z726@gmail.com",
   "ברק":"BARAKDFUS268@gmail.com",
 };
-const sendEmail=async({to,subject,html,text,cc})=>{
+const sendEmail=async({to,subject,html,text,cc,from})=>{
   const payload={to,subject,html,text};
+  if(from)payload.from=from;
   if(cc&&cc.length)payload.cc=cc;
   const {error}=await supabaseClient.functions.invoke("send-email",{body:payload});
   if(error)throw error;
@@ -176,20 +177,38 @@ const Modal=({open,onClose,children,title,maxWidth=520})=>!open?null:
   </div>;
 
 function buildClientNotificationEmail({task,itemsList,clientData,notificationType}){
+  const items=itemsList;
+  const type=notificationType;
   const orderNum=task.bina_order_id||String(task.id||"").substring(0,8)||"---";
   const contactName=task.delivery_contact_snapshot||clientData?.delivery_contact_name||clientData?.contact_name||task.contact||task.client_name||"לקוח יקר";
   const agent=task.sales_agent||"";
-  const itemsText=(itemsList&&itemsList.length>0)?itemsList.map(i=>`• ${i.description||"—"} - כמות: ${i.quantity??0}`).join("\n"):`• ${task.title||"—"}`;
-  if(notificationType==="ready"){
-    return{subject:`הזמנה #${orderNum} מוכנה לאיסוף - דפוס נטלי`,body:`שלום ${contactName},\n\nההזמנה שלך מוכנה לאיסוף עצמי בדפוס נטלי 📦\n\n📋 פרטי ההזמנה:\nמספר הזמנה: #${orderNum}\n\n📦 פריטים:\n${itemsText}\n\n🏢 פרטי איסוף:\nשד׳ הר ציון 104, תל אביב\nטלפון: 03-6815703\nשעות פעילות: ימים א'-ה', 09:00-17:00\n\nנשמח לראותך,\n${agent?agent+"\n":""}דפוס נטלי\nnatalie-print.com`};
-  }
-  if(notificationType==="shipped"){
-    const address=task.delivery_address_snapshot||"";
-    return{subject:`הזמנה #${orderNum} בדרך אליך - דפוס נטלי`,body:`שלום ${contactName},\n\nשמחים לעדכן שההזמנה שלך יצאה לדרך 🚛\n\n📋 פרטי ההזמנה:\nמספר הזמנה: #${orderNum}\n\n📦 פריטים:\n${itemsText}\n${address?`\n📍 כתובת משלוח:\n${address}\n`:""}\nנשמח לעמוד לרשותך לכל שאלה,\n${agent?agent+"\n":""}דפוס נטלי\n03-6815703`};
-  }
   const address=task.delivery_address_snapshot||"";
-  return{subject:`✅ הזמנה #${orderNum} סופקה בהצלחה - דפוס נטלי`,body:`שלום ${contactName},\n\nההזמנה שלך סופקה בהצלחה! 🎉\n\n📋 פרטי ההזמנה:\nמספר הזמנה: #${orderNum}\n\n📦 פריטים:\n${itemsText}\n${address?`\n📍 נמסר ל:\n${address}\n\n`:""}אנו מקווים שאתה מרוצה מהשירות. נשמח לשמוע ממך 😊\n\nתודה רבה על האמון,\n${agent?agent+"\n":""}דפוס נטלי\n03-6815703\nnatalie-print.com`};
+  const fullTitle=(task.title||"").trim();
+  const shortTitle=fullTitle.length>50?fullTitle.substring(0,47)+"...":fullTitle;
+  const e=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const logoSvg=`<svg width="120" height="60" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto;"><text x="100" y="55" text-anchor="middle" font-family="Arial,sans-serif" font-size="36" font-weight="bold" fill="#0d9488" letter-spacing="2">NATALIE</text><text x="100" y="80" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#134e4a">פתרונות הדפסה</text></svg>`;
+  const itemsHtml=(items&&items.length>0)?items.map(i=>`<li style="padding:6px 0;border-bottom:1px solid #e2e8f0;"><span style="color:#134e4a;">${e(i.description||"—")}</span><span style="float:left;color:#0d9488;font-weight:600;direction:ltr;">×${e(i.quantity??0)}</span></li>`).join(""):`<li style="padding:6px 0;color:#134e4a;">${e(task.title||"פריט")}</li>`;
+  let title,emoji,mainMessage,locationBlock="";
+  if(type==="ready"){
+    title="ההזמנה שלך מוכנה לאיסוף";emoji="📦";
+    mainMessage="אנחנו שמחים לעדכן שההזמנה שלך מוכנה לאיסוף עצמי בדפוס נטלי.";
+    locationBlock=`<div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">🏢 פרטי איסוף</div><div style="color:#134e4a;line-height:1.8;">שד׳ הר ציון 104, תל אביב<br/>☎️ <span style="direction:ltr;display:inline-block;">03-6815703</span><br/>🕒 ימים א׳-ה׳, 09:00-17:00</div></div>`;
+  }else if(type==="shipped"){
+    title="ההזמנה שלך בדרך אליך";emoji="🚚";
+    mainMessage="שמחים לעדכן שההזמנה שלך יצאה לדרך והיא בדרך אליך.";
+    locationBlock=address?`<div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">📍 כתובת משלוח</div><div style="color:#134e4a;line-height:1.6;">${e(address)}</div></div>`:"";
+  }else{
+    title="ההזמנה שלך סופקה בהצלחה";emoji="✅";
+    mainMessage="ההזמנה שלך נמסרה בהצלחה. אנו מקווים שאתה מרוצה מהשירות שלנו!";
+    locationBlock=address?`<div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">📍 נמסר ל</div><div style="color:#134e4a;line-height:1.6;">${e(address)}</div></div>`:"";
+  }
+  const subject=shortTitle?`${emoji} הזמנה #${orderNum} - ${shortTitle} - ${title}`:`${emoji} הזמנה #${orderNum} - ${title} - דפוס נטלי`;
+  const htmlOut=`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${e(title)}</title></head><body style="margin:0;padding:0;background:#f8fafc;font-family:'Segoe UI',Arial,sans-serif;direction:rtl;"><div style="max-width:600px;margin:0 auto;background:#ffffff;"><div style="background:#ffffff;padding:30px 20px;text-align:center;">${logoSvg}</div><div style="height:4px;background:linear-gradient(90deg,#2dd4bf 0%,#0d9488 100%);"></div><div style="padding:30px 28px;"><h1 style="margin:0 0 8px 0;color:#0d9488;font-size:24px;font-weight:700;text-align:right;">${emoji} ${e(title)}</h1>${shortTitle?`<div style="margin:0 0 20px 0;color:#64748b;font-size:15px;text-align:right;font-weight:500;">${e(shortTitle)}</div>`:'<div style="margin-bottom:20px;"></div>'}<p style="margin:0 0 16px 0;color:#134e4a;font-size:16px;line-height:1.6;text-align:right;">שלום ${e(contactName)},</p><p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.7;text-align:right;">${e(mainMessage)}</p><div style="background:#f8fafc;border-radius:8px;padding:20px;margin:0 0 20px 0;"><div style="color:#64748b;font-size:13px;margin-bottom:6px;text-align:right;">מספר הזמנה</div><div style="color:#0d9488;font-size:22px;font-weight:700;direction:ltr;text-align:right;">#${e(orderNum)}</div><div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;"><div style="color:#64748b;font-size:13px;margin-bottom:10px;text-align:right;">📦 פריטים</div><ul style="list-style:none;padding:0;margin:0;text-align:right;">${itemsHtml}</ul></div></div>${locationBlock}<div style="margin-top:30px;padding-top:20px;border-top:2px solid #f0fdfa;"><p style="margin:0 0 4px 0;color:#475569;font-size:14px;text-align:right;">בברכה,</p>${agent?`<p style="margin:0 0 4px 0;color:#134e4a;font-size:16px;font-weight:600;text-align:right;">${e(agent)}</p>`:""}<p style="margin:0;color:#0d9488;font-size:14px;font-weight:600;text-align:right;">דפוס נטלי</p></div></div><div style="height:3px;background:linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%);"></div><div style="background:#f8fafc;padding:18px 20px;text-align:center;"><p style="margin:0 0 4px 0;color:#64748b;font-size:13px;"><a href="https://natalie-print.com" style="color:#0d9488;text-decoration:none;font-weight:600;">natalie-print.com</a> &nbsp;•&nbsp; <span style="direction:ltr;display:inline-block;">03-6815703</span></p><p style="margin:6px 0 0 0;color:#94a3b8;font-size:11px;">שד׳ הר ציון 104, תל אביב</p></div></div></body></html>`;
+  const itemsText=(items&&items.length>0)?items.map(i=>`• ${i.description||"—"} (כמות: ${i.quantity??0})`).join("\n"):`• ${task.title||"פריט"}`;
+  const text=`שלום ${contactName},\n\n${mainMessage}\n\nמספר הזמנה: #${orderNum}\n\nפריטים:\n${itemsText}\n\n${address?`כתובת: ${address}\n`:""}\nבברכה,\n${agent?agent+"\n":""}דפוס נטלי\n03-6815703\nnatalie-print.com`;
+  return{subject,html:htmlOut,text};
 }
+
 async function loadClientForNotification(task,clients){
   let c=clients?resolveClientForTask(task,clients):null;
   if(!c&&task.client_id){try{const r=await sb(`clients?id=eq.${task.client_id}&limit=1`);if(r?.[0])c=r[0];}catch(e){}}
@@ -267,14 +286,15 @@ function ClientNotificationModal({task,notificationType,clients,user,onClose,onS
   const [selectedEmail,setSelectedEmail]=useState("");
   const [items,setItems]=useState([]);
   const [subject,setSubject]=useState("");
-  const [body,setBody]=useState("");
+  const [emailHtml,setEmailHtml]=useState("");
+  const [emailText,setEmailText]=useState("");
   const [ccEmails,setCcEmails]=useState([]);
   const [error,setError]=useState(null);
   const fld={width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13};
   const typeLabels={ready:"📦 הזמנה מוכנה לאיסוף",shipped:"🚛 הזמנה בדרך",delivered:"✅ הזמנה סופקה"};
   const applyPreview=(email,taskItems,clientData)=>{
-    const {subject:subj,body:bodyText}=buildClientNotificationEmail({task,itemsList:taskItems,clientData,notificationType});
-    setSubject(subj);setBody(bodyText);setSelectedEmail(email);setStep("preview");
+    const {subject:subj,html:htmlOut,text:textOut}=buildClientNotificationEmail({task,itemsList:taskItems,clientData,notificationType});
+    setSubject(subj);setEmailHtml(htmlOut);setEmailText(textOut);setSelectedEmail(email);setStep("preview");
   };
   const refreshPool=async clientId=>{const list=await loadClientNotificationEmailPool(clientId);setSavedEmails(list);return list;};
   const handleAddEmail=async()=>{
@@ -323,13 +343,13 @@ function ClientNotificationModal({task,notificationType,clients,user,onClose,onS
   const handleSend=async()=>{
     setStep("sending");setError(null);
     try{
-      await sendEmail({to:selectedEmail,cc:ccEmails,subject,text:body});
+      await sendEmail({to:selectedEmail,cc:ccEmails,subject,html:emailHtml,text:emailText});
       const fn=notificationType==="ready"?"notif_ready_sent_at":notificationType==="shipped"?"notif_shipped_sent_at":"notif_delivered_sent_at";
       await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({[fn]:new Date().toISOString(),notification_email:selectedEmail})});
-      await sb("client_notifications_log",{method:"POST",body:JSON.stringify({task_id:task.id,notification_type:notificationType,recipient_email:selectedEmail,cc_emails:ccEmails,subject,body,sent_by:user?.name||"unknown",status:"sent"})});
+      await sb("client_notifications_log",{method:"POST",body:JSON.stringify({task_id:task.id,notification_type:notificationType,recipient_email:selectedEmail,cc_emails:ccEmails,subject,body:emailText,sent_by:user?.name||"unknown",status:"sent"})});
       window.alert("✅ ההודעה נשלחה בהצלחה!");onSent?.();
     }catch(e){
-      try{await sb("client_notifications_log",{method:"POST",body:JSON.stringify({task_id:task.id,notification_type:notificationType,recipient_email:selectedEmail,cc_emails:ccEmails,subject,body,sent_by:user?.name||"unknown",status:"failed",error_message:e.message||String(e)})});}catch(_){}
+      try{await sb("client_notifications_log",{method:"POST",body:JSON.stringify({task_id:task.id,notification_type:notificationType,recipient_email:selectedEmail,cc_emails:ccEmails,subject,body:emailText,sent_by:user?.name||"unknown",status:"failed",error_message:e.message||String(e)})});}catch(_){}
       setError("שגיאה בשליחה: "+(e.message||String(e)));setStep("preview");
     }
   };
@@ -344,7 +364,7 @@ function ClientNotificationModal({task,notificationType,clients,user,onClose,onS
         <div style={{display:"flex",gap:10}}><button type="button" onClick={onClose} style={{flex:1,padding:10,borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button><button type="button" onClick={handleAddEmail} style={{flex:2,padding:12,borderRadius:8,border:"none",background:"#0e7490",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור והמשך</button></div>
       </div>}
       {step==="pickEmail"&&<div><p style={{marginBottom:15}}>בחר מייל לשליחה ללקוח <strong>{client?.name||task.client_name}</strong>:</p><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:15}}>{savedEmails.map(emailRec=><button type="button" key={emailRec.id} onClick={()=>handleEmailPick(emailRec.email)} style={{padding:12,background:"#f3f4f6",border:"2px solid transparent",borderRadius:8,cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,width:"100%"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#0e7490"} onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}><div style={{textAlign:"right"}}><div style={{direction:"ltr",fontWeight:600,fontSize:14}}>{emailRec.is_default?"⭐ ":""}📧 {emailRec.email}</div>{emailRec.label&&<div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{emailRec.label}</div>}</div>{emailRec.usage_count>0&&<div style={{fontSize:11,color:"#9ca3af"}}>נשלח {emailRec.usage_count} פעמים</div>}</button>)}</div>{!showAddEmail?<button type="button" onClick={()=>setShowAddEmail(true)} style={{width:"100%",padding:10,background:"transparent",border:"2px dashed #d1d5db",borderRadius:8,cursor:"pointer",color:"#6b7280",fontSize:13,fontFamily:"inherit",marginBottom:10}}>➕ הוסף מייל חדש למאגר</button>:<div style={{padding:15,background:"#f9fafb",borderRadius:8,border:"1px solid #d1d5db",marginBottom:10}}><input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="example@company.com" style={{...fld,padding:8,direction:"ltr",marginBottom:8}} autoFocus/><input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="תווית (אופציונלי)" style={{...fld,padding:8,marginBottom:8}}/><div style={{display:"flex",gap:8}}><button type="button" onClick={()=>{setShowAddEmail(false);setNewEmail("");setNewLabel("");}} style={{flex:1,padding:8,fontSize:13,cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:6,background:"#fff"}}>ביטול</button><button type="button" onClick={handleAddEmail} style={{flex:2,padding:8,background:"#0e7490",color:"#fff",border:"none",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>הוסף ושלח</button></div></div>}<button type="button" onClick={onClose} style={{width:"100%",padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button></div>}
-      {step==="preview"&&<div><div style={{background:"#f9fafb",padding:12,borderRadius:8,marginBottom:15,fontSize:13}}><div style={{marginBottom:6}}><strong>אל:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{selectedEmail}</span></div><div style={{fontSize:12,color:"var(--text3)"}}><strong>CC:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{ccEmails.join(", ")}</span></div></div><div style={{marginBottom:12}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>נושא:</label><input value={subject} onChange={e=>setSubject(e.target.value)} style={fld}/></div><div style={{marginBottom:15}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>תוכן:</label><textarea value={body} onChange={e=>setBody(e.target.value)} style={{...fld,minHeight:280,resize:"vertical"}}/></div>{error&&<div style={{padding:10,background:"#fee2e2",color:"#991b1b",borderRadius:6,marginBottom:10,fontSize:13}}>{error}</div>}<div style={{display:"flex",gap:10}}><button type="button" onClick={onClose} style={{flex:1,padding:10,borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button><button type="button" onClick={handleSend} style={{flex:2,padding:12,borderRadius:8,border:"none",background:"#0e7490",color:"#fff",fontWeight:600,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>📧 שלח עכשיו</button></div></div>}
+      {step==="preview"&&<div><div style={{background:"#f9fafb",padding:12,borderRadius:8,marginBottom:15,fontSize:13}}><div style={{marginBottom:6}}><strong>אל:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{selectedEmail}</span></div><div style={{fontSize:12,color:"var(--text3)"}}><strong>CC:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{ccEmails.join(", ")}</span></div></div><div style={{marginBottom:12}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>נושא:</label><input value={subject} onChange={e=>setSubject(e.target.value)} style={fld}/></div><div style={{marginBottom:15}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>תצוגה מקדימה:</label><iframe srcDoc={emailHtml} style={{width:"100%",height:400,border:"1px solid var(--border)",borderRadius:10,background:"#fff"}} title="email preview"/><details style={{marginTop:8}}><summary style={{cursor:"pointer",fontSize:12,color:"var(--text3)"}}>ערוך תוכן (טקסט בלבד)</summary><textarea value={emailText} onChange={e=>setEmailText(e.target.value)} style={{...fld,minHeight:200,resize:"vertical",marginTop:8,direction:"rtl",textAlign:"right"}}/></details></div>{error&&<div style={{padding:10,background:"#fee2e2",color:"#991b1b",borderRadius:6,marginBottom:10,fontSize:13}}>{error}</div>}<div style={{display:"flex",gap:10}}><button type="button" onClick={onClose} style={{flex:1,padding:10,borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button><button type="button" onClick={handleSend} style={{flex:2,padding:12,borderRadius:8,border:"none",background:"#0e7490",color:"#fff",fontWeight:600,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>📧 שלח עכשיו</button></div></div>}
       {step==="sending"&&<div style={{textAlign:"center",padding:30}}><div style={{fontSize:32,marginBottom:10}}>📧</div><div>שולח...</div></div>}
     </div>
   </Modal>;

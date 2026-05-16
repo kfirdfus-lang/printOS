@@ -1453,12 +1453,14 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
       </div>}
       {driver&&<div style={{fontSize:10,color:driver.color,marginTop:4,fontWeight:600}}>🚛 {driver.name}</div>}
       {!compact&&task.delivery_special_notes&&<div style={{fontSize:10,marginTop:4,padding:4,background:"#fef3c7",borderRadius:4,color:"#78350f"}}>💬 {task.delivery_special_notes}</div>}
-            {user&&<div onClick={e=>e.stopPropagation()} style={{marginTop:compact?4:6}}><TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRefresh} compact={!!compact}/></div>
-{!readonly&&!compact&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)"}} onClick={e=>e.stopPropagation()}>
-        <button type="button" onClick={handleCopySingle} title="העתק משלוח זה" style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅ הועתק":"📋 העתק"}</button>
-        <button type="button" onClick={e=>{e.stopPropagation();setShowEditDirect(true);}} title="ערוך משלוח" style={{padding:"3px 6px",fontSize:10,background:"#7c3aed",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
-        <button type="button" onClick={handleWhatsAppSingle} title="שלח ב-WhatsApp" style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
-      </div>}
+      <>
+        {user&&<div onClick={e=>e.stopPropagation()} style={{marginTop:compact?4:6}}><TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRefresh} compact={!!compact}/></div>}
+        {!readonly&&!compact&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)"}} onClick={e=>e.stopPropagation()}>
+          <button type="button" onClick={handleCopySingle} title="העתק משלוח זה" style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅ הועתק":"📋 העתק"}</button>
+          <button type="button" onClick={e=>{e.stopPropagation();setShowEditDirect(true);}} title="ערוך משלוח" style={{padding:"3px 6px",fontSize:10,background:"#7c3aed",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
+          <button type="button" onClick={handleWhatsAppSingle} title="שלח ב-WhatsApp" style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
+        </div>}
+      </>
     </div>
     {showDetails&&<ShipmentDetailsModal task={task} drivers={drivers} onClose={()=>setShowDetails(false)} onUpdate={onRefresh} onOpenDeliveryNote={onOpenDeliveryNote}/>}
     {showEditDirect&&<EditShipmentModal task={task} drivers={drivers} onClose={()=>setShowEditDirect(false)} onUpdate={onRefresh}/>}
@@ -7178,7 +7180,7 @@ function App(){
             <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
             <TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={refreshAll} />
             <TaskMoveToDeliveryBtn task={t}/>
-          </div>})}
+          </div>)}
           {boardTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"20px 0",color:"var(--text3)",fontSize:13}}>אין משימות עדיין 🚀</div>}
         </Card>
       </div>}

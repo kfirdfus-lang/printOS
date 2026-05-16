@@ -197,18 +197,73 @@ async function loadClientForNotification(task,clients){
   if(!c&&task.client_name){try{const r=await sb(`clients?name=eq.${encodeURIComponent(task.client_name)}&limit=1`);if(r?.[0])c=r[0];}catch(e){}}
   return c;
 }
-function collectClientNotificationEmails(clientData,task){
-  const emails=new Set();
-  if(clientData){
-    ["orders_email_primary","orders_email_secondary","delivery_email","email"].forEach(k=>{if(clientData[k])emails.add(String(clientData[k]).trim());});
-  }
-  if(task.bina_cust_email)emails.add(String(task.bina_cust_email).trim());
-  return[...emails].filter(e=>e&&e.includes("@"));
+async function loadClientNotificationEmailPool(clientId){
+  if(!clientId)return [];
+  const data=await sb(`client_notification_emails?client_id=eq.${clientId}&order=is_default.desc,usage_count.desc`);
+  return Array.isArray(data)?data:[];
+}
+function ClientNotificationEmailsList({clientId,user,onUpdate}){
+  const [emails,setEmails]=useState([]);
+  const [showAdd,setShowAdd]=useState(false);
+  const [newEmail,setNewEmail]=useState("");
+  const [newLabel,setNewLabel]=useState("");
+  const [loading,setLoading]=useState(true);
+  const load=async()=>{setLoading(true);try{setEmails(await loadClientNotificationEmailPool(clientId));}catch(e){setEmails([]);}setLoading(false);};
+  useEffect(()=>{load();},[clientId]);
+  const handleAdd=async()=>{
+    if(!newEmail.trim()||!newEmail.includes("@")){window.alert("יש להזין כתובת מייל תקינה");return;}
+    try{
+      await sb("client_notification_emails",{method:"POST",body:JSON.stringify({client_id:clientId,email:newEmail.trim(),label:newLabel.trim()||null,is_default:emails.length===0,created_by:user?.name||"unknown"})});
+      setNewEmail("");setNewLabel("");setShowAdd(false);load();onUpdate?.();
+    }catch(e){window.alert("שגיאה בהוספת מייל: "+(e.message||String(e)));}
+  };
+  const setDefault=async emailId=>{
+    try{
+      await sb(`client_notification_emails?client_id=eq.${clientId}`,{method:"PATCH",body:JSON.stringify({is_default:false})});
+      await sb(`client_notification_emails?id=eq.${emailId}`,{method:"PATCH",body:JSON.stringify({is_default:true})});
+      load();onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const deleteEmail=async emailId=>{
+    if(!window.confirm("למחוק את המייל מהמאגר?"))return;
+    try{await sb(`client_notification_emails?id=eq.${emailId}`,{method:"DELETE"});load();onUpdate?.();}catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const inp={width:"100%",padding:8,borderRadius:6,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13};
+  if(loading)return<div style={{padding:12,color:"var(--text3)",fontSize:13}}><Spinner sz={16}/> טוען מיילים…</div>;
+  if(emails.length===0&&!showAdd)return<div>
+    <div style={{padding:12,background:"#fef3c7",borderRadius:6,fontSize:13,color:"#78350f",marginBottom:10}}>⚠️ אין מיילי התראה. הוסף כתובת מייל ראשונה.</div>
+    <button type="button" onClick={()=>setShowAdd(true)} style={{width:"100%",padding:10,background:"#ec4899",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>➕ הוסף מייל ראשון</button>
+  </div>;
+  return<div>
+    {emails.map(em=><div key={em.id} style={{padding:10,background:"#fff",border:"1px solid #e5e7eb",borderRadius:6,marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:em.is_default?600:400,direction:"ltr",textAlign:"right",fontSize:13}}>{em.is_default?"⭐ ":""}{em.email}</div>
+        {em.label&&<div style={{fontSize:12,color:"#6b7280",marginTop:2}}>🏷️ {em.label}</div>}
+        <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>נשלח {em.usage_count||0} פעמים{em.last_used_at?` · אחרון: ${new Date(em.last_used_at).toLocaleDateString("he-IL")}`:""}</div>
+      </div>
+      <div style={{display:"flex",gap:4,flexShrink:0}}>
+        {!em.is_default&&<button type="button" onClick={()=>setDefault(em.id)} title="קבע כברירת מחדל" style={{fontSize:11,padding:"2px 8px",cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:4,background:"#fff"}}>⭐</button>}
+        <button type="button" onClick={()=>deleteEmail(em.id)} style={{fontSize:11,padding:"2px 8px",cursor:"pointer",color:"#ef4444",fontFamily:"inherit",border:"1px solid #fecaca",borderRadius:4,background:"#fef2f2"}}>🗑️</button>
+      </div>
+    </div>)}
+    {!showAdd?<button type="button" onClick={()=>setShowAdd(true)} style={{width:"100%",padding:8,background:"transparent",border:"2px dashed #d1d5db",borderRadius:6,cursor:"pointer",color:"#6b7280",fontSize:13,marginTop:6,fontFamily:"inherit"}}>➕ הוסף מייל</button>:
+    <div style={{padding:12,background:"#f9fafb",borderRadius:6,marginTop:6}}>
+      <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@example.com" style={{...inp,direction:"ltr",marginBottom:6}} autoFocus/>
+      <input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="תווית (אופציונלי)" style={{...inp,marginBottom:6}}/>
+      <div style={{display:"flex",gap:6}}>
+        <button type="button" onClick={()=>{setShowAdd(false);setNewEmail("");setNewLabel("");}} style={{flex:1,padding:6,fontSize:13,cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:4,background:"#fff"}}>ביטול</button>
+        <button type="button" onClick={handleAdd} style={{flex:2,padding:6,background:"#0e7490",color:"#fff",border:"none",borderRadius:4,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>הוסף</button>
+      </div>
+    </div>}
+  </div>;
 }
 function ClientNotificationModal({task,notificationType,clients,user,onClose,onSent}){
   const [step,setStep]=useState("loading");
   const [client,setClient]=useState(null);
-  const [availableEmails,setAvailableEmails]=useState([]);
+  const [savedEmails,setSavedEmails]=useState([]);
+  const [showAddEmail,setShowAddEmail]=useState(false);
+  const [newEmail,setNewEmail]=useState("");
+  const [newLabel,setNewLabel]=useState("");
   const [selectedEmail,setSelectedEmail]=useState("");
   const [items,setItems]=useState([]);
   const [subject,setSubject]=useState("");
@@ -221,16 +276,34 @@ function ClientNotificationModal({task,notificationType,clients,user,onClose,onS
     const {subject:subj,body:bodyText}=buildClientNotificationEmail({task,itemsList:taskItems,clientData,notificationType});
     setSubject(subj);setBody(bodyText);setSelectedEmail(email);setStep("preview");
   };
+  const refreshPool=async clientId=>{const list=await loadClientNotificationEmailPool(clientId);setSavedEmails(list);return list;};
+  const handleAddEmail=async()=>{
+    if(!newEmail.trim()||!newEmail.includes("@")){window.alert("יש להזין כתובת מייל תקינה");return;}
+    if(!client?.id){window.alert("לא ניתן להוסיף מייל - אין לקוח מקושר");return;}
+    try{
+      const isFirst=savedEmails.length===0;
+      await sb("client_notification_emails",{method:"POST",body:JSON.stringify({client_id:client.id,email:newEmail.trim(),label:newLabel.trim()||null,is_default:isFirst,created_by:user?.name||"unknown"})});
+      const email=newEmail.trim();
+      setNewEmail("");setNewLabel("");setShowAddEmail(false);
+      await refreshPool(client.id);
+      applyPreview(email,items,client);
+    }catch(e){window.alert("שגיאה בהוספת מייל: "+(e.message||String(e)));}
+  };
+  const handleEmailPick=async email=>{
+    const emailRecord=savedEmails.find(e=>e.email===email);
+    if(emailRecord){try{await sb(`client_notification_emails?id=eq.${emailRecord.id}`,{method:"PATCH",body:JSON.stringify({usage_count:(emailRecord.usage_count||0)+1,last_used_at:new Date().toISOString()})});await refreshPool(client?.id);}catch(_){}}
+    applyPreview(email,items,client);
+  };
   useEffect(()=>{
     let cancelled=false;
     (async()=>{
-      setStep("loading");setError(null);
+      setStep("loading");setError(null);setShowAddEmail(false);
       try{
         const clientData=await loadClientForNotification(task,clients);
         if(cancelled)return;
         setClient(clientData);
-        const emailsList=collectClientNotificationEmails(clientData,task);
-        setAvailableEmails(emailsList);
+        let pool=[];
+        if(clientData?.id){pool=await loadClientNotificationEmailPool(clientData.id);if(cancelled)return;setSavedEmails(pool);}
         const taskItems=await sb(`task_items?task_id=eq.${task.id}&order=id.asc`);
         const itemsList=Array.isArray(taskItems)?taskItems:[];
         if(cancelled)return;
@@ -239,21 +312,20 @@ function ClientNotificationModal({task,notificationType,clients,user,onClose,onS
         if(task.sales_agent){const ae=AGENT_EMAIL_BY_NAME[String(task.sales_agent).trim()];if(ae)cc.push(ae);}
         if(!cc.includes(ADMIN_NOTIFY_EMAIL))cc.push(ADMIN_NOTIFY_EMAIL);
         setCcEmails(cc);
-        if(task.notification_email){applyPreview(task.notification_email,itemsList,clientData);}
-        else if(emailsList.length===1){const email=emailsList[0];await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({notification_email:email})});applyPreview(email,itemsList,clientData);}
-        else if(emailsList.length===0){setError("אין כתובת מייל ללקוח. יש להוסיף מייל לפני שליחת התראה.");setStep("error");}
-        else setStep("pickEmail");
+        if(pool.length===0){
+          if(!clientData){setError("לא נמצא לקוח מקושר למשימה זו. יש להגדיר לקוח קודם.");setStep("error");}
+          else setStep("addFirstEmail");
+        }else setStep("pickEmail");
       }catch(e){if(!cancelled){setError("שגיאה בטעינה: "+(e.message||String(e)));setStep("error");}}
     })();
     return()=>{cancelled=true};
   },[task.id,notificationType]);
-  const handleEmailPick=async email=>{setSelectedEmail(email);await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({notification_email:email})});applyPreview(email,items,client);};
   const handleSend=async()=>{
     setStep("sending");setError(null);
     try{
       await sendEmail({to:selectedEmail,cc:ccEmails,subject,text:body});
       const fn=notificationType==="ready"?"notif_ready_sent_at":notificationType==="shipped"?"notif_shipped_sent_at":"notif_delivered_sent_at";
-      await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({[fn]:new Date().toISOString()})});
+      await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({[fn]:new Date().toISOString(),notification_email:selectedEmail})});
       await sb("client_notifications_log",{method:"POST",body:JSON.stringify({task_id:task.id,notification_type:notificationType,recipient_email:selectedEmail,cc_emails:ccEmails,subject,body,sent_by:user?.name||"unknown",status:"sent"})});
       window.alert("✅ ההודעה נשלחה בהצלחה!");onSent?.();
     }catch(e){
@@ -265,7 +337,13 @@ function ClientNotificationModal({task,notificationType,clients,user,onClose,onS
     <div style={{direction:"rtl"}}>
       {step==="loading"&&<div style={{textAlign:"center",padding:30}}><Spinner sz={28}/><div style={{marginTop:8,color:"var(--text3)"}}>טוען...</div></div>}
       {step==="error"&&<div><div style={{padding:15,background:"#fee2e2",color:"#991b1b",borderRadius:6,marginBottom:15}}>❌ {error}</div><button type="button" onClick={onClose} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid var(--border)",background:"var(--bg2)",cursor:"pointer",fontFamily:"inherit"}}>סגור</button></div>}
-      {step==="pickEmail"&&<div><p style={{marginBottom:15}}>לאיזה מייל לשלוח את ההתראות ללקוח <strong>{task.client_name}</strong>?<br/><span style={{fontSize:12,color:"var(--text3)"}}>הבחירה תישמר ובפעמים הבאות זה יהיה אוטומטי</span></p><div style={{display:"flex",flexDirection:"column",gap:8}}>{availableEmails.map(email=><button type="button" key={email} onClick={()=>handleEmailPick(email)} style={{padding:12,background:"#f3f4f6",border:"2px solid transparent",borderRadius:8,cursor:"pointer",textAlign:"right",direction:"ltr",fontSize:14,fontFamily:"inherit"}}>📧 {email}</button>)}</div><button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button></div>}
+      {step==="addFirstEmail"&&<div>
+        <div style={{padding:15,background:"#fef3c7",color:"#78350f",borderRadius:8,marginBottom:15,fontSize:14}}>ℹ️ אין מיילי התראה ללקוח <strong>{client?.name||task.client_name}</strong>.<br/><span style={{fontSize:13}}>הוסף כתובת מייל אחת ויותר כדי לאפשר שליחת התראות בעתיד.</span></div>
+        <div style={{marginBottom:12}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>📧 כתובת מייל:</label><input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="example@company.com" style={{...fld,direction:"ltr"}} autoFocus/></div>
+        <div style={{marginBottom:15}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>🏷️ תווית (אופציונלי):</label><input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="למשל: רחל מכירות" style={fld}/></div>
+        <div style={{display:"flex",gap:10}}><button type="button" onClick={onClose} style={{flex:1,padding:10,borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button><button type="button" onClick={handleAddEmail} style={{flex:2,padding:12,borderRadius:8,border:"none",background:"#0e7490",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור והמשך</button></div>
+      </div>}
+      {step==="pickEmail"&&<div><p style={{marginBottom:15}}>בחר מייל לשליחה ללקוח <strong>{client?.name||task.client_name}</strong>:</p><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:15}}>{savedEmails.map(emailRec=><button type="button" key={emailRec.id} onClick={()=>handleEmailPick(emailRec.email)} style={{padding:12,background:"#f3f4f6",border:"2px solid transparent",borderRadius:8,cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,width:"100%"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#0e7490"} onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}><div style={{textAlign:"right"}}><div style={{direction:"ltr",fontWeight:600,fontSize:14}}>{emailRec.is_default?"⭐ ":""}📧 {emailRec.email}</div>{emailRec.label&&<div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{emailRec.label}</div>}</div>{emailRec.usage_count>0&&<div style={{fontSize:11,color:"#9ca3af"}}>נשלח {emailRec.usage_count} פעמים</div>}</button>)}</div>{!showAddEmail?<button type="button" onClick={()=>setShowAddEmail(true)} style={{width:"100%",padding:10,background:"transparent",border:"2px dashed #d1d5db",borderRadius:8,cursor:"pointer",color:"#6b7280",fontSize:13,fontFamily:"inherit",marginBottom:10}}>➕ הוסף מייל חדש למאגר</button>:<div style={{padding:15,background:"#f9fafb",borderRadius:8,border:"1px solid #d1d5db",marginBottom:10}}><input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="example@company.com" style={{...fld,padding:8,direction:"ltr",marginBottom:8}} autoFocus/><input type="text" value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="תווית (אופציונלי)" style={{...fld,padding:8,marginBottom:8}}/><div style={{display:"flex",gap:8}}><button type="button" onClick={()=>{setShowAddEmail(false);setNewEmail("");setNewLabel("");}} style={{flex:1,padding:8,fontSize:13,cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:6,background:"#fff"}}>ביטול</button><button type="button" onClick={handleAddEmail} style={{flex:2,padding:8,background:"#0e7490",color:"#fff",border:"none",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>הוסף ושלח</button></div></div>}<button type="button" onClick={onClose} style={{width:"100%",padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button></div>}
       {step==="preview"&&<div><div style={{background:"#f9fafb",padding:12,borderRadius:8,marginBottom:15,fontSize:13}}><div style={{marginBottom:6}}><strong>אל:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{selectedEmail}</span></div><div style={{fontSize:12,color:"var(--text3)"}}><strong>CC:</strong> <span style={{direction:"ltr",display:"inline-block"}}>{ccEmails.join(", ")}</span></div></div><div style={{marginBottom:12}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>נושא:</label><input value={subject} onChange={e=>setSubject(e.target.value)} style={fld}/></div><div style={{marginBottom:15}}><label style={{display:"block",marginBottom:4,fontWeight:600}}>תוכן:</label><textarea value={body} onChange={e=>setBody(e.target.value)} style={{...fld,minHeight:280,resize:"vertical"}}/></div>{error&&<div style={{padding:10,background:"#fee2e2",color:"#991b1b",borderRadius:6,marginBottom:10,fontSize:13}}>{error}</div>}<div style={{display:"flex",gap:10}}><button type="button" onClick={onClose} style={{flex:1,padding:10,borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button><button type="button" onClick={handleSend} style={{flex:2,padding:12,borderRadius:8,border:"none",background:"#0e7490",color:"#fff",fontWeight:600,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>📧 שלח עכשיו</button></div></div>}
       {step==="sending"&&<div style={{textAlign:"center",padding:30}}><div style={{fontSize:32,marginBottom:10}}>📧</div><div>שולח...</div></div>}
     </div>
@@ -1774,6 +1852,11 @@ function ClientDeliveryEditModal({client,user,onClose,onSaved}){
           <ClientAddressesList key={addrKey} clientId={client.id}/>
         </div>
         <div style={{marginTop:10}}><label style={fldLS}>💬 הערות פנימיות למשלוח</label><textarea value={form.delivery_notes||""} onChange={e=>updateField("delivery_notes",e.target.value)} placeholder="הערות שיופיעו בתעודות משלוח…" rows={3} style={{...fldIS,minHeight:60}}/></div>
+      </div>
+      <div style={{marginTop:20,padding:15,background:"#fef3f9",borderRadius:8,borderRight:"4px solid #ec4899"}}>
+        <h3 style={{margin:"0 0 8px",color:"#9f1239",fontSize:15,fontWeight:700}}>📧 מיילי התראה ללקוח</h3>
+        <div style={{fontSize:12,color:"#6b7280",marginBottom:10}}>כתובות מייל לשליחת התראות סטטוס (מוכן / במשלוח / סופק)</div>
+        <ClientNotificationEmailsList clientId={client.id} user={user}/>
       </div>
       <div style={{display:"flex",gap:10}}>
         <button type="button" onClick={onClose} style={{flex:1,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>

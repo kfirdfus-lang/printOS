@@ -25,6 +25,8 @@ interface RequestBody {
   bina_customer_id: string;
   email_type: 'reminder' | 'inquiry'; // תזכורת רגילה / בקשת בירור
   invoices: Invoice[];
+  /** אם מועבר — שולח רק לכתובות אלה (מאגר מיילי גבייה) */
+  to_emails?: string[];
 }
 
 function formatDate(dateStr: string): string {
@@ -160,7 +162,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body: RequestBody = await req.json();
-    const { bina_customer_id, email_type, invoices } = body;
+    const { bina_customer_id, email_type, invoices, to_emails } = body;
 
     if (!bina_customer_id || !invoices || invoices.length === 0) {
       return new Response(JSON.stringify({ error: 'חסרים נתונים' }),
@@ -179,9 +181,13 @@ Deno.serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const recipients: string[] = [];
-    if (client.collection_email_primary) recipients.push(client.collection_email_primary);
-    if (client.collection_email_secondary) recipients.push(client.collection_email_secondary);
+    const recipients: string[] = Array.isArray(to_emails)
+      ? to_emails.map((e) => String(e).trim().toLowerCase()).filter((e) => e.includes('@'))
+      : [];
+    if (recipients.length === 0) {
+      if (client.collection_email_primary) recipients.push(client.collection_email_primary);
+      if (client.collection_email_secondary) recipients.push(client.collection_email_secondary);
+    }
 
     if (recipients.length === 0) {
       return new Response(JSON.stringify({

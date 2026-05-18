@@ -263,6 +263,11 @@ async function loadClientNotificationEmailPool(clientId){
   const data=await sb(`client_notification_emails?client_id=eq.${clientId}&order=is_default.desc,usage_count.desc`);
   return Array.isArray(data)?data:[];
 }
+async function loadClientBillingEmailPool(clientId){
+  if(!clientId)return [];
+  const data=await sb(`client_billing_emails?client_id=eq.${clientId}&order=is_default.desc,usage_count.desc,last_used_at.desc`);
+  return Array.isArray(data)?data:[];
+}
 function ClientNotificationEmailsList({clientId,user,onUpdate}){
   const [emails,setEmails]=useState([]);
   const [showAdd,setShowAdd]=useState(false);
@@ -6083,15 +6088,12 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
   };
 
   const handleSendEmail = (client, emailType) => {
-    if (!client.collection_email_primary) {
-      setEmailModal({ client, mode: 'addEmail', pendingType: emailType });
-      return;
-    }
     setEmailModal({ client, mode: 'confirmSend', emailType });
   };
 
   // 🆕 שליחת מייל חכמה - לפי סוג מסננת חשבוניות
-  const sendEmail = async (client, emailType) => {
+  const sendEmail = async (client, emailType, billingOpts={}) => {
+    const recipient=billingOpts.recipient?String(billingOpts.recipient).trim().toLowerCase():null;
     try {
       // סינון חשבוניות לפי סוג המייל:
       // reminder = רק חשבוניות עתידיות (לא באיחור)
@@ -6129,6 +6131,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
           bina_customer_id: client.bina_customer_id,
           email_type: emailType,
           invoices: invoicesForEmail,
+          to_emails: recipient?[recipient]:undefined,
         },
       });
       
@@ -6300,34 +6303,22 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
             </span>
           ))}
         </div>
-        {(client.collection_email_primary || client.collection_email_secondary) && (
-          <div style={{
-            marginTop: 8, padding: '6px 10px', background: '#f0fdfa',
-            borderRadius: 4, fontSize: 12, color: '#1E3A52',
+        {client.client_id&&<div style={{
+            marginTop: 8, padding: '6px 10px', background: '#fef3c7',
+            borderRadius: 4, fontSize: 12, color: '#78350f',
             display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
           }}>
-            <span style={{ color: '#3DB5B1' }}>📧</span>
-            <span style={{ direction: 'ltr' }}>
+            <span>💼</span>
+            {(client.collection_email_primary||client.collection_email_secondary)?<span style={{ direction: 'ltr', color: '#1E3A52' }}>
               {client.collection_email_primary}
-              {client.collection_email_secondary && (
-                <span style={{ marginInlineStart: 6, color: '#6b7280' }}>
-                  + {client.collection_email_secondary}
-                </span>
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={() => setEmailModal({ client, mode: 'editEmail' })}
-              style={{
-                marginInlineStart: 'auto', background: 'transparent', border: '1px solid #3DB5B1',
-                color: '#3DB5B1', borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
+              {client.collection_email_secondary&&<span style={{ marginInlineStart: 6, color: '#6b7280' }}>+ {client.collection_email_secondary}</span>}
+            </span>:<span style={{ color: '#6b7280' }}>מאגר מיילי גבייה</span>}
+            <button type="button" onClick={()=>setEmailModal({ client, mode: 'editEmail' })} style={{
+                marginInlineStart: 'auto', background: 'transparent', border: '1px solid #92400e',
+                color: '#92400e', borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
                 fontSize: 11, fontFamily: 'inherit',
-              }}
-            >
-              ✏️ ערוך
-            </button>
-          </div>
-        )}
+              }}>✏️ נהל מיילים</button>
+          </div>}
         {renderClientActions(client)}
       </div>
     );
@@ -6543,26 +6534,10 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
           client={emailModal.client}
           mode={emailModal.mode}
           emailType={emailModal.emailType}
-          pendingType={emailModal.pendingType}
           onClose={() => setEmailModal(null)}
           onSendEmail={sendEmail}
-          onSaveAndSend={async (emails, typeToSend) => {
-            await sb(`clients?id=eq.${emailModal.client.client_id}`, {
-              method: 'PATCH',
-              body: JSON.stringify({
-                collection_email_primary: emails.primary,
-                collection_email_secondary: emails.secondary || null,
-              }),
-            });
-            emailModal.client.collection_email_primary = emails.primary;
-            emailModal.client.collection_email_secondary = emails.secondary;
-            if (typeToSend) {
-              await sendEmail(emailModal.client, typeToSend);
-            }
-            setEmailModal(null);
-            if (onDebtReload) onDebtReload();
-          }}
           sb={sb}
+          createdBy={collectorName}
         />
       )}
 
@@ -6854,108 +6829,170 @@ function openPrintWindow(data) {
 // ========================================
 // Modal לניהול מיילים + שליחה
 // ========================================
-function EmailModal({ client, mode, emailType, pendingType, onClose, onSendEmail, onSaveAndSend, sb }) {
-  const [primary, setPrimary] = useState(client.collection_email_primary || '');
-  const [secondary, setSecondary] = useState(client.collection_email_secondary || '');
+function EmailModal({ client, mode, emailType, onClose, onSendEmail, sb, createdBy }) {
+  const [savedEmails, setSavedEmails] = useState([]);
+  const [emailMode, setEmailMode] = useState('loading');
+  const [selectedEmailId, setSelectedEmailId] = useState(null);
+  const [recipient, setRecipient] = useState('');
+  const [showAddNew, setShowAddNew] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newLabel, setNewLabel] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const isAddMode = mode === 'addEmail';
+  const prevEmailIdRef = useRef(null);
+  const clientId = client?.client_id || null;
   const isEditMode = mode === 'editEmail';
   const isConfirmMode = mode === 'confirmSend';
-
-  const overlayStyle = {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-    zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  const overlayStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
+  const modalStyle = { background: '#fff', borderRadius: 16, maxWidth: 520, width: '100%', direction: 'rtl', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' };
+  const inputStyle = { width: '100%', padding: '10px 12px', fontSize: 14, border: '1px solid #e5e7eb', borderRadius: 8, fontFamily: 'inherit', boxSizing: 'border-box', direction: 'ltr', textAlign: 'left' };
+  const handleSelectEmail = (em) => { setSelectedEmailId(em.id); setRecipient(em.email); setShowAddNew(false); };
+  const handleStartAddNew = () => {
+    if (selectedEmailId) prevEmailIdRef.current = selectedEmailId;
+    setSelectedEmailId(null); setRecipient(''); setNewEmail(''); setNewLabel(''); setShowAddNew(true);
   };
-  const modalStyle = {
-    background: '#fff', borderRadius: 16, maxWidth: 500, width: '100%',
-    direction: 'rtl', overflow: 'hidden',
+  const handleSaveNewEmail = async () => {
+    if (!newEmail.trim() || !newEmail.includes('@')) { window.alert('כתובת מייל לא תקינה'); return; }
+    if (!clientId) { window.alert('שגיאה: לא ניתן לזהות את הלקוח'); return; }
+    try {
+      const result = await sb('client_billing_emails', { method: 'POST', body: JSON.stringify({
+        client_id: clientId, email: newEmail.trim().toLowerCase(), label: newLabel.trim() || null,
+        is_default: savedEmails.length === 0, usage_count: 0, created_by: createdBy || 'unknown',
+      }) });
+      const newE = Array.isArray(result) ? result[0] : result;
+      if (newE) {
+        setSavedEmails((prev) => [...prev, newE]);
+        setSelectedEmailId(newE.id); setRecipient(newE.email);
+        setShowAddNew(false); setEmailMode('pick'); setNewEmail(''); setNewLabel('');
+      }
+    } catch (e) {
+      const msg = e.message || String(e);
+      if (msg.includes('duplicate') || msg.includes('23505')) window.alert('כתובת מייל זו כבר קיימת במאגר');
+      else window.alert('שגיאה: ' + msg);
+    }
   };
-  const inputStyle = {
-    width: '100%', padding: '10px 12px', fontSize: 14,
-    border: '1px solid #e5e7eb', borderRadius: 8, fontFamily: 'inherit',
-    boxSizing: 'border-box', marginBottom: 12, direction: 'ltr', textAlign: 'left',
+  const incrementUsage = async () => {
+    if (!selectedEmailId) return;
+    const em = savedEmails.find((e) => e.id === selectedEmailId);
+    if (!em) return;
+    try {
+      await sb(`client_billing_emails?id=eq.${selectedEmailId}`, { method: 'PATCH', body: JSON.stringify({
+        usage_count: (em.usage_count || 0) + 1, last_used_at: new Date().toISOString(),
+      }) });
+    } catch (_) {}
   };
-  const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 };
-
-  return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={modalStyle} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', background: '#faf5ff' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#1E3A52' }}>
-                {isAddMode ? '➕ הוסף מייל לגבייה' : isEditMode ? '✏️ ערוך מיילים' : '📧 אישור שליחה'}
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setEmailMode('loading');
+      if (!clientId) {
+        if (!cancelled) {
+          setSavedEmails([]);
+          setEmailMode('addFirst');
+          if (client.collection_email_primary) {
+            setRecipient(client.collection_email_primary);
+            setNewEmail(client.collection_email_primary);
+          }
+        }
+        return;
+      }
+      try {
+        const data = await loadClientBillingEmailPool(clientId);
+        if (cancelled) return;
+        setSavedEmails(data);
+        if (data.length > 0) {
+          setEmailMode('pick');
+          const def = data.find((e) => e.is_default) || data[0];
+          setSelectedEmailId(def.id);
+          setRecipient(def.email);
+        } else {
+          setEmailMode('addFirst');
+          if (client.collection_email_primary) {
+            setRecipient(client.collection_email_primary);
+            setNewEmail(client.collection_email_primary);
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setEmailMode('addFirst');
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [clientId, client.collection_email_primary]);
+  const billingPickerUi = <>
+    <div style={{ marginBottom: 15 }}>
+      <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>💼 מייל הנה"ח / גבייה:</label>
+      {emailMode === 'loading' && <div style={{ padding: 12, background: '#f9fafb', borderRadius: 6, color: '#6b7280', fontSize: 13, textAlign: 'center' }}>טוען מיילים שמורים...</div>}
+      {emailMode === 'pick' && !showAddNew && <>
+        <div style={{ background: '#fef3c7', padding: 12, borderRadius: 8, border: '1px solid #fde68a', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#78350f', marginBottom: 8, fontWeight: 600 }}>💼 מיילים שמורים ללקוח ({savedEmails.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+            {savedEmails.map((em) => <button type="button" key={em.id} onClick={() => handleSelectEmail(em)} style={{ padding: 10, textAlign: 'right', background: selectedEmailId === em.id ? '#92400e' : 'white', color: selectedEmailId === em.id ? 'white' : '#374151', border: `1px solid ${selectedEmailId === em.id ? '#92400e' : '#d1d5db'}`, borderRadius: 6, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'inherit' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, direction: 'ltr', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{em.is_default && '⭐ '}{em.email}</div>
+                {em.label && <div style={{ fontSize: 11, color: selectedEmailId === em.id ? 'rgba(255,255,255,0.85)' : '#6b7280', marginTop: 2 }}>🏷️ {em.label}</div>}
               </div>
-              <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{client.name}</div>
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#9ca3af' }}>✕</button>
+              {em.usage_count > 0 && <div style={{ fontSize: 11, marginRight: 8, color: selectedEmailId === em.id ? 'rgba(255,255,255,0.7)' : '#9ca3af', whiteSpace: 'nowrap' }}>{em.usage_count}×</div>}
+            </button>)}
           </div>
         </div>
-
-        <div style={{ padding: 20 }}>
-          {(isAddMode || isEditMode) && (
-            <>
-              <div style={{
-                background: isAddMode ? '#fffbeb' : '#f0fdfa', padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 13,
-                color: isAddMode ? '#78350f' : '#1E3A52',
-              }}>
-                {isAddMode
-                  ? '⚠️ אין כתובת מייל לגבייה ללקוח זה. הוסף וננסה לשלוח שוב.'
-                  : '✏️ עדכן את כתובות המייל. שינויים יישמרו אוטומטית.'}
-              </div>
-              <label style={labelStyle}>📧 מייל ראשי לגבייה *</label>
-              <input type="email" value={primary} onChange={e => setPrimary(e.target.value)}
-                placeholder="primary@company.com" style={inputStyle} />
-              
-              <label style={labelStyle}>📧 מייל נוסף (אופציונלי)</label>
-              <input type="email" value={secondary} onChange={e => setSecondary(e.target.value)}
-                placeholder="secondary@company.com" style={inputStyle} />
-              
-              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-                💾 כתובות אלה יישמרו ויהיו זמינות גם בעתיד
-              </div>
-            </>
-          )}
-
-          {isConfirmMode && (
-            <>
-              <p style={{ fontSize: 14, color: '#1E3A52', lineHeight: 1.7 }}>
-                האם לשלוח <strong>{emailType === 'inquiry' ? 'בקשת בירור' : 'תזכורת תשלום'}</strong> עם <strong>{client.invoices.length} חשבוניות</strong>?
-              </p>
-              <div style={{ background: '#f0fdfa', padding: 12, borderRadius: 8, marginTop: 12, fontSize: 13 }}>
-                <strong>נמענים:</strong><br/>
-                📧 {client.collection_email_primary}
-                {client.collection_email_secondary && <><br/>📧 {client.collection_email_secondary}</>}
-              </div>
-            </>
-          )}
+        <button type="button" onClick={handleStartAddNew} style={{ width: '100%', padding: 10, background: 'transparent', border: '2px dashed #d1d5db', borderRadius: 8, cursor: 'pointer', color: '#6b7280', fontSize: 13, fontFamily: 'inherit' }}>➕ הוסף מייל גבייה נוסף</button>
+      </>}
+      {(emailMode === 'addFirst' || showAddNew) && <div style={{ background: '#fefce8', padding: 12, borderRadius: 8, border: '2px solid #fde68a' }}>
+        {emailMode === 'addFirst' && <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10 }}>ℹ️ אין מיילי גבייה שמורים ללקוח - הוסף את הראשון</div>}
+        <div style={{ marginBottom: 8 }}><input type="email" value={showAddNew ? newEmail : (newEmail || recipient)} onChange={(e) => { const v = e.target.value; setNewEmail(v); if (emailMode === 'addFirst') setRecipient(v); }} placeholder="email@company.co.il *" style={inputStyle} autoFocus /></div>
+        <div style={{ marginBottom: emailMode === 'pick' && showAddNew ? 10 : 0 }}><input type="text" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder='תווית (אופציונלי) - "הנה"ח", "גבייה"...' style={{ ...inputStyle, direction: 'rtl', textAlign: 'right' }} /></div>
+        {emailMode === 'pick' && showAddNew && <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <button type="button" onClick={() => { setShowAddNew(false); const prevId = prevEmailIdRef.current; if (prevId) { const prev = savedEmails.find((e) => e.id === prevId); if (prev) { setSelectedEmailId(prev.id); setRecipient(prev.email); } } }} style={{ flex: 1, padding: 8, fontSize: 12, background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>ביטול</button>
+          <button type="button" onClick={handleSaveNewEmail} style={{ flex: 2, padding: 8, fontSize: 12, background: '#92400e', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>💾 שמור והשתמש</button>
+        </div>}
+        {emailMode === 'addFirst' && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 8, textAlign: 'center' }}>💡 המייל יישמר אוטומטית כשתשלח</div>}
+      </div>}
+    </div>
+  </>;
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', background: '#fffbeb', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#1E3A52' }}>{isEditMode ? '✏️ מיילי גבייה' : '📧 אישור שליחה'}</div>
+              <div style={{ fontSize: 13, color: '#6b7280', marginTop: 3 }}>{client.name}</div>
+            </div>
+            <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#9ca3af' }}>✕</button>
+          </div>
         </div>
-
-        <div style={{ padding: 16, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} disabled={saving} style={{
-            padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
-            background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb',
-            cursor: 'pointer', fontFamily: 'inherit',
-          }}>ביטול</button>
-          <button type="button" onClick={async () => {
+        <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+          {isConfirmMode && <p style={{ fontSize: 14, color: '#1E3A52', lineHeight: 1.7, marginTop: 0, marginBottom: 16 }}>
+            האם לשלוח <strong>{emailType === 'inquiry' ? 'בקשת בירור' : 'תזכורת תשלום'}</strong>?
+            {client.invoices?.length ? <> עם <strong>{client.invoices.length} חשבוניות</strong></> : null}
+          </p>}
+          {isEditMode && <p style={{ fontSize: 13, color: '#6b7280', marginTop: 0, marginBottom: 12 }}>נהל את מאגר מיילי הגבייה ללקוח זה.</p>}
+          {billingPickerUi}
+        </div>
+        <div style={{ padding: 16, borderTop: '1px solid #e5e7eb', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
+          <button type="button" onClick={onClose} disabled={saving} style={{ padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb', cursor: 'pointer', fontFamily: 'inherit' }}>ביטול</button>
+          {!isEditMode && <button type="button" onClick={async () => {
+            const toSend = (emailMode === 'addFirst' ? (newEmail || recipient) : recipient).trim().toLowerCase();
+            if (!toSend || !toSend.includes('@')) { window.alert('יש לבחור או להזין מייל תקין'); return; }
             setSaving(true);
-            if (isAddMode || isEditMode) {
-              if (!primary) { alert('חובה למלא לפחות מייל ראשי'); setSaving(false); return; }
-              await onSaveAndSend({ primary, secondary }, isAddMode ? pendingType : null);
-            } else {
-              await onSendEmail(client, emailType);
-              onClose();
-            }
-            setSaving(false);
-          }} disabled={saving} style={{
-            padding: '10px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700,
-            background: isConfirmMode && emailType === 'inquiry' ? '#dc2626' : '#3DB5B1', color: '#fff', border: 'none',
-            cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit',
-            opacity: saving ? 0.6 : 1,
-          }}>
-            {saving ? '⏳ שומר...' : (isAddMode ? '💾 שמור ושלח' : isEditMode ? '💾 שמור' : '📤 שלח')}
-          </button>
+            try {
+              if (!selectedEmailId && clientId && toSend) {
+                try {
+                  await sb('client_billing_emails', { method: 'POST', body: JSON.stringify({
+                    client_id: clientId, email: toSend, label: newLabel.trim() || null,
+                    is_default: savedEmails.length === 0, usage_count: 1, last_used_at: new Date().toISOString(),
+                    created_by: createdBy || 'unknown',
+                  }) });
+                } catch (e) { console.warn('Failed to auto-save billing email:', e); }
+              } else if (selectedEmailId) { await incrementUsage(); }
+              const ok = await onSendEmail(client, emailType, { recipient: toSend, selectedEmailId });
+              if (ok !== false) onClose();
+            } finally { setSaving(false); }
+          }} disabled={saving || emailMode === 'loading'} style={{ padding: '10px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700, background: isConfirmMode && emailType === 'inquiry' ? '#dc2626' : '#92400e', color: '#fff', border: 'none', cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit', opacity: saving || emailMode === 'loading' ? 0.6 : 1 }}>
+            {saving ? '⏳ שולח...' : '📤 שלח'}
+          </button>}
+          {isEditMode && <button type="button" onClick={onClose} style={{ padding: '10px 24px', borderRadius: 8, fontSize: 14, fontWeight: 700, background: '#92400e', color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>סגור</button>}
         </div>
       </div>
     </div>

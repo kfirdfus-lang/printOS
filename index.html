@@ -1518,9 +1518,12 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
   const [showDetails,setShowDetails]=useState(false);
   const [showEditDirect,setShowEditDirect]=useState(false);
   const [copied,setCopied]=useState(false);
+  const isDelivered=task.delivery_status==="delivered";
   const driver=drivers.find(d=>d.id===task.assigned_driver_id);
   const typeIcon={local:"🚚",courier:"📮",pickup:"🛒"}[task.delivery_type||"local"]||"🚚";
-  const cubeColor=driver?.color||"#6b7280";
+  const cubeColor=isDelivered?"#d1d5db":(driver?.color||"#6b7280");
+  const textMuted=isDelivered?"#6b7280":"var(--text3)";
+  const textMain=isDelivered?"#6b7280":"inherit";
   const items=Array.isArray(task.items)?task.items:[];
   const handleCopySingle=async e=>{
     e.stopPropagation();
@@ -1531,41 +1534,136 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
     window.open(`https://wa.me/?text=${encodeURIComponent(formatSingleShipmentText(task))}`,"_blank");
   };
   return<>
-    <div draggable={!readonly} onDragStart={onDragStart} onClick={()=>setShowDetails(true)} style={{background:"#fff",border:`2px solid ${cubeColor}`,borderRadius:8,padding:compact?6:10,cursor:readonly?"pointer":"grab",fontSize:compact?11:12,position:"relative"}}>
+    <div draggable={!readonly&&!isDelivered} onDragStart={onDragStart} onClick={()=>setShowDetails(true)} style={{background:isDelivered?"#f3f4f6":"#fff",border:`2px solid ${cubeColor}`,borderRadius:8,padding:compact?6:10,cursor:isDelivered?"pointer":(readonly?"pointer":"grab"),fontSize:compact?11:12,position:"relative",opacity:isDelivered?0.7:1,transition:"all 0.2s",      color:textMain}}>
+      {isDelivered&&<div style={{position:"absolute",top:6,left:6,width:28,height:28,background:"#10b981",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:18,fontWeight:"bold",boxShadow:"0 2px 4px rgba(16,185,129,0.3)",zIndex:2}}>✓</div>}
+      {!compact&&(task.notif_ready_sent_at||task.notif_shipped_sent_at||task.notif_delivered_sent_at)&&<div style={{display:"flex",gap:4,marginBottom:6,flexWrap:"wrap"}}>
+        {task.notif_ready_sent_at&&<span style={{fontSize:10,padding:"2px 6px",background:"#d1fae5",color:"#065f46",borderRadius:4,fontWeight:600}} title={task.notif_ready_sent_at?`מוכן: ${new Date(task.notif_ready_sent_at).toLocaleString("he-IL")}`:""}>✓ מוכן</span>}
+        {task.notif_shipped_sent_at&&<span style={{fontSize:10,padding:"2px 6px",background:"#dbeafe",color:"#1e40af",borderRadius:4,fontWeight:600}} title={task.notif_shipped_sent_at?`במשלוח: ${new Date(task.notif_shipped_sent_at).toLocaleString("he-IL")}`:""}>✓ במשלוח</span>}
+        {task.notif_delivered_sent_at&&<span style={{fontSize:10,padding:"2px 6px",background:"#f3e8ff",color:"#6b21a8",borderRadius:4,fontWeight:600}} title={task.notif_delivered_sent_at?`סופק: ${new Date(task.notif_delivered_sent_at).toLocaleString("he-IL")}`:""}>✓ סופק</span>}
+      </div>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:4}}>
         <span style={{fontSize:14}}>{typeIcon}</span>
-        <span style={{fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{task.client_name||"—"}</span>
+        <span style={{fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:textMain}}>{task.client_name||"—"}</span>
       </div>
-      {!compact&&(task.bina_order_id||task.sales_agent)&&<div style={{fontSize:10,color:"var(--text3)",marginTop:3,display:"flex",justifyContent:"space-between",gap:6}}>
+      {!compact&&(task.bina_order_id||task.sales_agent)&&<div style={{fontSize:10,color:textMuted,marginTop:3,display:"flex",justifyContent:"space-between",gap:6}}>
         {task.bina_order_id&&<span>📝 <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></span>}
         {task.sales_agent&&<span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"60%"}}>👤 {task.sales_agent}</span>}
       </div>}
-      {!compact&&task.delivery_address_snapshot&&<div style={{fontSize:10,color:"var(--text3)",marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {task.delivery_address_snapshot}</div>}
-      {!compact&&items.length>0&&<div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed #e5e7eb",fontSize:10,color:"#374151"}}>
-        <div style={{fontWeight:600,marginBottom:3,color:"var(--text3)"}}>📦 פריטים למסירה:</div>
+      {!compact&&task.delivery_address_snapshot&&<div style={{fontSize:10,color:textMuted,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📍 {task.delivery_address_snapshot}</div>}
+      {!compact&&items.length>0&&<div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed #e5e7eb",fontSize:10,color:isDelivered?"#9ca3af":"#374151"}}>
+        <div style={{fontWeight:600,marginBottom:3,color:textMuted}}>📦 פריטים למסירה:</div>
         {items.slice(0,3).map((item,i)=><div key={item.id||i} style={{display:"flex",justifyContent:"space-between",padding:"1px 0",gap:4}}>
           <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:6}}>• {item.description||"—"}</span>
           <span style={{fontWeight:600,direction:"ltr",flexShrink:0}}>×{item.quantity??0}</span>
         </div>)}
         {items.length>3&&<div style={{fontSize:9,color:"#9ca3af",marginTop:2}}>+{items.length-3} פריטים נוספים...</div>}
       </div>}
-      {driver&&<div style={{fontSize:10,color:driver.color,marginTop:4,fontWeight:600}}>🚛 {driver.name}</div>}
-      {!compact&&task.delivery_special_notes&&<div style={{fontSize:10,marginTop:4,padding:4,background:"#fef3c7",borderRadius:4,color:"#78350f"}}>💬 {task.delivery_special_notes}</div>}
-      <>
-        {user&&<div onClick={e=>e.stopPropagation()} style={{marginTop:compact?4:6}}><TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRefresh} compact={!!compact}/></div>}
-        {!readonly&&!compact&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)"}} onClick={e=>e.stopPropagation()}>
+      {driver&&<div style={{fontSize:10,color:isDelivered?textMuted:driver.color,marginTop:4,fontWeight:600}}>🚛 {driver.name}</div>}
+      {!compact&&task.delivery_special_notes&&<div style={{fontSize:10,marginTop:4,padding:4,background:isDelivered?"#f3f4f6":"#fef3c7",borderRadius:4,color:isDelivered?"#6b7280":"#78350f"}}>💬 {task.delivery_special_notes}</div>}
+      {user&&!isDelivered&&<div onClick={e=>e.stopPropagation()} style={{marginTop:compact?4:6}}><TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRefresh} compact={!!compact}/></div>}
+        {!readonly&&!compact&&!isDelivered&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)"}} onClick={e=>e.stopPropagation()}>
           <button type="button" onClick={handleCopySingle} title="העתק משלוח זה" style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅ הועתק":"📋 העתק"}</button>
           <button type="button" onClick={e=>{e.stopPropagation();setShowEditDirect(true);}} title="ערוך משלוח" style={{padding:"3px 6px",fontSize:10,background:"#7c3aed",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
           <button type="button" onClick={handleWhatsAppSingle} title="שלח ב-WhatsApp" style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
         </div>}
-      </>
+        {!compact&&isDelivered&&<div style={{marginTop:6,paddingTop:6,borderTop:"1px solid #d1d5db",fontSize:11,color:"#10b981",fontWeight:600,textAlign:"center"}}>
+          ✅ נמסר בהצלחה
+          {task.delivery_marked_at&&<div style={{fontSize:10,color:"#9ca3af",marginTop:2}}>{new Date(task.delivery_marked_at).toLocaleDateString("he-IL")}</div>}
+        </div>}
     </div>
     {showDetails&&<ShipmentDetailsModal task={task} drivers={drivers} onClose={()=>setShowDetails(false)} onUpdate={onRefresh} onOpenDeliveryNote={onOpenDeliveryNote}/>}
     {showEditDirect&&<EditShipmentModal task={task} drivers={drivers} onClose={()=>setShowEditDirect(false)} onUpdate={onRefresh}/>}
   </>;
 }
 
-function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsApp,isToday,onOpenDeliveryNote,onRefresh,user,clients}){
+function SplitByDriverModal({date,tasks,drivers,onClose}){
+  const tasksByDriver=useMemo(()=>{
+    const groups={};
+    tasks.forEach(t=>{
+      const driverId=t.assigned_driver_id||"_unassigned";
+      if(!groups[driverId])groups[driverId]=[];
+      groups[driverId].push(t);
+    });
+    return groups;
+  },[tasks]);
+  const getDriverName=driverId=>{
+    if(driverId==="_unassigned")return "⚠️ ללא נהג";
+    const d=drivers.find(dr=>dr.id===driverId);
+    return d?`🚛 ${d.name}`:"נהג לא ידוע";
+  };
+  const formatDriverText=(driverId,driverTasks)=>{
+    const driverName=getDriverName(driverId);
+    const dateStr=date.toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
+    let text=`📦 *משלוחים ${driverName}*\n`;
+    text+=`📅 ${dateStr}\n`;
+    text+=`סה"כ: ${driverTasks.length} משלוחים\n\n`;
+    text+="━━━━━━━━━━━━━━\n\n";
+    driverTasks.forEach((t,i)=>{
+      text+=`*${i+1}. ${t.client_name||"—"}*\n`;
+      if(t.bina_order_id)text+=`📝 הזמנה #${t.bina_order_id}\n`;
+      if(t.sales_agent)text+=`👤 סוכן: ${t.sales_agent}\n`;
+      if(t.delivery_address_snapshot)text+=`📍 ${t.delivery_address_snapshot}\n`;
+      if(t.delivery_contact_snapshot||t.delivery_phone_snapshot){
+        const contactLine=`${t.delivery_contact_snapshot||""} ${t.delivery_phone_snapshot||""}`.trim();
+        if(contactLine)text+=`📞 ${contactLine}\n`;
+      }
+      const dayItems=Array.isArray(t.items)?t.items:[];
+      if(dayItems.length>0){
+        text+=`\n📦 פריטים:\n`;
+        dayItems.forEach(item=>{text+=`   • ${item.description||"—"} (×${item.quantity??0})\n`;});
+      }
+      if(t.delivery_special_notes)text+=`\n💬 ${t.delivery_special_notes}\n`;
+      text+="\n━━━━━━━━━━━━━━\n\n";
+    });
+    return text;
+  };
+  const handleCopyDriver=async driverId=>{
+    const driverTasks=tasksByDriver[driverId];
+    const text=formatDriverText(driverId,driverTasks);
+    try{
+      await navigator.clipboard.writeText(text);
+      window.alert(`✅ הועתק - ${driverTasks.length} משלוחים של ${getDriverName(driverId)}`);
+    }catch(e){window.alert("שגיאה בהעתקה");}
+  };
+  const handleWhatsAppDriver=driverId=>{
+    const text=formatDriverText(driverId,tasksByDriver[driverId]);
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,"_blank");
+  };
+  const driverIds=Object.keys(tasksByDriver);
+  return<Modal open={true} onClose={onClose} title="🚛 פיצול משלוחים לפי נהג" maxWidth={600}>
+    <div style={{direction:"rtl"}}>
+      <div style={{background:"#f0f9ff",padding:12,borderRadius:8,marginBottom:15,fontSize:14}}>
+        📅 {date.toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long"})}
+        <br/>
+        <span style={{color:"#6b7280",fontSize:13}}>סה"כ {tasks.length} משלוחים מחולקים בין {driverIds.length} נהגים</span>
+      </div>
+      {driverIds.length===0?<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>אין משלוחים ביום זה</div>:
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {driverIds.map(driverId=>{
+          const driverTasks=tasksByDriver[driverId];
+          const driver=drivers.find(d=>d.id===driverId);
+          const isUnassigned=driverId==="_unassigned";
+          return<div key={driverId} style={{background:isUnassigned?"#fef2f2":"#fff",border:`2px solid ${isUnassigned?"#fca5a5":(driver?.color||"#d1d5db")}`,borderRadius:8,padding:12}}>
+            <div style={{fontWeight:600,fontSize:15,marginBottom:4}}>{getDriverName(driverId)}</div>
+            <div style={{fontSize:12,color:"#6b7280",marginBottom:10}}>{driverTasks.length} משלוחים</div>
+            <div style={{fontSize:12,color:"#6b7280",marginBottom:10,maxHeight:80,overflowY:"auto"}}>
+              {driverTasks.map((t,i)=><div key={t.id} style={{padding:"2px 0"}}>
+                {i+1}. {t.client_name}
+                {t.delivery_address_snapshot&&` - ${t.delivery_address_snapshot.substring(0,30)}${t.delivery_address_snapshot.length>30?"...":""}`}
+              </div>)}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button type="button" onClick={()=>handleCopyDriver(driverId)} style={{flex:1,padding:"8px 10px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"inherit"}}>📋 העתק</button>
+              <button type="button" onClick={()=>handleWhatsAppDriver(driverId)} style={{flex:1,padding:"8px 10px",background:"#25d366",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"inherit"}}>📱 WhatsApp</button>
+            </div>
+          </div>;
+        })}
+      </div>}
+    </div>
+  </Modal>;
+}
+
+function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsApp,onSplitDay,isToday,onOpenDeliveryNote,onRefresh,user,clients}){
   const [dragOver,setDragOver]=useState(false);
   const dayName=date.toLocaleDateString("he-IL",{weekday:"long"});
   const dateNum=date.toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
@@ -1582,6 +1680,7 @@ function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsA
     {tasks.length>0&&<div style={{marginTop:10,paddingTop:8,borderTop:"1px solid var(--border)",display:"flex",gap:6}}>
       <button type="button" onClick={onCopyDay} style={{flex:1,padding:6,fontSize:11,background:"var(--bg2)",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📋 העתק</button>
       <button type="button" onClick={onSendWhatsApp} style={{flex:1,padding:6,fontSize:11,background:"#25d366",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
+      <button type="button" onClick={onSplitDay} title="הפרד לפי נהג" style={{padding:"6px 8px",fontSize:11,background:"#f59e0b",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>🚛 פצל</button>
     </div>}
   </div>;
 }
@@ -1594,6 +1693,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
   const [draggedTask,setDraggedTask]=useState(null);
   const [showDriverManager,setShowDriverManager]=useState(false);
   const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
+  const [showSplitByDriverModal,setShowSplitByDriverModal]=useState(null);
   const navBtnStyle={padding:"8px 14px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:13};
   const loadData=async()=>{
     try{
@@ -1726,7 +1826,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
       </div>
     </div>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
-      {weekDays.map((date,i)=><DayColumn key={i} date={date} tasks={getTasksForDay(date)} drivers={drivers} onDragStart={handleDragStart} onDrop={()=>handleDrop(date)} onCopyDay={()=>copyDayToClipboard(date)} onSendWhatsApp={()=>sendDayWhatsApp(date)} isToday={toLocalDateStr(date)===toLocalDateStr(new Date())} onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients}/>)}
+      {weekDays.map((date,i)=><DayColumn key={i} date={date} tasks={getTasksForDay(date)} drivers={drivers} onDragStart={handleDragStart} onDrop={()=>handleDrop(date)} onCopyDay={()=>copyDayToClipboard(date)} onSendWhatsApp={()=>sendDayWhatsApp(date)} onSplitDay={()=>setShowSplitByDriverModal({date,tasks:getTasksForDay(date)})} isToday={toLocalDateStr(date)===toLocalDateStr(new Date())} onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients}/>)}
     </div>
     {pastTasks.length>0&&<details style={{marginTop:20,background:"#fff",padding:15,borderRadius:10,border:"1px solid var(--border)"}}>
       <summary style={{cursor:"pointer",fontWeight:600}}>📚 משלוחים קודמים ({pastTasks.length})</summary>
@@ -1737,6 +1837,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
     </>}
     {showDriverManager&&<DriverManagerModal drivers={drivers} onClose={()=>setShowDriverManager(false)} onUpdate={loadData}/>}
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
+    {showSplitByDriverModal&&<SplitByDriverModal date={showSplitByDriverModal.date} tasks={showSplitByDriverModal.tasks} drivers={drivers} onClose={()=>setShowSplitByDriverModal(null)}/>}
   </div>;
 }
 

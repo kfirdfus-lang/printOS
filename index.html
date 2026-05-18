@@ -7602,7 +7602,7 @@ function App(){
 
   const hm=hashMode||"";
   if(hm.startsWith("#vacation-form/")){
-    const raw=hm.slice(16);
+    const raw=hm.slice("#vacation-form/".length);
     const slug=decodeURIComponent(raw.split(/[?&#]/)[0].replace(/^\/+/,""));
     if(slug)return<VacationFormPage slug={slug}/>;
   }

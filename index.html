@@ -121,6 +121,19 @@ const sb=async(path,o={})=>{
 };
 
 const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי שחור לבן","אופסט","עבודות חוץ","משלוחים","תזכורות","ביגוד ומוצרי פרסום","מתקני תצוגה ומוצרים נלווים"];
+const TASK_DONE_STATUSES=["הושלם","הושלמה"];
+const RECENTLY_COMPLETED_MS=3*24*60*60*1000;
+const threeDaysAgoIso=()=>new Date(Date.now()-RECENTLY_COMPLETED_MS).toISOString();
+const isTaskActive=t=>!t.archived_at&&!TASK_DONE_STATUSES.includes(t.status);
+const isTaskRecentlyCompleted=t=>{
+  if(t.archived_at||!TASK_DONE_STATUSES.includes(t.status)||!t.completed_at)return false;
+  return new Date(t.completed_at).getTime()>=Date.now()-RECENTLY_COMPLETED_MS;
+};
+const archiveStaleCompleted=async()=>{
+  try{
+    await sb(`tasks?archived_at=is.null&completed_at=lt.${threeDaysAgoIso()}&status=in.(הושלם,הושלמה)`,{method:"PATCH",body:JSON.stringify({archived_at:new Date().toISOString()})});
+  }catch(e){console.warn("archiveStaleCompleted",e);}
+};
 
 const DEPT_COLORS={
   "פורמט רחב":"#2563EB","דיגיטלי צבעוני":"#7C3AED","דיגיטלי שחור לבן":"#475569",
@@ -375,6 +388,97 @@ function TaskNotificationButtons({task,user,onUpdate,compact,clients}){
   const btnPad=compact?"2px 5px":"4px 8px";
   const btnFont=compact?9:11;
   return<><div style={{display:"flex",gap:compact?3:4,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>{notifications.map(n=><button type="button" key={n.type} onClick={()=>setActiveModal(n.type)} title={n.sentAt?`נשלח ב-${new Date(n.sentAt).toLocaleString("he-IL")}`:`שלח הודעת ${n.label} ללקוח`} style={{padding:btnPad,background:n.sentAt?"#d1fae5":"#fff",color:n.sentAt?"#065f46":n.color,border:`1px solid ${n.sentAt?"#10b981":n.color}`,borderRadius:6,cursor:"pointer",fontSize:btnFont,display:"flex",alignItems:"center",gap:compact?2:4,fontFamily:"inherit",whiteSpace:"nowrap"}}>{n.sentAt?"✓":n.icon} {n.label}</button>)}</div>{activeModal&&<ClientNotificationModal task={task} notificationType={activeModal} clients={clients} user={user} onClose={()=>setActiveModal(null)} onSent={()=>{onUpdate?.();setActiveModal(null);}}/>}</>;
+}
+
+function TaskInquiryButton({task,user,compact}){
+  const [showModal,setShowModal]=useState(false);
+  return<>
+    <button type="button" onClick={e=>{e.stopPropagation();setShowModal(true);}} title="פנה לאחראי" style={{padding:compact?"3px 6px":"4px 8px",fontSize:compact?10:11,background:"#fff",color:"#7c3aed",border:"1px solid #7c3aed",borderRadius:6,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📧 פנייה</button>
+    {showModal&&<TaskInquiryModal task={task} user={user} onClose={()=>setShowModal(false)}/>}
+  </>;
+}
+
+function TaskInquiryModal({task,user,onClose}){
+  const [step,setStep]=useState("selectTemplate");
+  const [selectedTemplate,setSelectedTemplate]=useState(null);
+  const [savedRecipients,setSavedRecipients]=useState([]);
+  const [selectedRecipient,setSelectedRecipient]=useState(null);
+  const [showAddNew,setShowAddNew]=useState(false);
+  const [newEmail,setNewEmail]=useState("");
+  const [newName,setNewName]=useState("");
+  const [newRole,setNewRole]=useState("");
+  const [subject,setSubject]=useState("");
+  const [body,setBody]=useState("");
+  const [sending,setSending]=useState(false);
+  const fld={width:"100%",padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13};
+  const orderNum=task.bina_order_id||String(task.id||"").slice(0,8)||"---";
+  const clientName=task.client_name||"לקוח";
+  const taskTitle=task.title||"";
+  useEffect(()=>{sb("task_inquiry_recipients?order=is_default.desc,usage_count.desc,name.asc").then(d=>setSavedRecipients(Array.isArray(d)?d:[])).catch(()=>setSavedRecipients([]));},[]);
+  const templates=[
+    {id:"status",icon:"🔍",label:"סטטוס",color:"#3b82f6",title:"מה הסטטוס?",buildContent:()=>({subject:`בקשת עדכון סטטוס - ${clientName} (#${orderNum})`,body:`שלום,\n\nאשמח לקבל עדכון על סטטוס המשימה:\n\nלקוח: ${clientName}\nהזמנה: #${orderNum}\nתיאור: ${taskTitle}\n\nהאם יש התקדמות? באיזה שלב אנחנו?\n\nתודה,\n${user?.name||""}`})},
+    {id:"reminder",icon:"⏰",label:"תזכורת",color:"#f59e0b",title:"תזכורת לתאריך",buildContent:()=>({subject:`תזכורת - ${clientName} (#${orderNum})`,body:`שלום,\n\nתזכורת לגבי המשימה:\n\nלקוח: ${clientName}\nהזמנה: #${orderNum}\nתיאור: ${taskTitle}\n\nההזמנה צריכה להיות מוכנה עד תאריך: [הזן תאריך]\n\nאנא וודא שאנחנו בלוח הזמנים.\n\nתודה,\n${user?.name||""}`})},
+    {id:"urgent",icon:"🚨",label:"דחיפות",color:"#ef4444",title:"שינוי / דחיפות",buildContent:()=>({subject:`🚨 דחוף - שינוי בהזמנה - ${clientName} (#${orderNum})`,body:`שלום,\n\n⚠️ עדכון דחוף לגבי המשימה:\n\nלקוח: ${clientName}\nהזמנה: #${orderNum}\nתיאור: ${taskTitle}\n\nיש שינוי / דחיפות:\n[פרט]\n\nהאם אפשר להתאים בלוח הזמנים?\n\nתודה,\n${user?.name||""}`})},
+    {id:"update",icon:"✓",label:"עדכון כשמוכן",color:"#10b981",title:"תן עדכון כשמוכן",buildContent:()=>({subject:`בקשת עדכון בסיום - ${clientName} (#${orderNum})`,body:`שלום,\n\nאשמח שתעדכן אותי ברגע שהמשימה מוכנה:\n\nלקוח: ${clientName}\nהזמנה: #${orderNum}\nתיאור: ${taskTitle}\n\nזה חשוב לתיאום ההמשך.\n\nתודה,\n${user?.name||""}`})},
+  ];
+  const pickTemplate=t=>{setSelectedTemplate(t);const x=t.buildContent();setSubject(x.subject);setBody(x.body);setStep("selectRecipient");};
+  const pickRecipient=async r=>{setSelectedRecipient(r);try{await sb(`task_inquiry_recipients?id=eq.${r.id}`,{method:"PATCH",body:JSON.stringify({usage_count:(r.usage_count||0)+1,last_used_at:new Date().toISOString()})});}catch(_){}setStep("edit");};
+  const addRecipient=async()=>{
+    if(!newEmail.trim()||!newName.trim()){window.alert("יש למלא שם ומייל");return;}
+    if(!newEmail.includes("@")){window.alert("כתובת מייל לא תקינה");return;}
+    try{
+      const result=await sb("task_inquiry_recipients",{method:"POST",body:JSON.stringify({name:newName.trim(),email:newEmail.trim().toLowerCase(),role:newRole.trim()||null,is_default:savedRecipients.length===0,usage_count:1,created_by:user?.name||"unknown"}),headers:{Prefer:"return=representation"}});
+      const row=Array.isArray(result)?result[0]:result;
+      if(row){setSelectedRecipient(row);const u=await sb("task_inquiry_recipients?order=is_default.desc,usage_count.desc,name.asc");setSavedRecipients(Array.isArray(u)?u:[]);setShowAddNew(false);setNewEmail("");setNewName("");setNewRole("");setStep("edit");}
+    }catch(e){const m=e.message||String(e);window.alert(m.includes("duplicate")||m.includes("unique")?"כתובת מייל זו כבר קיימת במאגר":"שגיאה: "+m);}
+  };
+  const sendInquiry=async()=>{
+    if(!subject.trim()||!body.trim()){window.alert("יש למלא נושא ותוכן");return;}
+    setSending(true);setStep("sending");
+    try{
+      const html=`<div style="direction:rtl;font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#333;">${body.replace(/\n/g,"<br>")}</div>`;
+      await sendEmail({to:selectedRecipient.email,cc:[ADMIN_NOTIFY_EMAIL],subject,html,text:body,from:"דפוס נטלי <orders@natalie-print.com>"});
+      window.alert(`✅ הפנייה נשלחה ל-${selectedRecipient.name}!`);onClose();
+    }catch(e){window.alert("שגיאה בשליחה: "+(e.message||String(e)));setStep("edit");}
+    finally{setSending(false);}
+  };
+  return<Modal open={true} onClose={onClose} title="📧 פנייה לאחראי" maxWidth={600}>
+    <div style={{direction:"rtl"}}>
+      <div style={{background:"#f9fafb",padding:10,borderRadius:6,marginBottom:15,fontSize:13}}><strong>{clientName}</strong>{task.bina_order_id&&<> · <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></>}{taskTitle&&<div style={{color:"#6b7280",marginTop:3}}>{taskTitle}</div>}</div>
+      {step==="selectTemplate"&&<><p style={{margin:"0 0 15px",color:"#6b7280"}}>בחר תבנית פנייה:</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{templates.map(t=><button type="button" key={t.id} onClick={()=>pickTemplate(t)} style={{padding:15,background:"#fff",border:`2px solid ${t.color}`,borderRadius:8,cursor:"pointer",textAlign:"right",fontFamily:"inherit"}}><div style={{fontSize:24,marginBottom:4}}>{t.icon}</div><div style={{fontWeight:600,color:t.color}}>{t.label}</div><div style={{fontSize:11,color:"#6b7280",marginTop:4}}>{t.title}</div></button>)}</div><button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button></>}
+      {step==="selectRecipient"&&selectedTemplate&&<><div style={{background:selectedTemplate.color+"20",padding:10,borderRadius:6,marginBottom:15,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontWeight:600,color:selectedTemplate.color}}>{selectedTemplate.icon} {selectedTemplate.title}</div><button type="button" onClick={()=>setStep("selectTemplate")} style={{background:"transparent",border:"none",color:selectedTemplate.color,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>שנה</button></div><p style={{margin:"0 0 12px",color:"#6b7280"}}>למי לשלוח?</p>{savedRecipients.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>{savedRecipients.map(r=><button type="button" key={r.id} onClick={()=>pickRecipient(r)} style={{padding:12,background:"#f9fafb",border:"2px solid transparent",borderRadius:8,cursor:"pointer",textAlign:"right",fontFamily:"inherit",width:"100%"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#7c3aed"} onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><div><div style={{fontWeight:600}}>{r.is_default?"⭐ ":""}{r.name}{r.role&&<span style={{color:"#6b7280",fontSize:12,marginRight:8}}> · {r.role}</span>}</div><div style={{fontSize:12,color:"#6b7280",marginTop:2,direction:"ltr",textAlign:"right"}}>{r.email}</div></div>{r.usage_count>0&&<div style={{fontSize:11,color:"#9ca3af"}}>{r.usage_count} פניות</div>}</div></button>)}</div>}{!showAddNew?<button type="button" onClick={()=>setShowAddNew(true)} style={{width:"100%",padding:10,background:"transparent",border:"2px dashed #d1d5db",borderRadius:8,cursor:"pointer",color:"#6b7280",fontSize:13,fontFamily:"inherit"}}>➕ הוסף נמען חדש</button>:<div style={{padding:15,background:"#f9fafb",borderRadius:8,border:"1px solid #d1d5db"}}><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="שם הנמען *" style={{...fld,padding:8,marginBottom:8}} autoFocus/><input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@example.com *" style={{...fld,padding:8,marginBottom:8,direction:"ltr"}}/><input value={newRole} onChange={e=>setNewRole(e.target.value)} placeholder="תפקיד (אופציונלי)" style={{...fld,padding:8,marginBottom:10}}/><div style={{display:"flex",gap:8}}><button type="button" onClick={()=>{setShowAddNew(false);setNewEmail("");setNewName("");setNewRole("");}} style={{flex:1,padding:8,fontSize:13,cursor:"pointer",fontFamily:"inherit",border:"1px solid var(--border)",borderRadius:6,background:"#fff"}}>ביטול</button><button type="button" onClick={addRecipient} style={{flex:2,padding:8,background:"#7c3aed",color:"#fff",border:"none",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>שמור והמשך</button></div></div>}<button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button></>}
+      {step==="edit"&&selectedTemplate&&selectedRecipient&&<><div style={{background:selectedTemplate.color+"20",padding:10,borderRadius:6,marginBottom:10}}><div style={{fontWeight:600,color:selectedTemplate.color}}>{selectedTemplate.icon} {selectedTemplate.title}</div></div><div style={{background:"#f0fdfa",padding:10,borderRadius:6,marginBottom:15,fontSize:13}}><div>📧 שולח אל: <strong>{selectedRecipient.name}</strong></div><div style={{color:"#6b7280",direction:"ltr",textAlign:"right",marginTop:2}}>{selectedRecipient.email}</div><div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>ℹ️ CC לכפיר אוטומטי</div></div><div style={{marginBottom:12}}><label style={{display:"block",marginBottom:4,fontWeight:600,fontSize:14}}>נושא:</label><input value={subject} onChange={e=>setSubject(e.target.value)} style={fld}/></div><div style={{marginBottom:15}}><label style={{display:"block",marginBottom:4,fontWeight:600,fontSize:14}}>תוכן:</label><textarea value={body} onChange={e=>setBody(e.target.value)} style={{...fld,minHeight:200,resize:"vertical",direction:"rtl"}}/></div><div style={{display:"flex",gap:10}}><button type="button" onClick={()=>setStep("selectRecipient")} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>← חזור</button><button type="button" onClick={sendInquiry} disabled={sending} style={{flex:2,padding:12,background:sending?"#d1d5db":"#7c3aed",color:"#fff",border:"none",borderRadius:6,fontWeight:600,cursor:sending?"not-allowed":"pointer",fontFamily:"inherit"}}>📧 שלח</button></div></>}
+      {step==="sending"&&<div style={{textAlign:"center",padding:30}}><div style={{fontSize:32,marginBottom:10}}>📧</div><div>שולח...</div></div>}
+    </div>
+  </Modal>;
+}
+
+function RecentlyCompletedCard({task,onRestore}){
+  const hoursAgo=Math.floor((Date.now()-new Date(task.completed_at).getTime())/(1000*60*60));
+  const timeText=hoursAgo<1?"לפני פחות משעה":hoursAgo<24?`לפני ${hoursAgo} שעות`:`לפני ${Math.floor(hoursAgo/24)} ימים`;
+  const restore=async()=>{
+    if(!window.confirm("להחזיר את המשימה לרשימת הפעילות?"))return;
+    try{await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({completed_at:null,status:"בביצוע"})});onRestore?.();}catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  return<div style={{background:"#fff",padding:12,borderRadius:8,border:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontWeight:600,fontSize:14}}>✅ {task.client_name||"—"}{task.bina_order_id&&<span style={{color:"#9ca3af",marginRight:8,fontSize:12,direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span>}</div>
+      <div style={{fontSize:13,color:"#6b7280",marginTop:3}}>{task.title}</div>
+      <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>הושלם {timeText}{task.sales_agent?` · ${task.sales_agent}`:""}</div>
+    </div>
+    <button type="button" onClick={restore} title="החזר לרשימת הפעילות" style={{padding:"6px 10px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit",flexShrink:0}}>↩️ החזר</button>
+  </div>;
+}
+
+function RecentlyCompletedTab({tasks,loading,onRestore}){
+  const recent=useMemo(()=>tasks.filter(isTaskRecentlyCompleted).sort((a,b)=>new Date(b.completed_at)-new Date(a.completed_at)),[tasks]);
+  if(loading)return<div style={{padding:30,textAlign:"center"}}><Spinner sz={28}/></div>;
+  return<div style={{padding:4}}>
+    <h2 style={{marginTop:0,fontSize:22,fontWeight:800}}>🗂️ משימות שהושלמו ב-3 ימים האחרונים</h2>
+    <div style={{background:"#f0fdfa",padding:12,borderRadius:8,marginBottom:15,fontSize:13,color:"#0d9488"}}>ℹ️ כאן מופיעות משימות שהושלמו לאחרונה. אחרי 3 ימים — הן יעברו לארכיון המלא.</div>
+    {recent.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>🎉 אין משימות שהושלמו לאחרונה</div>:
+    <><div style={{marginBottom:10,color:"#6b7280",fontSize:13}}>{recent.length} משימות</div><div style={{display:"grid",gap:8}}>{recent.map(t=><RecentlyCompletedCard key={t.id} task={t} onRestore={onRestore}/>)}</div></>}
+  </div>;
 }
 
 const escHtml=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -1438,7 +1542,7 @@ function EditShipmentModal({task,drivers,onClose,onUpdate}){
   </Modal>;
 }
 
-function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote}){
+function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote,user}){
   const [saving,setSaving]=useState(false);
   const [showEdit,setShowEdit]=useState(false);
   const driver=drivers.find(d=>d.id===task.assigned_driver_id);
@@ -1494,7 +1598,8 @@ function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote}
           {drivers.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {user&&<TaskInquiryButton task={task} user={user} compact/>}
         <button type="button" onClick={()=>setShowEdit(true)} style={{flex:1,minWidth:120,padding:10,borderRadius:8,border:"none",background:"#7c3aed",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>
         {onOpenDeliveryNote&&<button type="button" onClick={()=>{onOpenDeliveryNote(task);onClose();}} style={{flex:1,minWidth:120,padding:10,borderRadius:8,border:"none",background:"#0891b2",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>📋 תעודת משלוח</button>}
         <button type="button" onClick={async()=>{
@@ -1561,7 +1666,8 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
       {driver&&<div style={{fontSize:10,color:isDelivered?textMuted:driver.color,marginTop:4,fontWeight:600}}>🚛 {driver.name}</div>}
       {!compact&&task.delivery_special_notes&&<div style={{fontSize:10,marginTop:4,padding:4,background:isDelivered?"#f3f4f6":"#fef3c7",borderRadius:4,color:isDelivered?"#6b7280":"#78350f"}}>💬 {task.delivery_special_notes}</div>}
       {user&&!isDelivered&&<div onClick={e=>e.stopPropagation()} style={{marginTop:compact?4:6}}><TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRefresh} compact={!!compact}/></div>}
-        {!readonly&&!compact&&!isDelivered&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)"}} onClick={e=>e.stopPropagation()}>
+        {!readonly&&!compact&&!isDelivered&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+          {user&&<TaskInquiryButton task={task} user={user} compact/>}
           <button type="button" onClick={handleCopySingle} title="העתק משלוח זה" style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅ הועתק":"📋 העתק"}</button>
           <button type="button" onClick={e=>{e.stopPropagation();setShowEditDirect(true);}} title="ערוך משלוח" style={{padding:"3px 6px",fontSize:10,background:"#7c3aed",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
           <button type="button" onClick={handleWhatsAppSingle} title="שלח ב-WhatsApp" style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
@@ -1571,7 +1677,7 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
           {task.delivery_marked_at&&<div style={{fontSize:10,color:"#9ca3af",marginTop:2}}>{new Date(task.delivery_marked_at).toLocaleDateString("he-IL")}</div>}
         </div>}
     </div>
-    {showDetails&&<ShipmentDetailsModal task={task} drivers={drivers} onClose={()=>setShowDetails(false)} onUpdate={onRefresh} onOpenDeliveryNote={onOpenDeliveryNote}/>}
+    {showDetails&&<ShipmentDetailsModal task={task} drivers={drivers} onClose={()=>setShowDetails(false)} onUpdate={onRefresh} onOpenDeliveryNote={onOpenDeliveryNote} user={user}/>}
     {showEditDirect&&<EditShipmentModal task={task} drivers={drivers} onClose={()=>setShowEditDirect(false)} onUpdate={onRefresh}/>}
   </>;
 }
@@ -2187,7 +2293,7 @@ function CalendarTab({tasks,taskItems,user,isA,onTaskClick,clients,onTaskRefresh
   const monthNames=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
 
   const getTasksForDay=(dateStr)=>{
-    let filtered=tasks.filter(t=>t.due_date===dateStr);
+    let filtered=tasks.filter(t=>t.due_date===dateStr&&isTaskActive(t));
     if(deptFilter!=="הכל"){
       const ids=new Set((taskItems||[]).filter(i=>i.department===deptFilter&&i.status!=="ארכיון").map(i=>i.task_id));
       filtered=filtered.filter(t=>!t.has_items?t.dept===deptFilter:ids.has(t.id));
@@ -2240,6 +2346,7 @@ function CalendarTab({tasks,taskItems,user,isA,onTaskClick,clients,onTaskRefresh
                 <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={{...LABEL_PRINT_BTN_STYLE,padding:"2px 6px",flexShrink:0}}>🏷️</button>
                 <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={{...DELIVERY_NOTE_BTN_STYLE,padding:"2px 4px",fontSize:8,whiteSpace:"normal",lineHeight:1.15,textAlign:"center",maxWidth:72}}>📋 תעודת משלוח</button>
                 <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskMoveToDeliveryBtn task={t}/></div>
+                <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskInquiryButton task={t} user={user} compact/></div>
                 <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={onTaskRefresh} compact/></div>
 
               </div>;
@@ -7566,6 +7673,7 @@ function App(){
     const cu=u||user;if(!cu)return;
     setLoading(true);
     try{
+      await archiveStaleCompleted();
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
       const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
@@ -7759,7 +7867,7 @@ function App(){
   const targetDeptForBoard=user?.role==="worker"?(user?.dept??null):(deptFilter==="all"?null:deptFilter);
   const boardTasks=tasksForDepartment(tasks,taskItems,targetDeptForBoard);
   const tasksListDept=isA?(deptFilter==="all"?null:deptFilter):(user?.dept??null);
-  const visTasks=boardTasks;
+  const visTasks=boardTasks.filter(isTaskActive);
   const byS=s=>boardTasks.filter(t=>t.status===s).length;
 
   const doAddTask=async()=>{
@@ -7859,9 +7967,10 @@ function App(){
     try{
       const patch={status:s};
       if(s==="הושלם")patch.completed_at=(new Date().toISOString());
+      else patch.completed_at=null;
       await sb(`tasks?id=eq.${id}`,{method:"PATCH",body:JSON.stringify(patch)});
-      setTasks(p=>p.map(t=>t.id===id?{...t,status:s}:t));
-      if(det?.id===id)setDet(p=>({...p,status:s}));
+      setTasks(p=>p.map(t=>t.id===id?{...t,status:s,completed_at:patch.completed_at}:t));
+      if(det?.id===id)setDet(p=>({...p,status:s,completed_at:patch.completed_at}));
       const task=tasks.find(t=>t.id===id);
       if(s==="הושלם"&&task){
         window.sendAlert(
@@ -7899,6 +8008,7 @@ function App(){
   const navs=[
     {id:"dashboard",ic:"⊟",lb:"דשבורד"},
     {id:"tasks",ic:"☑",lb:"משימות"},
+    {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
     ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
@@ -8087,7 +8197,7 @@ function App(){
             <div style={{fontWeight:700,fontSize:14,color:"var(--text)"}}>📋 משימות אחרונות</div>
             <button onClick={()=>setTab("tasks")} style={{background:"none",border:"none",color:"var(--blue)",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>הכל ←</button>
           </div>
-          {boardTasks.slice(0,5).map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid var(--border)"}}>
+          {boardTasks.filter(isTaskActive).slice(0,5).map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid var(--border)"}}>
             <div onClick={()=>setDet(t)} style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0,cursor:"pointer"}}>
               <div style={{width:4,height:36,borderRadius:4,background:DEPT_COLORS[t.dept]||"var(--blue)",flexShrink:0}}/>
               <div style={{flex:1,minWidth:0}}>
@@ -8153,6 +8263,7 @@ function App(){
               {<button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>}
               {<button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>}
               <TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={refreshAll} />
+              <TaskInquiryButton task={t} user={user} />
               <TaskMoveToDeliveryBtn task={t}/>
               {
               <button onClick={()=>{
@@ -8219,6 +8330,7 @@ function App(){
       {tab==="vacations"&&isA&&<VacationFormManager user={user}/>}
 
       {/* CALENDAR */}
+      {tab==="recently_completed"&&<RecentlyCompletedTab tasks={tasks} loading={loading} onRestore={refreshAll}/>}
       {tab==="calendar"&&<CalendarTab tasks={tasks} taskItems={taskItems} user={user} isA={isA} onTaskClick={setDet} clients={clients} onTaskRefresh={refreshAll}/>}
 
       {/* ARCHIVE (admin) */}
@@ -8366,6 +8478,7 @@ function App(){
           <button type="button" onClick={()=>openLabelPrintTask(null,det)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
           <button type="button" onClick={()=>openDeliveryNoteFromTask(null,det)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
           <TaskNotificationButtons task={det} user={user} clients={clients} onUpdate={refreshAll} />
+          <TaskInquiryButton task={det} user={user} />
           <TaskMoveToDeliveryBtn task={det}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>

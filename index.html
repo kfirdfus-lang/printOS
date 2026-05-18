@@ -134,6 +134,8 @@ const archiveStaleCompleted=async()=>{
     await sb(`tasks?archived_at=is.null&completed_at=lt.${threeDaysAgoIso()}&status=in.(הושלם,הושלמה)`,{method:"PATCH",body:JSON.stringify({archived_at:new Date().toISOString()})});
   }catch(e){console.warn("archiveStaleCompleted",e);}
 };
+const taskSchedDateKey=t=>t.scheduled_for_date?String(t.scheduled_for_date).split("T")[0]:null;
+const taskPriorityBorderColor=p=>p==="דחוף"?"#ef4444":p==="גבוהה"?"#f59e0b":"#6b7280";
 
 const DEPT_COLORS={
   "פורמט רחב":"#2563EB","דיגיטלי צבעוני":"#7C3AED","דיגיטלי שחור לבן":"#475569",
@@ -478,6 +480,140 @@ function RecentlyCompletedTab({tasks,loading,onRestore}){
     <div style={{background:"#f0fdfa",padding:12,borderRadius:8,marginBottom:15,fontSize:13,color:"#0d9488"}}>ℹ️ כאן מופיעות משימות שהושלמו לאחרונה. אחרי 3 ימים — הן יעברו לארכיון המלא.</div>
     {recent.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>🎉 אין משימות שהושלמו לאחרונה</div>:
     <><div style={{marginBottom:10,color:"#6b7280",fontSize:13}}>{recent.length} משימות</div><div style={{display:"grid",gap:8}}>{recent.map(t=><RecentlyCompletedCard key={t.id} task={t} onRestore={onRestore}/>)}</div></>}
+  </div>;
+}
+
+function useScheduleMenu(){
+  const [menu,setMenu]=useState(null);
+  const openMenu=(e,task)=>{e.preventDefault();e.stopPropagation();setMenu({task,x:e.clientX,y:e.clientY});};
+  const closeMenu=()=>setMenu(null);
+  return{menu,openMenu,closeMenu};
+}
+
+function TaskScheduleMenu({task,x,y,onClose,onUpdate,allTasks}){
+  const upcomingDays=useMemo(()=>{
+    const days=[];
+    const today=new Date();today.setHours(0,0,0,0);
+    const dayNames=["יום ראשון","יום שני","יום שלישי","יום רביעי","יום חמישי","יום שישי","שבת"];
+    for(let i=0;i<14&&days.length<5;i++){
+      const d=new Date(today);d.setDate(today.getDate()+i);
+      const dow=d.getDay();
+      if(dow===5||dow===6)continue;
+      let label;
+      if(i===0)label="היום";
+      else if(i===1)label="מחר";
+      else label=dayNames[dow];
+      days.push({date:toLocalDateStr(d),label,dayNumber:d.getDate(),monthName:d.toLocaleDateString("he-IL",{month:"short"})});
+    }
+    return days;
+  },[]);
+  const handleSchedule=async dateStr=>{
+    try{
+      const dayCount=(allTasks||[]).filter(t=>taskSchedDateKey(t)===dateStr).length;
+      await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({scheduled_for_date:dateStr,scheduled_order:dayCount+1})});
+      onUpdate?.();onClose();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const handleClear=async()=>{
+    try{
+      await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({scheduled_for_date:null,scheduled_order:null})});
+      onUpdate?.();onClose();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const label=(task.client_name||task.title||"").substring(0,25);
+  return<>
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:9998}}/>
+    <div style={{position:"fixed",top:y,left:x,background:"#fff",border:"1px solid #d1d5db",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",padding:8,zIndex:9999,minWidth:200,direction:"rtl"}}>
+      <div style={{padding:"6px 10px",fontSize:11,color:"#6b7280",borderBottom:"1px solid #f3f4f6",marginBottom:4}}>📅 תזמן את "{label}":</div>
+      {upcomingDays.map(d=>{
+        const isScheduled=taskSchedDateKey(task)===d.date;
+        return<button type="button" key={d.date} onClick={()=>handleSchedule(d.date)} style={{display:"block",width:"100%",padding:"8px 12px",textAlign:"right",background:isScheduled?"#f0fdfa":"transparent",color:isScheduled?"#0d9488":"#374151",border:"none",borderRadius:4,cursor:"pointer",fontWeight:isScheduled?600:400,fontSize:13,fontFamily:"inherit"}} onMouseEnter={e=>{if(!isScheduled)e.currentTarget.style.background="#f9fafb";}} onMouseLeave={e=>{if(!isScheduled)e.currentTarget.style.background="transparent";}}>
+          {isScheduled&&"⭐ "}{d.label}<span style={{color:"#9ca3af",marginRight:8,fontSize:11}}>{d.dayNumber}/{d.monthName}</span>
+        </button>;
+      })}
+      {task.scheduled_for_date&&<>
+        <div style={{borderTop:"1px solid #f3f4f6",margin:"4px 0"}}/>
+        <button type="button" onClick={handleClear} style={{display:"block",width:"100%",padding:"8px 12px",textAlign:"right",background:"transparent",color:"#ef4444",border:"none",borderRadius:4,cursor:"pointer",fontSize:13,fontFamily:"inherit"}} onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>❌ הסר תזמון</button>
+      </>}
+    </div>
+  </>;
+}
+
+function TaskScheduleCard({task,onDragStart,onContextMenu}){
+  return<div draggable onDragStart={onDragStart} onContextMenu={onContextMenu} style={{background:"#fff",border:`2px solid ${taskPriorityBorderColor(task.priority)}`,borderRadius:6,padding:8,cursor:"grab",fontSize:12}}>
+    <div style={{fontWeight:600,marginBottom:2}}>{task.client_name||"—"}</div>
+    {task.title&&<div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{task.title}</div>}
+    {task.bina_order_id&&<div style={{fontSize:10,color:"#9ca3af",marginTop:2,direction:"ltr",textAlign:"right"}}>#{task.bina_order_id}</div>}
+  </div>;
+}
+
+function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu}){
+  const [weekStart,setWeekStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());d.setHours(0,0,0,0);return d;});
+  const [draggedTask,setDraggedTask]=useState(null);
+  const weekDays=useMemo(()=>{
+    const days=[];
+    for(let i=0;i<5;i++){const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);days.push(d);}
+    return days;
+  },[weekStart]);
+  const tasksByDate=useMemo(()=>{
+    const groups={_unscheduled:[]};
+    weekDays.forEach(d=>{groups[toLocalDateStr(d)]=[];});
+    allTasks.forEach(t=>{
+      const key=taskSchedDateKey(t);
+      if(!key){groups._unscheduled.push(t);return;}
+      if(groups[key]!==undefined)groups[key].push(t);
+    });
+    Object.keys(groups).forEach(k=>{groups[k].sort((a,b)=>(a.scheduled_order||0)-(b.scheduled_order||0));});
+    return groups;
+  },[allTasks,weekDays]);
+  const handleDrop=async targetDate=>{
+    if(!draggedTask)return;
+    const isUnsched=targetDate==="_unscheduled";
+    const patch=isUnsched?{scheduled_for_date:null,scheduled_order:null}:{scheduled_for_date:targetDate,scheduled_order:(tasksByDate[targetDate]?.length||0)+1};
+    try{
+      await sb(`tasks?id=eq.${draggedTask.id}`,{method:"PATCH",body:JSON.stringify(patch)});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+    setDraggedTask(null);
+  };
+  const prevWeek=()=>{const d=new Date(weekStart);d.setDate(d.getDate()-7);setWeekStart(d);};
+  const nextWeek=()=>{const d=new Date(weekStart);d.setDate(d.getDate()+7);setWeekStart(d);};
+  const goToday=()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());d.setHours(0,0,0,0);setWeekStart(d);};
+  const todayStr=toLocalDateStr(new Date());
+  const unsched=tasksByDate._unscheduled||[];
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15,padding:"10px 15px",background:"#f9fafb",borderRadius:8,flexWrap:"wrap",gap:8}}>
+      <button type="button" onClick={prevWeek} style={{padding:"6px 12px",background:"#fff",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>← שבוע קודם</button>
+      <div style={{fontWeight:600,fontSize:15,textAlign:"center"}}>
+        {weekStart.toLocaleDateString("he-IL",{day:"numeric",month:"long"})} – {weekDays[4].toLocaleDateString("he-IL",{day:"numeric",month:"long",year:"numeric"})}
+        <button type="button" onClick={goToday} style={{display:"block",margin:"4px auto 0",fontSize:12,background:"none",border:"none",color:"#0d9488",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>היום</button>
+      </div>
+      <button type="button" onClick={nextWeek} style={{padding:"6px 12px",background:"#fff",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>שבוע הבא →</button>
+    </div>
+    {unsched.length>0&&<div onDragOver={e=>e.preventDefault()} onDrop={()=>handleDrop("_unscheduled")} style={{background:"#fef3c7",padding:15,borderRadius:8,marginBottom:15,border:"2px dashed #f59e0b"}}>
+      <h3 style={{margin:"0 0 10px",color:"#78350f",fontSize:14}}>📋 לא מתוזמן ({unsched.length})</h3>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {unsched.slice(0,20).map(t=><TaskScheduleCard key={t.id} task={t} onDragStart={()=>setDraggedTask(t)} onContextMenu={e=>onScheduleMenu(e,t)}/>)}
+        {unsched.length>20&&<div style={{padding:8,fontSize:12,color:"#78350f",alignSelf:"center"}}>+{unsched.length-20} נוספות</div>}
+      </div>
+    </div>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
+      {weekDays.map(date=>{
+        const dateKey=toLocalDateStr(date);
+        const tasksForDay=tasksByDate[dateKey]||[];
+        const isCurrentDay=dateKey===todayStr;
+        return<div key={dateKey} onDragOver={e=>e.preventDefault()} onDrop={()=>handleDrop(dateKey)} style={{background:isCurrentDay?"#f0fdfa":"#f9fafb",border:`2px solid ${isCurrentDay?"#2dd4bf":"#e5e7eb"}`,borderRadius:8,padding:10,minHeight:360}}>
+          <div style={{textAlign:"center",marginBottom:10,paddingBottom:8,borderBottom:`1px solid ${isCurrentDay?"#2dd4bf":"#e5e7eb"}`}}>
+            <div style={{fontWeight:600,color:isCurrentDay?"#0d9488":"#374151"}}>{date.toLocaleDateString("he-IL",{weekday:"long"})}</div>
+            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{date.getDate()}/{date.getMonth()+1}</div>
+            <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{tasksForDay.length} משימות</div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {tasksForDay.map(t=><TaskScheduleCard key={t.id} task={t} onDragStart={()=>setDraggedTask(t)} onContextMenu={e=>onScheduleMenu(e,t)}/>)}
+          </div>
+        </div>;
+      })}
+    </div>
   </div>;
 }
 
@@ -7506,6 +7642,8 @@ function App(){
   const [taskItems,setTaskItems]=useState([]);
   const [clients,setClients]=useState([]);
   const [tab,setTab]=useState("dashboard");
+  const [tasksViewMode,setTasksViewMode]=useState("list");
+  const {menu:scheduleMenu,openMenu:openScheduleMenu,closeMenu:closeScheduleMenu}=useScheduleMenu();
   const [showSales,setShowSales]=useState(false);
   const [showQuotes,setShowQuotes]=useState(false);
   const [showDebt,setShowDebt]=useState(false);
@@ -8231,11 +8369,16 @@ function App(){
           {DEPTS.map(d=><button type="button" key={d} onClick={()=>setDeptFilter(d)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--border)"}`,background:deptFilter===d?`${DEPT_COLORS[d]||"#2563EB"}10`:"#fff",color:deptFilter===d?DEPT_COLORS[d]||"var(--blue)":"var(--text2)",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{d}</button>)}
         </div>}
 
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{display:"flex",gap:8,marginBottom:15,background:"#f3f4f6",padding:4,borderRadius:8,width:"fit-content"}}>
+          <button type="button" onClick={()=>setTasksViewMode("list")} style={{padding:"8px 16px",background:tasksViewMode==="list"?"#fff":"transparent",color:tasksViewMode==="list"?"#0d9488":"#6b7280",border:"none",borderRadius:6,cursor:"pointer",fontWeight:tasksViewMode==="list"?600:400,boxShadow:tasksViewMode==="list"?"0 1px 2px rgba(0,0,0,0.1)":"none",fontFamily:"inherit",fontSize:13}}>📋 רשימה</button>
+          <button type="button" onClick={()=>setTasksViewMode("weekly")} style={{padding:"8px 16px",background:tasksViewMode==="weekly"?"#fff":"transparent",color:tasksViewMode==="weekly"?"#0d9488":"#6b7280",border:"none",borderRadius:6,cursor:"pointer",fontWeight:tasksViewMode==="weekly"?600:400,boxShadow:tasksViewMode==="weekly"?"0 1px 2px rgba(0,0,0,0.1)":"none",fontFamily:"inherit",fontSize:13}}>📅 לוח שבועי</button>
+        </div>
+
+        {tasksViewMode==="weekly"?<WeeklyTasksView allTasks={visTasks} onUpdate={refreshAll} onScheduleMenu={openScheduleMenu}/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
           {visTasks.map(t=>{
             const stripeColor=(tasksListDept?(DEPT_COLORS[tasksListDept]||"var(--blue)"):(DEPT_COLORS[t.dept]||"var(--blue)"));
             const deptItems=(t.has_items&&tasksListDept)?(taskItems||[]).filter(i=>i.task_id===t.id&&i.department===tasksListDept&&i.status!=="ארכיון"):[];
-            return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`}} onClick={()=>setDet(t)}>
+            return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`}} onClick={()=>setDet(t)} onContextMenu={e=>openScheduleMenu(e,t)}>
             <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}{t.bina_order_id?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· #{t.bina_order_id}</span>:null}{t.total_amount!=null&&Number(t.total_amount)>0?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· {fmtCurrencySimple(t.total_amount)}</span>:null}</div>
@@ -8258,6 +8401,7 @@ function App(){
                 {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}
               </select>
               {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
+              {taskSchedDateKey(t)&&<span style={{color:"#0d9488",fontSize:11}}>🗓️ {taskSchedDateKey(t)}</span>}
               {<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
               {<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
               {<button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>}
@@ -8288,7 +8432,8 @@ function App(){
             <div style={{fontSize:36,marginBottom:10}}>📋</div>
             <div style={{fontWeight:600,fontSize:14}}>אין משימות</div>
           </div>}
-        </div>
+        </div>}
+        {scheduleMenu&&<TaskScheduleMenu task={scheduleMenu.task} x={scheduleMenu.x} y={scheduleMenu.y} onClose={closeScheduleMenu} onUpdate={refreshAll} allTasks={visTasks}/>}
       </div>}
 
       {/* CLIENTS */}

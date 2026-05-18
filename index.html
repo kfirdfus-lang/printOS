@@ -136,6 +136,33 @@ const archiveStaleCompleted=async()=>{
 };
 const taskSchedDateKey=t=>t.scheduled_for_date?String(t.scheduled_for_date).split("T")[0]:null;
 const taskPriorityBorderColor=p=>p==="דחוף"?"#ef4444":p==="גבוהה"?"#f59e0b":"#6b7280";
+const parseYmdDate=s=>{const [y,m,d]=String(s).split("T")[0].split("-").map(Number);return new Date(y,m-1,d);};
+function groupTasksByScheduledDate(tasks){
+  const groups={past:[],byDate:{},unscheduled:[]};
+  const today=new Date();today.setHours(0,0,0,0);
+  const todayStr=toLocalDateStr(today);
+  (tasks||[]).forEach(task=>{
+    const key=taskSchedDateKey(task);
+    if(!key){groups.unscheduled.push(task);return;}
+    if(key<todayStr)groups.past.push(task);
+    else{(groups.byDate[key]=groups.byDate[key]||[]).push(task);}
+  });
+  const result=[];
+  if(groups.past.length)result.push({key:"past",label:"⚠️ משימות מהעבר",tasks:groups.past,isHighlight:false,isPast:true});
+  Object.keys(groups.byDate).sort().forEach(dateStr=>{
+    const d=parseYmdDate(dateStr);
+    const isToday=dateStr===todayStr;
+    const diffDays=Math.floor((d-today)/(86400000));
+    let prefix="";
+    if(diffDays===0)prefix="היום · ";
+    else if(diffDays===1)prefix="מחר · ";
+    const dayName=d.toLocaleDateString("he-IL",{weekday:"long"});
+    const dateLabel=d.toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
+    result.push({key:dateStr,label:`📅 ${prefix}${dayName}, ${dateLabel}`,tasks:groups.byDate[dateStr],isHighlight:isToday,isPast:false});
+  });
+  if(groups.unscheduled.length)result.push({key:"unscheduled",label:"📋 לא מתוזמן",tasks:groups.unscheduled,isHighlight:false,isPast:false});
+  return result;
+}
 
 const DEPT_COLORS={
   "פורמט רחב":"#2563EB","דיגיטלי צבעוני":"#7C3AED","דיגיטלי שחור לבן":"#475569",
@@ -614,6 +641,69 @@ function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu}){
         </div>;
       })}
     </div>
+  </div>;
+}
+
+function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onScheduleMenu,markTaskItemDone,updStatus,deleteTask,setEditTask,user,clients,onUpdate}){
+  const groupedTasks=useMemo(()=>groupTasksByScheduledDate(tasks),[tasks]);
+  const renderTaskCard=t=>{
+    const stripeColor=(tasksListDept?(DEPT_COLORS[tasksListDept]||"var(--blue)"):(DEPT_COLORS[t.dept]||"var(--blue)"));
+    const deptItems=(t.has_items&&tasksListDept)?(taskItems||[]).filter(i=>i.task_id===t.id&&i.department===tasksListDept&&i.status!=="ארכיון"):[];
+    return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`}} onClick={()=>onOpenDet(t)} onContextMenu={e=>onScheduleMenu(e,t)}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}{t.bina_order_id?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· #{t.bina_order_id}</span>:null}{t.total_amount!=null&&Number(t.total_amount)>0?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· {fmtCurrencySimple(t.total_amount)}</span>:null}</div>
+          <div style={{color:"var(--text3)",fontSize:12}}>{t.client_name}{t.client_name&&" · "}{t.sales_agent&&"🎯 "+t.sales_agent+" · "}{t.dept}{t.assignee&&" · "+t.assignee}</div>
+        </div>
+        <PriBadge p={t.priority}/>
+      </div>
+      {t.has_items&&tasksListDept&&deptItems.length>0&&<div style={{marginBottom:10}} onClick={e=>e.stopPropagation()}>
+        {deptItems.map(it=><div key={it.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginTop:6,fontSize:12,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>
+          <span style={{color:it.status==="מוכן"?"var(--text3)":"var(--text)",fontWeight:it.status==="מוכן"?500:600}}>
+            └ {it.description}{it.quantity!=null&&Number(it.quantity)>0?` × ${it.quantity}`:""} {it.status==="מוכן"?"✓":""}
+          </span>
+          {it.status!=="מוכן"&&<button type="button" onClick={()=>markTaskItemDone(it,t.id)} style={{padding:"4px 10px",borderRadius:7,border:"1px solid var(--green)",background:"var(--green-light)",color:"var(--green)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✅ סמן כמוכן</button>}
+        </div>)}
+      </div>}
+      {t.has_items&&!tasksListDept&&<div style={{fontSize:11,color:"var(--text3)",marginBottom:10,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>הזמנה עם פריטים לפי מחלקות — בחר מחלקה מהסינון למעלה כדי לראות ולסמן פריטים.</div>}
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+        <Badge status={t.status}/>
+        <select value={t.status} onChange={e=>updStatus(t.id,e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,padding:"4px 9px",color:"var(--text)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",direction:"rtl"}}>
+          {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
+        {taskSchedDateKey(t)&&<span style={{color:"#0d9488",fontSize:11}}>🗓️ {taskSchedDateKey(t)}</span>}
+        <button type="button" onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>
+        <button type="button" onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>
+        <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
+        <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
+        <TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={onUpdate} />
+        <TaskInquiryButton task={t} user={user} />
+        <TaskMoveToDeliveryBtn task={t}/>
+        <button type="button" onClick={()=>{
+          const recipients={"כפיר":"kfir.dfus@gmail.com","נטלי":"natalie.zem@gmail.com","דניאל":"daniel.natalie.print@gmail.com","אדם":"adam.dfusnatalie@gmail.com","איריס":"iris.z726@gmail.com","ברק":"BARAKDFUS268@gmail.com"};
+          const name=window.prompt("שלח תזכורת למי?\n"+Object.keys(recipients).join(" / "));
+          if(!name)return;
+          const email=recipients[name];
+          if(!email){notify("לא נמצא","#DC2626");return;}
+          const msg=`תזכורת משימה:\n\nכותרת: ${t.title}\nמחלקה: ${t.dept}\nסטטוס: ${t.status}\nלקוח: ${t.client_name||"—"}\nאחראי: ${t.assignee||"—"}\nתאריך יעד: ${t.due_date||"—"}\n${t.notes?"הערות: "+t.notes:""}`;
+          sendEmail({to:email,subject:`⏰ תזכורת: ${t.title}`,text:msg}).then(()=>notify(`📧 נשלח ל-${name}!`)).catch(()=>notify("שגיאה","#DC2626"));
+        }} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔔 תזכורת</button>
+      </div>
+    </div>;
+  };
+  return<div>
+    {groupedTasks.map(group=><div key={group.key} style={{marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",marginBottom:10,borderRadius:8,background:group.isHighlight?"linear-gradient(90deg, #2dd4bf 0%, #0d9488 100%)":group.isPast?"#fef3c7":"#f3f4f6",color:group.isHighlight?"white":group.isPast?"#78350f":"#374151",fontWeight:600,boxShadow:group.isHighlight?"0 2px 4px rgba(13,148,136,0.2)":"none"}}>
+        <div style={{flex:1,fontSize:14}}>{group.label}</div>
+        <div style={{fontSize:12,padding:"2px 10px",borderRadius:12,background:group.isHighlight?"rgba(255,255,255,0.25)":"white",color:group.isHighlight?"white":"#6b7280",fontWeight:600}}>{group.tasks.length}</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>{group.tasks.map(renderTaskCard)}</div>
+    </div>)}
+    {tasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
+      <div style={{fontSize:36,marginBottom:10}}>📋</div>
+      <div style={{fontWeight:600,fontSize:14}}>אין משימות</div>
+    </div>}
   </div>;
 }
 
@@ -8374,65 +8464,7 @@ function App(){
           <button type="button" onClick={()=>setTasksViewMode("weekly")} style={{padding:"8px 16px",background:tasksViewMode==="weekly"?"#fff":"transparent",color:tasksViewMode==="weekly"?"#0d9488":"#6b7280",border:"none",borderRadius:6,cursor:"pointer",fontWeight:tasksViewMode==="weekly"?600:400,boxShadow:tasksViewMode==="weekly"?"0 1px 2px rgba(0,0,0,0.1)":"none",fontFamily:"inherit",fontSize:13}}>📅 לוח שבועי</button>
         </div>
 
-        {tasksViewMode==="weekly"?<WeeklyTasksView allTasks={visTasks} onUpdate={refreshAll} onScheduleMenu={openScheduleMenu}/>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {visTasks.map(t=>{
-            const stripeColor=(tasksListDept?(DEPT_COLORS[tasksListDept]||"var(--blue)"):(DEPT_COLORS[t.dept]||"var(--blue)"));
-            const deptItems=(t.has_items&&tasksListDept)?(taskItems||[]).filter(i=>i.task_id===t.id&&i.department===tasksListDept&&i.status!=="ארכיון"):[];
-            return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`}} onClick={()=>setDet(t)} onContextMenu={e=>openScheduleMenu(e,t)}>
-            <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}{t.bina_order_id?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· #{t.bina_order_id}</span>:null}{t.total_amount!=null&&Number(t.total_amount)>0?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· {fmtCurrencySimple(t.total_amount)}</span>:null}</div>
-                <div style={{color:"var(--text3)",fontSize:12}}>{t.client_name}{t.client_name&&" · "}{t.sales_agent&&"🎯 "+t.sales_agent+" · "}{t.dept}{t.assignee&&" · "+t.assignee}</div>
-              </div>
-              <PriBadge p={t.priority}/>
-            </div>
-            {t.has_items&&tasksListDept&&deptItems.length>0&&<div style={{marginBottom:10}} onClick={e=>e.stopPropagation()}>
-              {deptItems.map(it=><div key={it.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginTop:6,fontSize:12,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>
-                <span style={{color:it.status==="מוכן"?"var(--text3)":"var(--text)",fontWeight:it.status==="מוכן"?500:600}}>
-                  └ {it.description}{it.quantity!=null&&Number(it.quantity)>0?` × ${it.quantity}`:""} {it.status==="מוכן"?"✓":""}
-                </span>
-                {it.status!=="מוכן"&&<button type="button" onClick={()=>markTaskItemDone(it,t.id)} style={{padding:"4px 10px",borderRadius:7,border:"1px solid var(--green)",background:"var(--green-light)",color:"var(--green)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>✅ סמן כמוכן</button>}
-              </div>)}
-            </div>}
-            {t.has_items&&!tasksListDept&&<div style={{fontSize:11,color:"var(--text3)",marginBottom:10,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>הזמנה עם פריטים לפי מחלקות — בחר מחלקה מהסינון למעלה כדי לראות ולסמן פריטים.</div>}
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-              <Badge status={t.status}/>
-              <select value={t.status} onChange={e=>updStatus(t.id,e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,padding:"4px 9px",color:"var(--text)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",direction:"rtl"}}>
-                {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}
-              </select>
-              {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
-              {taskSchedDateKey(t)&&<span style={{color:"#0d9488",fontSize:11}}>🗓️ {taskSchedDateKey(t)}</span>}
-              {<button onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>}
-              {<button onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>}
-              {<button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>}
-              {<button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>}
-              <TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={refreshAll} />
-              <TaskInquiryButton task={t} user={user} />
-              <TaskMoveToDeliveryBtn task={t}/>
-              {
-              <button onClick={()=>{
-                const recipients={
-                  "כפיר":"kfir.dfus@gmail.com",
-                  "נטלי":"natalie.zem@gmail.com",
-                  "דניאל":"daniel.natalie.print@gmail.com",
-                  "אדם":"adam.dfusnatalie@gmail.com",
-                  "איריס":"iris.z726@gmail.com",
-                  "ברק":"BARAKDFUS268@gmail.com",
-                };
-                const name=window.prompt("שלח תזכורת למי?\n"+Object.keys(recipients).join(" / "));
-                if(!name)return;
-                const email=recipients[name];
-                if(!email){notify("לא נמצא","#DC2626");return;}
-                const msg=`תזכורת משימה:\n\nכותרת: ${t.title}\nמחלקה: ${t.dept}\nסטטוס: ${t.status}\nלקוח: ${t.client_name||"—"}\nאחראי: ${t.assignee||"—"}\nתאריך יעד: ${t.due_date||"—"}\n${t.notes?"הערות: "+t.notes:""}`;
-                sendEmail({to:email,subject:`⏰ תזכורת: ${t.title}`,text:msg}).then(()=>notify(`📧 נשלח ל-${name}!`)).catch(()=>notify("שגיאה","#DC2626"));
-              }} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--blue-mid)",background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🔔 תזכורת</button>}
-            </div>
-          </div>})}
-          {visTasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
-            <div style={{fontSize:36,marginBottom:10}}>📋</div>
-            <div style={{fontWeight:600,fontSize:14}}>אין משימות</div>
-          </div>}
-        </div>}
+        {tasksViewMode==="weekly"?<WeeklyTasksView allTasks={visTasks} onUpdate={refreshAll} onScheduleMenu={openScheduleMenu}/>:<TasksListView tasks={visTasks} loading={loading} tasksListDept={tasksListDept} taskItems={taskItems} onOpenDet={setDet} onScheduleMenu={openScheduleMenu} markTaskItemDone={markTaskItemDone} updStatus={updStatus} deleteTask={deleteTask} setEditTask={setEditTask} user={user} clients={clients} onUpdate={refreshAll}/>}
         {scheduleMenu&&<TaskScheduleMenu task={scheduleMenu.task} x={scheduleMenu.x} y={scheduleMenu.y} onClose={closeScheduleMenu} onUpdate={refreshAll} allTasks={visTasks}/>}
       </div>}
 

@@ -6585,6 +6585,475 @@ function tasksForDepartment(allTasks, taskItems, targetDept) {
   });
 }
 
+const SIGNUP_MODAL_OVERLAY={position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16};
+const generateSignupToken=()=>{
+  const chars="abcdefghijklmnopqrstuvwxyz0123456789";
+  let token="";
+  for(let i=0;i<16;i++)token+=chars[Math.floor(Math.random()*chars.length)];
+  return token;
+};
+const parseBillingAddressForBina=(addr)=>{
+  const t=String(addr||"").trim();
+  if(!t)return{custCity:"תל אביב",custAddress:""};
+  const parts=t.split(/[,،]/).map(s=>s.trim()).filter(Boolean);
+  if(parts.length>=2)return{custCity:parts[parts.length-1],custAddress:parts.slice(0,-1).join(", ")};
+  return{custCity:"תל אביב",custAddress:t};
+};
+const signupPhoneDigits=s=>String(s||"").replace(/\D/g,"");
+
+function buildThankYouEmail(customerName,businessOrName){
+  const cn=escHtml(customerName);
+  const bn=escHtml(businessOrName);
+  return`<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif;direction:rtl;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;">
+    <div style="background:#ffffff;padding:30px 20px;text-align:center;">
+      <div style="font-size:32px;font-weight:700;color:#0d9488;letter-spacing:2px;">NATALIE</div>
+      <div style="color:#134e4a;font-size:13px;margin-top:4px;">פתרונות הדפסה</div>
+    </div>
+    <div style="height:4px;background:linear-gradient(90deg,#2dd4bf 0%,#0d9488 100%);"></div>
+    <div style="padding:30px 28px;">
+      <h1 style="margin:0 0 20px;color:#0d9488;font-size:24px;">✅ תודה ${cn}!</h1>
+      <p style="color:#475569;font-size:15px;line-height:1.7;">קיבלנו את פרטיך עבור <strong>${bn}</strong>.</p>
+      <p style="color:#475569;font-size:15px;line-height:1.7;">אנו נעבד את המידע ונחזור אליך בהקדם עם פתיחת הכרטיס שלך אצלנו.</p>
+      <div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;">
+        <div style="color:#0d9488;font-weight:600;margin-bottom:8px;">📞 לכל שאלה אנו זמינים:</div>
+        <div style="color:#134e4a;line-height:1.8;">
+          טלפון: <span style="direction:ltr;display:inline-block;">03-6815703</span><br/>
+          מייל: <a href="mailto:orders@natalie-print.com" style="color:#0d9488;">orders@natalie-print.com</a>
+        </div>
+      </div>
+      <p style="color:#475569;font-size:14px;margin-top:25px;">בברכה,<br/><strong style="color:#0d9488;">צוות דפוס נטלי</strong></p>
+    </div>
+    <div style="height:3px;background:linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%);"></div>
+    <div style="background:#f8fafc;padding:18px;text-align:center;color:#64748b;font-size:13px;">
+      natalie-print.com  •  <span style="direction:ltr;display:inline-block;">03-6815703</span>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function SignupFormField({label,value,onChange,placeholder,type="text",ltr,textarea}){
+  const base={width:"100%",padding:10,borderRadius:6,border:"1px solid #d1d5db",fontSize:14,direction:ltr?"ltr":"rtl"};
+  return<div style={{marginBottom:12}}>
+    <label style={{display:"block",marginBottom:4,fontWeight:600,color:"#134e4a",fontSize:14}}>{label}</label>
+    {textarea?<textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{...base,minHeight:60,fontFamily:"inherit"}}/>:
+    <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={base}/>}
+  </div>;
+}
+
+function SignupLinkGeneratorModal({user,onClose,onCreated}){
+  const [sentToName,setSentToName]=useState("");
+  const [sentToContact,setSentToContact]=useState("");
+  const [generatedLink,setGeneratedLink]=useState(null);
+  const [generating,setGenerating]=useState(false);
+  const handleGenerate=async()=>{
+    if(!sentToName.trim()){alert("יש למלא שם נמען");return;}
+    setGenerating(true);
+    try{
+      const token=generateSignupToken();
+      const result=await sb("client_signup_forms",{
+        method:"POST",
+        body:JSON.stringify({
+          token,
+          client_type:"business",
+          phone:"_pending_",
+          email:"_pending_",
+          billing_address:"_pending_",
+          status:"pending",
+          sent_by:user?.name||"unknown",
+          sent_to_name:sentToName.trim(),
+          sent_to_contact:sentToContact.trim()||null
+        }),
+        headers:{Prefer:"return=representation"}
+      });
+      if(result&&result[0]){
+        const link=`${window.location.origin}${window.location.pathname||""}${window.location.search||""}#signup/${token}`;
+        setGeneratedLink(link);
+        onCreated?.();
+      }
+    }catch(e){alert("שגיאה ביצירת קישור: "+(e.message||String(e)));}
+    finally{setGenerating(false);}
+  };
+  const handleCopy=async()=>{
+    try{await navigator.clipboard.writeText(generatedLink);alert("✅ הקישור הועתק!");}
+    catch{alert("לא ניתן להעתיק — העתק ידנית");}
+  };
+  const handleWhatsApp=()=>{
+    const message=`שלום ${sentToName}! 👋\n\nלפתיחת כרטיס לקוח אצלנו בדפוס נטלי, אנא מלא את הטופס בקישור:\n${generatedLink}\n\nתודה,\nדפוס נטלי`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`,"_blank");
+  };
+  return<div onClick={onClose} style={SIGNUP_MODAL_OVERLAY}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:24,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto"}}>
+      <h2 style={{margin:"0 0 16px",color:"#0d9488"}}>📋 צור קישור פתיחת לקוח</h2>
+      {!generatedLink?<>
+        <SignupFormField label="שם הנמען / שם החברה:" value={sentToName} onChange={setSentToName} placeholder="למשל: יוסי / חברת ABC"/>
+        <SignupFormField label="טלפון/מייל (אופציונלי - לתיעוד):" value={sentToContact} onChange={setSentToContact} placeholder="0501234567 או email@example.com" ltr/>
+        <div style={{display:"flex",gap:10}}>
+          <button type="button" onClick={onClose} style={{flex:1,padding:10,borderRadius:6,border:"1px solid #d1d5db",background:"#f3f4f6",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+          <button type="button" onClick={handleGenerate} disabled={generating} style={{flex:2,padding:12,background:"#0e7490",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+            {generating?"יוצר...":"🔗 צור קישור"}
+          </button>
+        </div>
+      </>:<>
+        <div style={{padding:15,background:"#f0fdfa",borderRadius:8,marginBottom:15,border:"2px solid #2dd4bf"}}>
+          <div style={{fontWeight:600,marginBottom:8,color:"#0d9488"}}>✅ הקישור מוכן!</div>
+          <div style={{background:"white",padding:10,borderRadius:6,direction:"ltr",fontSize:13,wordBreak:"break-all",fontFamily:"monospace"}}>{generatedLink}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <button type="button" onClick={handleCopy} style={{padding:10,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📋 העתק קישור</button>
+          <button type="button" onClick={handleWhatsApp} style={{padding:10,background:"#25d366",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontWeight:600,fontFamily:"inherit"}}>📱 שלח ב-WhatsApp</button>
+        </div>
+        <div style={{fontSize:12,color:"#6b7280"}}>⏰ הקישור תקף ל-30 ימים</div>
+        <button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+      </>}
+    </div>
+  </div>;
+}
+
+function ClientSignupPage({token}){
+  const [form,setForm]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [submitting,setSubmitting]=useState(false);
+  const [submitted,setSubmitted]=useState(false);
+  const [error,setError]=useState(null);
+  const [clientType,setClientType]=useState("business");
+  const [businessName,setBusinessName]=useState("");
+  const [businessId,setBusinessId]=useState("");
+  const [fullName,setFullName]=useState("");
+  const [personalId,setPersonalId]=useState("");
+  const [phone,setPhone]=useState("");
+  const [email,setEmail]=useState("");
+  const [contactName,setContactName]=useState("");
+  const [billingAddress,setBillingAddress]=useState("");
+  const [hasShipping,setHasShipping]=useState(false);
+  const [shippingAddress,setShippingAddress]=useState("");
+  const [ordersEmail,setOrdersEmail]=useState("");
+  const [paymentTerms,setPaymentTerms]=useState("");
+  const [notes,setNotes]=useState("");
+  useEffect(()=>{
+    const load=async()=>{
+      try{
+        const r=await sb(`client_signup_forms?token=eq.${encodeURIComponent(token)}&limit=1`);
+        if(!r||r.length===0){setError("הקישור לא נמצא או פג תוקף");setLoading(false);return;}
+        const f=r[0];
+        if(new Date(f.expires_at)<new Date()){setError("הקישור פג תוקף");setLoading(false);return;}
+        if(f.submitted_at||(f.status&&f.status!=="pending")){setSubmitted(true);setLoading(false);return;}
+        setForm(f);
+        setLoading(false);
+      }catch{setError("שגיאה בטעינה");setLoading(false);}
+    };
+    load();
+  },[token]);
+  const handleSubmit=async()=>{
+    if(clientType==="business"){
+      if(!businessName.trim()||!businessId.trim()){alert("יש למלא שם חברה וח.פ");return;}
+    }else{
+      if(!fullName.trim()||!personalId.trim()){alert("יש למלא שם מלא ות.ז");return;}
+    }
+    if(!phone.trim()||!email.trim()||!billingAddress.trim()){alert("יש למלא את כל שדות החובה");return;}
+    if(!email.includes("@")){alert("יש להזין כתובת מייל תקינה");return;}
+    setSubmitting(true);
+    try{
+      const isComplete=clientType==="business"
+        ?!!(businessName.trim()&&businessId.trim()&&phone&&email&&billingAddress)
+        :!!(fullName.trim()&&personalId.trim()&&phone&&email&&billingAddress);
+      const status=isComplete?"approved":"needs_review";
+      await sb(`client_signup_forms?id=eq.${form.id}`,{
+        method:"PATCH",
+        body:JSON.stringify({
+          client_type:clientType,
+          business_name:businessName.trim()||null,
+          business_id:businessId.trim()||null,
+          full_name:fullName.trim()||null,
+          personal_id:personalId.trim()||null,
+          phone:phone.trim(),
+          email:email.trim(),
+          contact_name:contactName.trim()||null,
+          billing_address:billingAddress.trim(),
+          shipping_address:hasShipping?shippingAddress.trim():null,
+          orders_email:ordersEmail.trim()||null,
+          payment_terms:paymentTerms.trim()||null,
+          notes:notes.trim()||null,
+          status,
+          submitted_at:new Date().toISOString()
+        })
+      });
+      const customerName=clientType==="business"?(contactName||businessName):fullName;
+      const displayBiz=clientType==="business"?businessName:fullName;
+      try{
+        await sendEmail({
+          to:email.trim(),
+          cc:[ADMIN_NOTIFY_EMAIL],
+          subject:"✅ תודה! פרטיך התקבלו - דפוס נטלי",
+          from:"דפוס נטלי <orders@natalie-print.com>",
+          html:buildThankYouEmail(customerName,displayBiz),
+          text:`שלום ${customerName},\n\nתודה שמילאת את פרטיך! קיבלנו את הטופס ונחזור אליך בקרוב.\n\nדפוס נטלי\n03-6815703`
+        });
+      }catch(e){console.warn("Failed to send thank you email:",e);}
+      setSubmitted(true);
+    }catch(e){alert("שגיאה בשליחה: "+(e.message||String(e)));}
+    finally{setSubmitting(false);}
+  };
+  if(loading)return<div style={{textAlign:"center",padding:50,fontSize:18,direction:"rtl"}}>טוען...</div>;
+  if(error)return<div style={{maxWidth:500,margin:"50px auto",padding:30,textAlign:"center",direction:"rtl"}}>
+    <div style={{fontSize:48,marginBottom:20}}>⚠️</div>
+    <h2 style={{color:"#991b1b"}}>{error}</h2>
+    <p>אנא פנה לדפוס נטלי לקבלת קישור חדש.</p>
+    <p style={{marginTop:20,color:"#6b7280"}}>📞 03-6815703<br/>📧 orders@natalie-print.com</p>
+  </div>;
+  if(submitted)return<div style={{maxWidth:500,margin:"50px auto",padding:30,textAlign:"center",direction:"rtl"}}>
+    <div style={{fontSize:64,marginBottom:20}}>✅</div>
+    <h2 style={{color:"#0d9488"}}>תודה!</h2>
+    <p style={{fontSize:18,marginBottom:10}}>פרטיך התקבלו אצלנו בהצלחה.</p>
+    <p style={{color:"#6b7280"}}>נחזור אליך בהקדם.</p>
+    <div style={{marginTop:30,padding:15,background:"#f0fdfa",borderRadius:8}}>
+      📞 לכל שאלה: 03-6815703<br/>📧 orders@natalie-print.com
+    </div>
+  </div>;
+  return<div style={{minHeight:"100vh",background:"#f8fafc",padding:"20px 10px",direction:"rtl",fontFamily:"Segoe UI, Arial, sans-serif"}}>
+    <div style={{maxWidth:600,margin:"0 auto",background:"white",borderRadius:12,overflow:"hidden",boxShadow:"0 4px 6px rgba(0,0,0,0.1)"}}>
+      <div style={{background:"#ffffff",padding:30,textAlign:"center"}}>
+        <div style={{fontSize:36,fontWeight:700,color:"#0d9488",letterSpacing:2}}>NATALIE</div>
+        <div style={{color:"#134e4a",marginTop:4}}>פתרונות הדפסה</div>
+      </div>
+      <div style={{height:4,background:"linear-gradient(90deg,#2dd4bf 0%,#0d9488 100%)"}}/>
+      <div style={{padding:30}}>
+        <h1 style={{margin:"0 0 8px",color:"#0d9488",fontSize:24}}>📋 פתיחת כרטיס לקוח</h1>
+        <p style={{margin:"0 0 25px",color:"#64748b"}}>אנא מלא את הפרטים הבאים כדי שנוכל לפתוח לך כרטיס לקוח אצלנו.</p>
+        <div style={{marginBottom:20}}>
+          <label style={{display:"block",marginBottom:8,fontWeight:600,color:"#134e4a"}}>סוג לקוח:</label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {["business","private"].map(t=><button key={t} type="button" onClick={()=>setClientType(t)} style={{
+              padding:12,background:clientType===t?"#0d9488":"white",color:clientType===t?"white":"#134e4a",
+              border:`2px solid ${clientType===t?"#0d9488":"#d1d5db"}`,borderRadius:8,cursor:"pointer",fontWeight:600,fontFamily:"inherit"
+            }}>{t==="business"?"🏢 חברה":"👤 פרטי"}</button>)}
+          </div>
+        </div>
+        {clientType==="business"&&<>
+          <SignupFormField label="שם חברה *" value={businessName} onChange={setBusinessName}/>
+          <SignupFormField label="ח.פ *" value={businessId} onChange={setBusinessId} ltr/>
+        </>}
+        {clientType==="private"&&<>
+          <SignupFormField label="שם מלא *" value={fullName} onChange={setFullName}/>
+          <SignupFormField label="תעודת זהות *" value={personalId} onChange={setPersonalId} ltr/>
+        </>}
+        <h3 style={{margin:"25px 0 10px",color:"#0d9488",fontSize:16}}>📞 פרטי קשר</h3>
+        <SignupFormField label="טלפון *" value={phone} onChange={setPhone} ltr placeholder="05X-XXXXXXX"/>
+        <SignupFormField label="מייל *" value={email} onChange={setEmail} ltr type="email" placeholder="example@company.com"/>
+        {clientType==="business"&&<SignupFormField label="איש קשר" value={contactName} onChange={setContactName} placeholder="שם איש הקשר"/>}
+        <h3 style={{margin:"25px 0 10px",color:"#0d9488",fontSize:16}}>🏠 כתובות</h3>
+        <SignupFormField label="כתובת לחיוב *" value={billingAddress} onChange={setBillingAddress} placeholder="רחוב, מס׳ בית, עיר" textarea/>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:15}}>
+          <input type="checkbox" checked={hasShipping} onChange={e=>setHasShipping(e.target.checked)} style={{width:18,height:18}}/>
+          <span>כתובת משלוחים שונה?</span>
+        </label>
+        {hasShipping&&<SignupFormField label="כתובת משלוחים" value={shippingAddress} onChange={setShippingAddress} placeholder="רחוב, מס׳ בית, עיר" textarea/>}
+        <h3 style={{margin:"25px 0 10px",color:"#64748b",fontSize:16}}>⭐ פרטים נוספים (אופציונלי)</h3>
+        <SignupFormField label="מייל להזמנות (אם שונה)" value={ordersEmail} onChange={setOrdersEmail} ltr placeholder="orders@company.com"/>
+        <SignupFormField label="תנאי תשלום מועדפים" value={paymentTerms} onChange={setPaymentTerms} placeholder="למשל: שוטף+30"/>
+        <SignupFormField label="הערות" value={notes} onChange={setNotes} textarea placeholder="כל מידע נוסף שתרצה לשתף..."/>
+        <button type="button" onClick={handleSubmit} disabled={submitting} style={{
+          width:"100%",padding:16,marginTop:25,background:"#0d9488",color:"white",border:"none",borderRadius:8,
+          fontSize:16,fontWeight:600,cursor:submitting?"wait":"pointer",fontFamily:"inherit"
+        }}>{submitting?"⏳ שולח...":"✅ שלח טופס"}</button>
+      </div>
+      <div style={{height:3,background:"linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%)"}}/>
+      <div style={{background:"#f8fafc",padding:18,textAlign:"center",fontSize:13,color:"#64748b"}}>
+        natalie-print.com  •  <span style={{direction:"ltr",display:"inline-block"}}>03-6815703</span><br/>
+        <span style={{fontSize:11,color:"#94a3b8"}}>שד׳ הר ציון 104, תל אביב</span>
+      </div>
+    </div>
+  </div>;
+}
+
+const signupTabStyle=(active)=>({padding:"8px 14px",background:active?"#0d9488":"#f3f4f6",color:active?"white":"#374151",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"});
+
+function SignupDetailRow({label,value,ltr}){
+  return<div style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:10,padding:"6px 0",borderBottom:"1px solid #f3f4f6"}}>
+    <strong style={{color:"#64748b",fontSize:13}}>{label}:</strong>
+    <span style={{direction:ltr?"ltr":"rtl",textAlign:"right"}}>{value}</span>
+  </div>;
+}
+
+async function createBinaFromSignupForm(form,user){
+  const custName=(form.business_name||form.full_name||"").trim();
+  const custTz=signupPhoneDigits(form.business_id||form.personal_id);
+  if(custTz.length!==9)throw new Error("ח.פ/ת.ז חייבים 9 ספרות");
+  const {custCity,custAddress}=parseBillingAddressForBina(form.billing_address);
+  if(!custAddress.trim())throw new Error("כתובת חיוב חסרה");
+  const tel=signupPhoneDigits(form.phone);
+  if(tel.length<9||tel.length>10)throw new Error("טלפון לא תקין (9–10 ספרות)");
+  const em=String(form.orders_email||form.email||"").trim();
+  if(!em||!em.includes("@"))throw new Error("מייל לא תקין");
+  const body={
+    custName,
+    custTz,
+    custCity,
+    custAddress,
+    custGroup:form.client_type==="private"?"פרטי":"ישראל",
+    custTel:tel,
+    custCel:tel,
+    custEmail:em,
+    termsofPayment:(form.payment_terms||"").trim()||"שוטף + 30"
+  };
+  const {data,error:invE}=await supabaseClient.functions.invoke("bina-create-customer",{body});
+  if(invE)throw new Error(invE.message||"שגיאה בבינה");
+  let resRow=data;
+  if(typeof data==="string"){try{resRow=JSON.parse(data)}catch{resRow=null}}
+  resRow=Array.isArray(resRow)?resRow[0]:resRow;
+  if(!resRow)throw new Error("תשובה לא צפויה מבינה");
+  const rc=resRow.ResCode;
+  if(rc===0||rc==="0"){
+    const code=resRow.kuponId??resRow.requestId??resRow.KuponId??resRow.custId??resRow.docId??"—";
+    const binaId=code!=="—"&&code!=null&&String(code).trim()!==""?String(code):null;
+    const addrLine=`${custCity}, ${custAddress}`;
+    const notesParts=[form.notes?.trim(),form.shipping_address?`משלוחים: ${form.shipping_address}`:null,form.contact_name?`איש קשר: ${form.contact_name}`:null,`ת.ז./ח.פ.: ${custTz}`].filter(Boolean);
+    await sb("clients",{method:"POST",body:JSON.stringify({
+      name:custName,
+      phone:form.phone,
+      email:em,
+      address:addrLine,
+      payment_terms:body.termsofPayment,
+      contact_name:form.contact_name||null,
+      notes:notesParts.length?notesParts.join("\n"):null,
+      bina_customer_id:binaId,
+    })});
+    await sb(`client_signup_forms?id=eq.${form.id}`,{
+      method:"PATCH",
+      body:JSON.stringify({
+        bina_customer_id:binaId,
+        bina_synced_at:new Date().toISOString(),
+        status:"approved",
+        reviewed_at:new Date().toISOString(),
+        reviewed_by:user?.name||"unknown"
+      })
+    });
+    return binaId||code;
+  }
+  if(rc===-5||rc==="-5")throw new Error("ת.ז./ח.פ. כבר קיים במערכת");
+  throw new Error(resRow.ResMsg||resRow.ResMsgHe||"שגיאה ביצירה בבינה");
+}
+
+function SignupFormReviewModal({form,user,onClose,onUpdate}){
+  const [creating,setCreating]=useState(false);
+  const displayName=form.business_name||form.full_name||form.sent_to_name||"לקוח חדש";
+  const handleCreateInBina=async()=>{
+    if(!confirm(`לפתוח כרטיס לקוח חדש בבינה עבור ${displayName}?`))return;
+    setCreating(true);
+    try{
+      const binaId=await createBinaFromSignupForm(form,user);
+      alert(`✅ לקוח נפתח בבינה!\nמספר לקוח: ${binaId}`);
+      onUpdate?.();
+      onClose();
+    }catch(e){alert("שגיאה: "+(e.message||String(e)));}
+    finally{setCreating(false);}
+  };
+  return<div onClick={onClose} style={SIGNUP_MODAL_OVERLAY}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:24,width:"100%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",direction:"rtl"}}>
+      <h2 style={{margin:"0 0 16px",color:"#0d9488"}}>📋 פרטי טופס — {displayName}</h2>
+      <div style={{display:"grid",gap:4,marginBottom:20}}>
+        <SignupDetailRow label="סוג" value={form.client_type==="business"?"🏢 חברה":"👤 פרטי"}/>
+        {form.business_name&&<SignupDetailRow label="שם חברה" value={form.business_name}/>}
+        {form.business_id&&<SignupDetailRow label="ח.פ" value={form.business_id} ltr/>}
+        {form.full_name&&<SignupDetailRow label="שם מלא" value={form.full_name}/>}
+        {form.personal_id&&<SignupDetailRow label="ת.ז" value={form.personal_id} ltr/>}
+        {form.phone&&form.phone!=="_pending_"&&<SignupDetailRow label="טלפון" value={form.phone} ltr/>}
+        {form.email&&form.email!=="_pending_"&&<SignupDetailRow label="מייל" value={form.email} ltr/>}
+        {form.contact_name&&<SignupDetailRow label="איש קשר" value={form.contact_name}/>}
+        {form.billing_address&&form.billing_address!=="_pending_"&&<SignupDetailRow label="כתובת" value={form.billing_address}/>}
+        {form.shipping_address&&<SignupDetailRow label="כתובת משלוחים" value={form.shipping_address}/>}
+        {form.orders_email&&<SignupDetailRow label="מייל הזמנות" value={form.orders_email} ltr/>}
+        {form.payment_terms&&<SignupDetailRow label="תנאי תשלום" value={form.payment_terms}/>}
+        {form.notes&&<SignupDetailRow label="הערות" value={form.notes}/>}
+        {form.sent_to_name&&<SignupDetailRow label="נשלח ל" value={form.sent_to_name}/>}
+        {form.sent_by&&<SignupDetailRow label="נוצר ע״י" value={form.sent_by}/>}
+      </div>
+      {form.bina_synced_at?(
+        <div style={{padding:12,background:"#d1fae5",borderRadius:6,color:"#065f46"}}>
+          ✅ נוצר בבינה — מס׳ לקוח: <span style={{direction:"ltr",display:"inline-block"}}>{form.bina_customer_id}</span>
+        </div>
+      ):form.submitted_at?(
+        <button type="button" onClick={handleCreateInBina} disabled={creating} style={{
+          width:"100%",padding:14,background:"#0d9488",color:"white",border:"none",borderRadius:8,fontWeight:600,fontSize:15,cursor:"pointer",fontFamily:"inherit"
+        }}>{creating?"⏳ יוצר בבינה...":"✅ פתח כרטיס בבינה"}</button>
+      ):(
+        <div style={{padding:12,background:"#fef3c7",borderRadius:6,color:"#92400e"}}>⏳ הלקוח עדיין לא מילא את הטופס</div>
+      )}
+      <button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+    </div>
+  </div>;
+}
+
+function SignupFormCard({form,user,onUpdate}){
+  const [showDetails,setShowDetails]=useState(false);
+  const displayName=form.business_name||form.full_name||form.sent_to_name||"לקוח חדש";
+  const statusColors={pending:"#9ca3af",needs_review:"#f59e0b",approved:"#10b981",rejected:"#ef4444"};
+  const statusLabels={
+    pending:"⏳ לא מולא עדיין",
+    needs_review:"⚠️ דורש אישור",
+    approved:form.bina_synced_at?"✅ נוצר בבינה":"✅ אושר",
+    rejected:"❌ נדחה"
+  };
+  return<>
+    <div onClick={()=>setShowDetails(true)} style={{
+      background:"white",padding:15,borderRadius:8,borderRight:`4px solid ${statusColors[form.status]||"#9ca3af"}`,cursor:"pointer"
+    }}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontWeight:600,fontSize:16}}>{displayName}</div>
+          {form.submitted_at&&<div style={{fontSize:12,color:"#6b7280",marginTop:2}}>נשלח: {new Date(form.submitted_at).toLocaleString("he-IL")}</div>}
+          {form.phone&&form.phone!=="_pending_"&&<div style={{fontSize:13,color:"#374151",marginTop:4}}>📞 <span style={{direction:"ltr",display:"inline-block"}}>{form.phone}</span> · {form.email}</div>}
+          {!form.submitted_at&&form.sent_to_contact&&<div style={{fontSize:12,color:"#6b7280",marginTop:4}}>נשלח אל: {form.sent_to_contact}</div>}
+        </div>
+        <div style={{fontSize:12,color:statusColors[form.status],fontWeight:600}}>{statusLabels[form.status]||form.status}</div>
+      </div>
+    </div>
+    {showDetails&&<SignupFormReviewModal form={form} user={user} onClose={()=>setShowDetails(false)} onUpdate={onUpdate}/>}
+  </>;
+}
+
+function ClientSignupFormsList({user,onOpenGenerator,onClientsChanged}){
+  const [forms,setForms]=useState([]);
+  const [filter,setFilter]=useState("pending_review");
+  const loadForms=async()=>{
+    try{
+      const data=await sb("client_signup_forms?order=submitted_at.desc.nullslast,created_at.desc&limit=50");
+      setForms(data||[]);
+    }catch(e){console.warn(e);}
+  };
+  useEffect(()=>{
+    loadForms();
+    const interval=setInterval(loadForms,30000);
+    return()=>clearInterval(interval);
+  },[]);
+  const pendingCount=forms.filter(f=>f.status==="needs_review"||(f.status==="approved"&&!f.bina_synced_at)).length;
+  const filteredForms=forms.filter(f=>{
+    if(filter==="pending_review")return f.status==="needs_review"||(f.status==="approved"&&!f.bina_synced_at);
+    if(filter==="approved")return f.status==="approved"&&f.bina_synced_at;
+    return true;
+  });
+  return<div style={{padding:0}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>📋 טפסי לקוחות</h1>
+        <p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>טפסים דיגיטליים לפתיחת לקוח</p>
+      </div>
+      <button type="button" onClick={onOpenGenerator} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📋 צור קישור פתיחת לקוח</button>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:15,flexWrap:"wrap"}}>
+      <button type="button" onClick={()=>setFilter("pending_review")} style={signupTabStyle(filter==="pending_review")}>ממתינים ({pendingCount})</button>
+      <button type="button" onClick={()=>setFilter("approved")} style={signupTabStyle(filter==="approved")}>נוצרו בבינה</button>
+      <button type="button" onClick={()=>setFilter("all")} style={signupTabStyle(filter==="all")}>הכל</button>
+    </div>
+    {filteredForms.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>אין טפסים להצגה</div>:
+    <div style={{display:"grid",gap:10}}>{filteredForms.map(f=><SignupFormCard key={f.id} form={f} user={user} onUpdate={()=>{loadForms();onClientsChanged?.();}}/>)}</div>}
+  </div>;
+}
+
 
 // ── MAIN APP ──
 function App(){
@@ -6626,6 +7095,7 @@ function App(){
   const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
   const [moveToDeliveryModal,setMoveToDeliveryModal]=useState(null);
   const [editClientDelivery,setEditClientDelivery]=useState(null);
+  const [showSignupGenerator,setShowSignupGenerator]=useState(false);
 
   const [showReportModal,setShowReportModal]=useState(false);
   const [reportRecipients,setReportRecipients]=useState([]);
@@ -6895,6 +7365,11 @@ function App(){
   },[tab,user]);
 
   const hm=hashMode||"";
+  if(hm.startsWith("#signup/")){
+    const raw=hm.slice(8);
+    const tok=decodeURIComponent(raw.split(/[?&#]/)[0].replace(/^\/+/,""));
+    if(tok)return<ClientSignupPage token={tok}/>;
+  }
   if(hm.startsWith("#sign/")){
     const raw=hm.slice(6);
     const tok=decodeURIComponent(raw.split(/[?&#]/)[0].replace(/^\/+/,""));
@@ -7083,7 +7558,7 @@ function App(){
     {id:"dashboard",ic:"⊟",lb:"דשבורד"},
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -7367,7 +7842,10 @@ function App(){
       {tab==="clients"&&isA&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
           <div><h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",margin:0}}>אנשי קשר</h1><p style={{color:"var(--text3)",margin:"3px 0 0",fontSize:13}}>{clients.length} לקוחות</p></div>
-          <button onClick={openBinaClientModal} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--green)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>➕ לקוח חדש</button>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button type="button" onClick={()=>setShowSignupGenerator(true)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>📋 צור קישור פתיחת לקוח</button>
+            <button type="button" onClick={openBinaClientModal} style={{padding:"9px 18px",borderRadius:9,border:"none",background:"var(--green)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>➕ לקוח חדש</button>
+          </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {clients.map(c=><Card key={c.id} style={{padding:"14px 16px"}}>
@@ -7392,6 +7870,9 @@ function App(){
           </div>}
         </div>
       </div>}
+
+      {/* SIGNUP FORMS */}
+      {tab==="signup-forms"&&isA&&<ClientSignupFormsList user={user} onOpenGenerator={()=>setShowSignupGenerator(true)} onClientsChanged={refreshAll}/>}
 
       {/* CALENDAR */}
       {tab==="calendar"&&<CalendarTab tasks={tasks} taskItems={taskItems} user={user} isA={isA} onTaskClick={setDet} clients={clients} onTaskRefresh={refreshAll}/>}
@@ -7532,6 +8013,8 @@ function App(){
     {moveToDeliveryModal&&<MoveToDeliveryModal task={moveToDeliveryModal.task} user={user} onClose={()=>setMoveToDeliveryModal(null)} onSuccess={()=>refreshAll()}/>}
 
     {editClientDelivery&&<ClientDeliveryEditModal client={editClientDelivery} user={user} onClose={()=>setEditClientDelivery(null)} onSaved={updated=>{setClients(p=>p.map(c=>c.id===updated.id?updated:c));setEditClientDelivery(null);}}/>}
+
+    {showSignupGenerator&&<SignupLinkGeneratorModal user={user} onClose={()=>setShowSignupGenerator(false)} onCreated={()=>{}}/>}
 
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
       {det&&<div>

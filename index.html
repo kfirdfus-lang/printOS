@@ -123,7 +123,9 @@ const sb=async(path,o={})=>{
 const STORAGE_BUCKET="printos-files";
 async function uploadFileToStorage(file,folder="misc"){
   const timestamp=Date.now();
-  const safeFilename=file.name.replace(/[^a-zA-Z0-9._\-\u0590-\u05FF]/g,"_");
+  const ext=file.name.includes(".")?"."+file.name.split(".").pop():"";
+  const baseName=file.name.replace(ext,"").replace(/[^a-zA-Z0-9._-]/g,"_").substring(0,50);
+  const safeFilename=baseName+ext;
   const path=`${folder}/${timestamp}_${safeFilename}`;
   const {error}=await supabaseClient.storage.from(STORAGE_BUCKET).upload(path,file,{cacheControl:"3600",upsert:false});
   if(error)throw error;

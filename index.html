@@ -173,6 +173,25 @@ function getFileIcon(fileType,fileName){
   if(fileType?.startsWith("audio/"))return "🎵";
   return "📎";
 }
+
+const DOCUMENT_CATEGORIES=[
+  {id:"closing_instructions",name:"הוראות סגירה",icon:"📐",color:"#3b82f6",description:"טמפלייטים להוראות סגירה לקבצים (רולאפ, מחברת, דגל...)"},
+  {id:"company",name:"מסמכי חברה",icon:"🏢",color:"#8b5cf6",description:"התאגדות, פרוטוקולים, רישום ברשם החברות"},
+  {id:"tax",name:"מסמכי מס",icon:"💰",color:"#10b981",description:"אישורי ניכוי מס, ניהול ספרים, פטור"},
+  {id:"bank",name:"מסמכי בנק",icon:"🏦",color:"#06b6d4",description:"אישורי ניהול חשבון, יפוי כוח, חתימות"},
+  {id:"insurance",name:"ביטוחים",icon:"🛡️",color:"#f59e0b",description:"ביטוח עסק, רכב, חבות מעבידים"},
+  {id:"licenses",name:"רישיונות",icon:"🏪",color:"#ef4444",description:"רישיון עסק, יצרן, רישיונות תוכנה"},
+  {id:"contracts",name:"חוזים והסכמים",icon:"🤝",color:"#84cc16",description:"שכירות, NDA, הסכמי עבודה, ספקים"},
+  {id:"vehicles",name:"רכב",icon:"🚗",color:"#ec4899",description:"טסטים, ביטוחים, טיפולים, רישיונות"},
+  {id:"suppliers",name:"ספקים",icon:"🏭",color:"#a855f7",description:"חוזים עם ספקים, מחירונים, אישורים"},
+  {id:"safety",name:"בטיחות",icon:"🔥",color:"#dc2626",description:"תעודות מכבי אש, בטיחות בעבודה, גהות"},
+  {id:"reports",name:"דוחות שנתיים",icon:"📊",color:"#6366f1",description:"מאזנים, דוחות כספיים, דוחות הכנסות"},
+  {id:"other",name:"אחר",icon:"📁",color:"#6b7280",description:"מסמכים שאינם משויכים לקטגוריה אחרת"},
+];
+function getCategoryById(id){
+  return DOCUMENT_CATEGORIES.find(c=>c.id===id)||DOCUMENT_CATEGORIES[DOCUMENT_CATEGORIES.length-1];
+}
+
 if(typeof window!=="undefined"){
   window.uploadFileToStorage=uploadFileToStorage;
   window.getSignedUrl=getSignedUrl;
@@ -833,6 +852,259 @@ function FilePreviewLink({filePath,fileName,fileType,fileSize,showDelete,onDelet
     </div>
     <button type="button" onClick={handleOpen} disabled={loading} style={{padding:"6px 10px",background:"#0d9488",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>{loading?"⏳":"👁️ פתח"}</button>
     {showDelete&&<button type="button" onClick={handleDelete} style={{padding:"6px 10px",background:"#fff",color:"#ef4444",border:"1px solid #ef4444",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>}
+  </div>;
+}
+
+function ExpiringDocsBanner({docs,onClickDoc}){
+  const [expanded,setExpanded]=useState(false);
+  if(docs.length===0)return null;
+  const visible=expanded?docs:docs.slice(0,3);
+  return<div style={{background:"linear-gradient(135deg, #fef3c7 0%, #fee2e2 100%)",border:"2px solid #f59e0b",borderRadius:10,padding:15,marginBottom:20}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style={{fontWeight:700,color:"#78350f",fontSize:15}}>🚨 התראות תפוגה ({docs.length})</div>
+      {docs.length>3&&<button type="button" onClick={()=>setExpanded(!expanded)} style={{background:"transparent",border:"none",color:"#78350f",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>{expanded?"הצג פחות":`הצג עוד ${docs.length-3}`}</button>}
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {visible.map(d=>{
+        const isExpired=d.diffDays<0;
+        const isCritical=d.diffDays<=7&&d.diffDays>=0;
+        let timeText,statusColor;
+        if(isExpired){timeText=`פג תוקף לפני ${Math.abs(d.diffDays)} ימים!`;statusColor="#dc2626";}
+        else if(d.diffDays===0){timeText="פג תוקף היום!";statusColor="#dc2626";}
+        else if(isCritical){timeText=`יפוג בעוד ${d.diffDays} ימים`;statusColor="#ea580c";}
+        else{timeText=`יפוג בעוד ${d.diffDays} ימים`;statusColor="#ca8a04";}
+        const cat=getCategoryById(d.category);
+        return<button type="button" key={d.id} onClick={()=>onClickDoc?.(d)} style={{background:"white",padding:10,borderRadius:6,border:`1px solid ${statusColor}`,cursor:"pointer",textAlign:"right",display:"flex",alignItems:"center",gap:10,fontFamily:"inherit",width:"100%"}}>
+          <div style={{fontSize:20}}>{cat.icon}</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:14}}>{d.title}</div>
+            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{cat.name}</div>
+          </div>
+          <div style={{fontSize:13,fontWeight:600,color:statusColor,whiteSpace:"nowrap"}}>{isExpired?"🔴":isCritical?"🟠":"🟡"} {timeText}</div>
+        </button>;
+      })}
+    </div>
+  </div>;
+}
+
+function CategoriesGrid({counts,onSelect}){
+  return<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))",gap:12}}>
+    {DOCUMENT_CATEGORIES.map(cat=><button type="button" key={cat.id} onClick={()=>onSelect(cat)} style={{background:"white",padding:20,borderRadius:10,border:`2px solid ${cat.color}30`,cursor:"pointer",textAlign:"right",transition:"all 0.2s",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=cat.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 4px 12px ${cat.color}30`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=cat.color+"30";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+      <div style={{fontSize:36,marginBottom:8}}>{cat.icon}</div>
+      <div style={{fontWeight:600,fontSize:15,color:cat.color}}>{cat.name}</div>
+      <div style={{fontSize:12,color:"#6b7280",marginTop:4,minHeight:32}}>{cat.description}</div>
+      <div style={{marginTop:10,padding:"4px 10px",background:cat.color+"15",color:cat.color,borderRadius:12,fontSize:12,fontWeight:600,display:"inline-block"}}>{counts[cat.id]||0} מסמכים</div>
+    </button>)}
+  </div>;
+}
+
+function CategoryView({category,docs,onBack,onUpdate}){
+  return<div>
+    <button type="button" onClick={onBack} style={{padding:"8px 14px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",marginBottom:15,fontFamily:"inherit"}}>← חזור לקטגוריות</button>
+    <div style={{background:"white",padding:15,borderRadius:10,border:`2px solid ${category.color}`,marginBottom:15}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{fontSize:32}}>{category.icon}</div>
+        <div>
+          <div style={{fontWeight:700,fontSize:18,color:category.color}}>{category.name}</div>
+          <div style={{fontSize:13,color:"#6b7280",marginTop:2}}>{category.description} · {docs.length} מסמכים</div>
+        </div>
+      </div>
+    </div>
+    {docs.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>אין מסמכים בקטגוריה זו</div>:<div style={{display:"grid",gap:8}}>{docs.map(d=><DocumentRow key={d.id} doc={d} onUpdate={onUpdate}/>)}</div>}
+  </div>;
+}
+
+function DocumentRow({doc,onUpdate}){
+  const [showDetails,setShowDetails]=useState(false);
+  let expiryStatus=null;
+  if(doc.expires_at){
+    const now=new Date();now.setHours(0,0,0,0);
+    const exp=new Date(doc.expires_at);
+    const diffDays=Math.floor((exp-now)/(1000*60*60*24));
+    if(diffDays<0)expiryStatus={text:`פג לפני ${Math.abs(diffDays)} ימים`,color:"#dc2626",icon:"🔴"};
+    else if(diffDays===0)expiryStatus={text:"פג היום",color:"#dc2626",icon:"🔴"};
+    else if(diffDays<=7)expiryStatus={text:`יפוג בעוד ${diffDays} ימים`,color:"#ea580c",icon:"🟠"};
+    else if(diffDays<=30)expiryStatus={text:`יפוג בעוד ${diffDays} ימים`,color:"#ca8a04",icon:"🟡"};
+    else expiryStatus={text:`תוקף עד ${new Date(doc.expires_at).toLocaleDateString("he-IL")}`,color:"#10b981",icon:"🟢"};
+  }
+  return<>
+    <div style={{background:"white",padding:12,borderRadius:8,border:"1px solid #e5e7eb",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setShowDetails(true)}>
+      <div style={{fontSize:28}}>{getFileIcon(doc.file_type,doc.file_name)}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:600,fontSize:14}}>{doc.title}</div>
+        {doc.description&&<div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{doc.description}</div>}
+        <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>הועלה {new Date(doc.uploaded_at).toLocaleDateString("he-IL")}{doc.file_size&&` · ${formatFileSize(doc.file_size)}`}</div>
+      </div>
+      {expiryStatus&&<div style={{fontSize:12,color:expiryStatus.color,fontWeight:600,whiteSpace:"nowrap"}}>{expiryStatus.icon} {expiryStatus.text}</div>}
+    </div>
+    {showDetails&&<DocumentDetailsModal doc={doc} onClose={()=>setShowDetails(false)} onUpdate={()=>{onUpdate?.();setShowDetails(false);}}/>}
+  </>;
+}
+
+function DocumentDetailsModal({doc,onClose,onUpdate}){
+  const [editing,setEditing]=useState(false);
+  const [title,setTitle]=useState(doc.title);
+  const [description,setDescription]=useState(doc.description||"");
+  const [category,setCategory]=useState(doc.category||"other");
+  const [docDate,setDocDate]=useState(doc.document_date||"");
+  const [expiresAt,setExpiresAt]=useState(doc.expires_at||"");
+  const cat=getCategoryById(doc.category);
+  const handleSave=async()=>{
+    try{
+      await sb(`documents?id=eq.${doc.id}`,{method:"PATCH",body:JSON.stringify({title:title.trim(),description:description.trim()||null,category,document_date:docDate||null,expires_at:expiresAt||null})});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  const handleDelete=async()=>{
+    if(!window.confirm(`למחוק את "${doc.title}"? פעולה זו לא ניתנת לביטול.`))return;
+    try{
+      await deleteFileFromStorage(doc.file_path);
+      await sb(`documents?id=eq.${doc.id}`,{method:"DELETE"});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה במחיקה: "+e.message);}
+  };
+  return<Modal open onClose={onClose} title="📄 פרטי מסמך" maxWidth={600}>
+    {!editing?<>
+      <div style={{padding:15,background:cat.color+"15",borderRadius:8,marginBottom:15,border:`1px solid ${cat.color}40`}}>
+        <div style={{fontSize:13,color:cat.color,marginBottom:6}}>{cat.icon} {cat.name}</div>
+        <div style={{fontWeight:600,fontSize:18}}>{doc.title}</div>
+        {doc.description&&<div style={{color:"#475569",marginTop:8}}>{doc.description}</div>}
+      </div>
+      <div style={{display:"grid",gap:8,marginBottom:15,fontSize:13}}>
+        {doc.document_date&&<div><strong>תאריך המסמך:</strong> {new Date(doc.document_date).toLocaleDateString("he-IL")}</div>}
+        {doc.expires_at&&<div><strong>תוקף עד:</strong> {new Date(doc.expires_at).toLocaleDateString("he-IL")}</div>}
+        <div><strong>הועלה:</strong> {new Date(doc.uploaded_at).toLocaleString("he-IL")}</div>
+        {doc.uploaded_by&&<div><strong>על ידי:</strong> {doc.uploaded_by}</div>}
+      </div>
+      <FilePreviewLink filePath={doc.file_path} fileName={doc.file_name} fileType={doc.file_type} fileSize={doc.file_size}/>
+      <div style={{display:"flex",gap:10,marginTop:20}}>
+        <button type="button" onClick={handleDelete} style={{padding:10,background:"white",color:"#ef4444",border:"1px solid #ef4444",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>🗑️ מחק</button>
+        <button type="button" onClick={()=>setEditing(true)} style={{flex:1,padding:10,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך פרטים</button>
+        <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+      </div>
+    </>:<>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מסמך:</label><input value={title} onChange={e=>setTitle(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>תיאור:</label><textarea value={description} onChange={e=>setDescription(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",minHeight:60,fontFamily:"inherit"}}/></div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>קטגוריה:</label><select value={category} onChange={e=>setCategory(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}>{DOCUMENT_CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}</select></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:15}}>
+        <div><label style={{fontWeight:600,fontSize:13}}>תאריך המסמך:</label><input type="date" value={docDate} onChange={e=>setDocDate(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>תוקף עד:</label><input type="date" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={()=>setEditing(false)} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" onClick={async()=>{await handleSave();setEditing(false);}} style={{flex:2,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור</button>
+      </div>
+    </>}
+  </Modal>;
+}
+
+function UploadDocumentModal({onClose,onUploaded,defaultCategory,user}){
+  const [step,setStep]=useState("upload");
+  const [uploadedFile,setUploadedFile]=useState(null);
+  const [title,setTitle]=useState("");
+  const [description,setDescription]=useState("");
+  const [category,setCategory]=useState(defaultCategory||"other");
+  const [docDate,setDocDate]=useState("");
+  const [expiresAt,setExpiresAt]=useState("");
+  const [saving,setSaving]=useState(false);
+  const handleFileUploaded=fileResult=>{
+    setUploadedFile(fileResult);
+    const nameWithoutExt=fileResult.name.replace(/\.[^.]+$/,"");
+    setTitle(nameWithoutExt);
+    setStep("details");
+  };
+  const handleSave=async()=>{
+    if(!title.trim()){window.alert("יש למלא שם למסמך");return;}
+    setSaving(true);
+    try{
+      await sb("documents",{method:"POST",body:JSON.stringify({category,title:title.trim(),description:description.trim()||null,file_path:uploadedFile.path,file_name:uploadedFile.name,file_size:uploadedFile.size,file_type:uploadedFile.type,document_date:docDate||null,expires_at:expiresAt||null,uploaded_by:user?.name||"unknown"})});
+      onUploaded?.();
+    }catch(e){window.alert("שגיאה בשמירה: "+e.message);}
+    finally{setSaving(false);}
+  };
+  return<Modal open onClose={onClose} title="➕ העלה מסמך חדש" maxWidth={550}>
+    {step==="upload"?<>
+      <FileUploadField folder="documents" onUploaded={handleFileUploaded} label="בחר/גרור קובץ"/>
+      <button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+    </>:uploadedFile&&<>
+      <div style={{padding:10,background:"#f0fdfa",borderRadius:6,marginBottom:15,border:"1px solid #2dd4bf"}}>
+        <div style={{fontSize:12,color:"#0d9488",marginBottom:4}}>קובץ:</div>
+        <div style={{fontWeight:600}}>{getFileIcon(uploadedFile.type,uploadedFile.name)} {uploadedFile.name}</div>
+        <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{formatFileSize(uploadedFile.size)}</div>
+      </div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מסמך *:</label><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="למשל: ביטוח עסק 2026" style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}} autoFocus/></div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>קטגוריה *:</label><select value={category} onChange={e=>setCategory(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}>{DOCUMENT_CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}</select></div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>תיאור (אופציונלי):</label><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="פרטים נוספים..." style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",minHeight:50,fontFamily:"inherit"}}/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:15}}>
+        <div><label style={{fontWeight:600,fontSize:13}}>תאריך המסמך:</label><input type="date" value={docDate} onChange={e=>setDocDate(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>תוקף עד:</label><input type="date" value={expiresAt} onChange={e=>setExpiresAt(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/><div style={{fontSize:10,color:"#6b7280",marginTop:2}}>💡 לקבלת תזכורות לפני תפוגה</div></div>
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" onClick={handleSave} disabled={saving} style={{flex:2,padding:12,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"⏳ שומר...":"💾 שמור מסמך"}</button>
+      </div>
+    </>}
+  </Modal>;
+}
+
+function SearchResults({query,results,onUpdate}){
+  return<div>
+    <div style={{background:"#f0fdfa",padding:12,borderRadius:8,marginBottom:15}}>🔍 תוצאות חיפוש עבור "<strong>{query}</strong>": {results.length} מסמכים</div>
+    {results.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>לא נמצאו מסמכים מתאימים</div>:<div style={{display:"grid",gap:8}}>{results.map(d=><DocumentRow key={d.id} doc={d} onUpdate={onUpdate}/>)}</div>}
+  </div>;
+}
+
+function DocumentsDashboard({user}){
+  const [view,setView]=useState("categories");
+  const [selectedCategory,setSelectedCategory]=useState(null);
+  const [searchQuery,setSearchQuery]=useState("");
+  const [allDocs,setAllDocs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showUpload,setShowUpload]=useState(false);
+  const loadDocs=async()=>{
+    try{
+      const data=await sb("documents?employee_id=is.null&order=uploaded_at.desc&limit=500");
+      setAllDocs(data||[]);
+    }catch(e){console.error(e);}
+    finally{setLoading(false);}
+  };
+  useEffect(()=>{
+    loadDocs();
+    const interval=setInterval(loadDocs,60000);
+    return()=>clearInterval(interval);
+  },[]);
+  const expiringDocs=useMemo(()=>{
+    const now=new Date();now.setHours(0,0,0,0);
+    return allDocs.filter(d=>d.expires_at).map(d=>{
+      const exp=new Date(d.expires_at);
+      const diffDays=Math.floor((exp-now)/(1000*60*60*24));
+      return{...d,diffDays};
+    }).filter(d=>d.diffDays<=30).sort((a,b)=>a.diffDays-b.diffDays);
+  },[allDocs]);
+  const countsByCategory=useMemo(()=>{
+    const counts={};
+    DOCUMENT_CATEGORIES.forEach(c=>{counts[c.id]=0;});
+    allDocs.forEach(d=>{if(d.category&&counts[d.category]!==undefined)counts[d.category]++;});
+    return counts;
+  },[allDocs]);
+  const searchResults=useMemo(()=>{
+    if(!searchQuery.trim())return [];
+    const q=searchQuery.trim().toLowerCase();
+    return allDocs.filter(d=>(d.title||"").toLowerCase().includes(q)||(d.description||"").toLowerCase().includes(q)||(d.file_name||"").toLowerCase().includes(q)||(d.tags||[]).some(t=>String(t).toLowerCase().includes(q)));
+  },[allDocs,searchQuery]);
+  if(loading)return<div style={{padding:30,textAlign:"center"}}>טוען...</div>;
+  return<div style={{padding:20}}>
+    <h2 style={{margin:"0 0 5px"}}>📁 מסמכי החברה</h2>
+    <p style={{margin:"0 0 20px",color:"#6b7280",fontSize:14}}>כל המסמכים החשובים במקום אחד - עם תזכורות לתפוגה</p>
+    {expiringDocs.length>0&&<ExpiringDocsBanner docs={expiringDocs} onClickDoc={doc=>{const cat=DOCUMENT_CATEGORIES.find(c=>c.id===doc.category);if(cat){setSelectedCategory(cat);setView("category");}}}/>}
+    <div style={{display:"flex",gap:10,marginBottom:20}}>
+      <input type="text" value={searchQuery} onChange={e=>{setSearchQuery(e.target.value);setView(e.target.value?"search":"categories");}} placeholder="🔍 חיפוש מסמכים..." style={{flex:1,padding:12,borderRadius:8,border:"1px solid #d1d5db",fontSize:14,fontFamily:"inherit"}}/>
+      <button type="button" onClick={()=>setShowUpload(true)} style={{padding:"12px 20px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ העלה מסמך</button>
+    </div>
+    {view==="categories"&&<CategoriesGrid counts={countsByCategory} onSelect={cat=>{setSelectedCategory(cat);setView("category");}}/>}
+    {view==="category"&&selectedCategory&&<CategoryView category={selectedCategory} docs={allDocs.filter(d=>d.category===selectedCategory.id)} onBack={()=>{setSelectedCategory(null);setView("categories");}} onUpdate={loadDocs}/>}
+    {view==="search"&&<SearchResults query={searchQuery} results={searchResults} onUpdate={loadDocs}/>}
+    {showUpload&&<UploadDocumentModal user={user} onClose={()=>setShowUpload(false)} onUploaded={()=>{loadDocs();setShowUpload(false);}} defaultCategory={selectedCategory?.id}/>}
   </div>;
 }
 
@@ -8285,6 +8557,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="documents"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="shipments"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -8519,7 +8797,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -8661,10 +8939,6 @@ function App(){
           {isA&&<button onClick={()=>setShowReportModal(true)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>}
         </div>
         {loading&&<div style={{display:"flex",alignItems:"center",gap:8,color:"var(--text3)",fontSize:13,marginBottom:16}}><Spinner sz={16}/> טוען נתונים...</div>}
-        {isA&&<div style={{padding:20,background:"#fef3c7",marginBottom:20,borderRadius:12,border:"1px solid #fde68a"}}>
-          <h3 style={{margin:"0 0 12px",fontSize:15,color:"#78350f"}}>בדיקת העלאה (זמני — להסיר אחרי הוראות B+C)</h3>
-          <FileUploadField folder="test" onUploaded={r=>console.log("Uploaded:",r)} label="העלה קובץ בדיקה"/>
-        </div>}
 
         {/* KPIs */}
         <div className="kg4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
@@ -8790,6 +9064,8 @@ function App(){
       {tab==="signup-forms"&&isA&&<ClientSignupFormsList user={user} onOpenGenerator={()=>setShowSignupGenerator(true)} onClientsChanged={refreshAll}/>}
 
       {tab==="vacations"&&isA&&<VacationFormManager user={user}/>}
+
+      {tab==="documents"&&isA&&<DocumentsDashboard user={user}/>}
 
       {/* CALENDAR */}
       {tab==="recently_completed"&&<RecentlyCompletedTab tasks={tasks} loading={loading} onRestore={refreshAll}/>}

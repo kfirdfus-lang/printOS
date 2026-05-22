@@ -243,6 +243,9 @@ const DESIGN_REQUEST_TYPES=[
 function getRequestTypeById(id){
   return DESIGN_REQUEST_TYPES.find(t=>t.id===id)||DESIGN_REQUEST_TYPES[0];
 }
+function isImpositionRequestType(type){
+  return type?.id==="imposition";
+}
 const STATUS_LABELS={
   pending:{label:"ממתין",icon:"⏳",color:"#9ca3af"},
   processing:{label:"בעיבוד",icon:"🔄",color:"#3b82f6"},
@@ -934,7 +937,7 @@ function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onSchedu
   </div>;
 }
 
-function FileUploadField({folder,onUploaded,currentFile,label="העלאת קובץ"}){
+function FileUploadField({folder,onUploaded,currentFile,label="העלאת קובץ",accept}){
   const [uploading,setUploading]=useState(false);
   const [dragOver,setDragOver]=useState(false);
   const fileInputRef=useRef(null);
@@ -957,7 +960,7 @@ function FileUploadField({folder,onUploaded,currentFile,label="העלאת קוב
     handleFile(file);
   };
   return<div>
-    <input ref={fileInputRef} type="file" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+    <input ref={fileInputRef} type="file" accept={accept} style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
     {currentFile?<div style={{padding:12,background:"#f0fdfa",borderRadius:8,border:"1px solid #2dd4bf",display:"flex",alignItems:"center",gap:10}}>
       <div style={{fontSize:24}}>{getFileIcon(currentFile.type,currentFile.name)}</div>
       <div style={{flex:1,minWidth:0}}>
@@ -1669,6 +1672,13 @@ function ImpositionRequestForm({onClose,onCreated,user}){
     return{cols,rows,perPlate,plates};
   },[productWidth,productHeight,plateWidth,plateHeight,bleed,gutter,quantity]);
   const handleFileUploaded=fileResult=>{
+    const mime=(fileResult.type||"").toLowerCase();
+    const name=(fileResult.name||"").toLowerCase();
+    if(!mime.includes("pdf")&&!name.endsWith(".pdf")){
+      window.alert("יש להעלות קובץ PDF בלבד");
+      setDesignFile(null);
+      return;
+    }
     setDesignFile(fileResult);
     const baseName=fileResult.name.replace(/\.[^.]+$/,"");
     setTitle(`סידור פלטה - ${baseName}`);
@@ -1733,7 +1743,7 @@ function ImpositionRequestForm({onClose,onCreated,user}){
                 <div style={{fontSize:11,color:"#6b7280"}}>{formatFileSize(designFile.size)}</div>
               </div>
               <button type="button" onClick={()=>setDesignFile(null)} style={{padding:"4px 8px",background:"white",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>החלף</button>
-            </div>:<FileUploadField folder="design_requests/imposition/input" onUploaded={handleFileUploaded} label="גרור / העלה PDF"/>}
+            </div>:<FileUploadField folder="design_requests/imposition/input" onUploaded={handleFileUploaded} label="גרור / העלה PDF" accept=".pdf,application/pdf"/>}
           </div>
           {designFile&&<>
             <div style={{marginBottom:15}}>
@@ -1991,6 +2001,9 @@ function DesignerDashboard({user}){
   },[requests,filterStatus]);
   const activeCount=requests.filter(r=>["pending","processing"].includes(r.status)).length;
   const completedCount=requests.filter(r=>r.status==="completed").length;
+  const closeNewRequest=()=>{setShowNewRequest(false);setSelectedType(null);};
+  const openNewRequestForType=type=>{setSelectedType(type);setShowNewRequest(true);};
+  const onRequestCreated=()=>{loadRequests();closeNewRequest();};
   if(loading)return<div style={{padding:30,textAlign:"center"}}>טוען...</div>;
   return<div style={{padding:20}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
@@ -1998,12 +2011,12 @@ function DesignerDashboard({user}){
         <h2 style={{margin:"0 0 5px"}}>🎨 גרפיקאי AI</h2>
         <p style={{margin:0,color:"#6b7280",fontSize:14}}>מערכת בקשות גרפיות אוטומטית</p>
       </div>
-      <button type="button" onClick={()=>setShowNewRequest(true)} style={{padding:"12px 22px",background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 4px rgba(139,92,246,0.3)"}}>➕ בקשה חדשה</button>
+      <button type="button" onClick={()=>{setSelectedType(null);setShowNewRequest(true);}} style={{padding:"12px 22px",background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 4px rgba(139,92,246,0.3)"}}>➕ בקשה חדשה</button>
     </div>
     <div style={{marginBottom:25}}>
       <h3 style={{marginBottom:12,fontSize:15,color:"#6b7280"}}>סוגי בקשות זמינות:</h3>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))",gap:10}}>
-        {DESIGN_REQUEST_TYPES.map(type=><button type="button" key={type.id} onClick={()=>{setSelectedType(type);setShowNewRequest(true);}} style={{background:"white",padding:14,borderRadius:10,border:`2px solid ${type.color}30`,cursor:"pointer",textAlign:"right",transition:"all 0.2s",position:"relative",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=type.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 4px 12px ${type.color}30`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=type.color+"30";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+        {DESIGN_REQUEST_TYPES.map(type=><button type="button" key={type.id} onClick={()=>openNewRequestForType(type)} style={{background:"white",padding:14,borderRadius:10,border:`2px solid ${type.color}30`,cursor:"pointer",textAlign:"right",transition:"all 0.2s",position:"relative",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=type.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 4px 12px ${type.color}30`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=type.color+"30";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
           <div style={{fontSize:28,marginBottom:6}}>{type.icon}</div>
           <div style={{fontWeight:600,fontSize:14,color:type.color}}>{type.name}</div>
           <div style={{fontSize:11,color:"#6b7280",marginTop:4,minHeight:30}}>{type.description}</div>
@@ -2019,8 +2032,7 @@ function DesignerDashboard({user}){
       <div>אין בקשות {filterStatus==="all"?"":"בקטגוריה זו"}</div>
       <div style={{fontSize:13,marginTop:6}}>לחץ "➕ בקשה חדשה" כדי להתחיל</div>
     </div>:<div style={{display:"grid",gap:8}}>{filtered.map(req=><DesignRequestCard key={req.id} request={req} onUpdate={loadRequests}/>)}</div>}
-    {showNewRequest&&selectedType?.id==="imposition"&&<ImpositionRequestForm user={user} onClose={()=>{setShowNewRequest(false);setSelectedType(null);}} onCreated={()=>{loadRequests();setShowNewRequest(false);setSelectedType(null);}}/>}
-    {showNewRequest&&selectedType?.id!=="imposition"&&<NewRequestModal presetType={selectedType} user={user} onClose={()=>{setShowNewRequest(false);setSelectedType(null);}} onCreated={()=>{loadRequests();setShowNewRequest(false);setSelectedType(null);}}/>}
+    {showNewRequest&&(isImpositionRequestType(selectedType)?<ImpositionRequestForm user={user} onClose={closeNewRequest} onCreated={onRequestCreated}/>:<NewRequestModal presetType={selectedType} user={user} onClose={closeNewRequest} onCreated={onRequestCreated}/>)}
   </div>;
 }
 

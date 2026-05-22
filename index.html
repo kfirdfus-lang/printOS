@@ -120,6 +120,20 @@ const sb=async(path,o={})=>{
   const t=await r.text();if(!r.ok)throw new Error(t);return t?JSON.parse(t):[];
 };
 
+/** רענון משימה מבינה — מעדכן רק title, task_items, total_amount, last_bina_sync */
+async function refreshTaskFromBina(task){
+  if(!task?.bina_order_id)return{success:false,error:"אין מספר הזמנת בינה"};
+  try{
+    const {data,error}=await supabaseClient.functions.invoke("refresh-task-from-bina",{body:{task_id:task.id}});
+    if(error)throw error;
+    if(data&&data.success===false)throw new Error(data.error||"שגיאה ברענון");
+    return data||{success:false,error:"תשובה ריקה"};
+  }catch(e){
+    console.error("refresh from bina failed:",e);
+    return{success:false,error:e.message||String(e)};
+  }
+}
+
 const STORAGE_BUCKET="printos-files";
 async function uploadFileToStorage(file,folder="misc"){
   const timestamp=Date.now();
@@ -537,6 +551,62 @@ function TaskInquiryButton({task,user,compact}){
   </>;
 }
 
+function BinaChangesModal({changes,task,onClose}){
+  const renderChange=(c,i)=>{
+    if(c.field==="item_added")return<div key={i} style={{padding:10,background:"#d1fae5",borderRadius:6,borderRight:"3px solid #10b981"}}>
+      <div style={{fontWeight:600,color:"#065f46",fontSize:13}}>➕ פריט חדש נוסף</div>
+      <div style={{fontSize:13,marginTop:4}}><strong>{c.description}</strong><span style={{marginRight:10,color:"#6b7280"}}>כמות: {c.quantity}</span></div>
+    </div>;
+    if(c.field==="item_removed")return<div key={i} style={{padding:10,background:"#fee2e2",borderRadius:6,borderRight:"3px solid #ef4444"}}>
+      <div style={{fontWeight:600,color:"#991b1b",fontSize:13}}>➖ פריט הוסר</div>
+      <div style={{fontSize:13,marginTop:4,textDecoration:"line-through"}}><strong>{c.description}</strong><span style={{marginRight:10,color:"#6b7280"}}>כמות: {c.quantity}</span></div>
+    </div>;
+    if(c.field==="quantity_changed")return<div key={i} style={{padding:10,background:"#fef3c7",borderRadius:6,borderRight:"3px solid #f59e0b"}}>
+      <div style={{fontWeight:600,color:"#78350f",fontSize:13}}>🔢 שינוי כמות</div>
+      <div style={{fontSize:13,marginTop:4}}><strong>{c.description}</strong>:<span style={{marginRight:8,color:"#ef4444",textDecoration:"line-through"}}>{c.old}</span><span style={{marginRight:6}}>→</span><span style={{color:"#10b981",fontWeight:600}}>{c.new}</span></div>
+    </div>;
+    if(c.field==="total_price")return<div key={i} style={{padding:10,background:"#dbeafe",borderRadius:6,borderRight:"3px solid #3b82f6"}}>
+      <div style={{fontWeight:600,color:"#1e3a8a",fontSize:13}}>💰 מחיר השתנה</div>
+      <div style={{fontSize:13,marginTop:4}}><span style={{color:"#ef4444",textDecoration:"line-through"}}>{c.old}₪</span><span style={{margin:"0 6px"}}>→</span><span style={{color:"#10b981",fontWeight:600}}>{c.new}₪</span></div>
+    </div>;
+    if(c.field==="title")return<div key={i} style={{padding:10,background:"#ede9fe",borderRadius:6,borderRight:"3px solid #8b5cf6"}}>
+      <div style={{fontWeight:600,color:"#5b21b6",fontSize:13}}>✏️ כותרת השתנתה</div>
+      <div style={{fontSize:12,marginTop:4,color:"#6b7280"}}><div style={{textDecoration:"line-through"}}>{c.old}</div><div style={{color:"#0d9488",fontWeight:600,marginTop:2}}>{c.new}</div></div>
+    </div>;
+    return null;
+  };
+  return<Modal open onClose={onClose} title="🔄 שינויים שעודכנו מבינה" maxWidth={550}>
+    <div style={{background:"#f0fdfa",padding:10,borderRadius:6,marginBottom:15,fontSize:13}}>
+      <strong>{task.client_name}</strong>{task.bina_order_id&&<> · <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></>}
+    </div>
+    <div style={{background:"#fef9c3",padding:10,borderRadius:6,marginBottom:15,fontSize:13,color:"#78350f"}}>⚡ נמצאו {changes.length} שינויים בבינה. המשימה כבר עודכנה.</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"50vh",overflowY:"auto"}}>{changes.map((c,i)=>renderChange(c,i))}</div>
+    <button type="button" onClick={onClose} style={{width:"100%",padding:12,marginTop:15,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✓ הבנתי</button>
+  </Modal>;
+}
+
+function RefreshFromBinaButton({task,compact,onUpdate}){
+  const [refreshing,setRefreshing]=useState(false);
+  const [result,setResult]=useState(null);
+  if(!task?.bina_order_id)return null;
+  const handleRefresh=async e=>{
+    e?.stopPropagation();
+    setRefreshing(true);
+    setResult(null);
+    const r=await refreshTaskFromBina(task);
+    setResult(r);
+    setRefreshing(false);
+    if(r.success&&r.changes&&r.changes.length>0)onUpdate?.();
+    else if(r.success&&(!r.changes||r.changes.length===0))setTimeout(()=>setResult(null),2000);
+  };
+  return<>
+    <button type="button" onClick={handleRefresh} disabled={refreshing} style={{padding:compact?"3px 6px":"4px 8px",fontSize:compact?10:11,background:"white",color:"#0d9488",border:"1px solid #0d9488",borderRadius:6,cursor:refreshing?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}} title="רענן מבינה - בדוק שינויים בהזמנה">{refreshing?"⏳":compact?"🔄":"🔄 רענן"}</button>
+    {result&&!refreshing&&result.success&&(!result.changes||result.changes.length===0)&&<div style={{position:"fixed",bottom:20,right:20,background:"#10b981",color:"white",padding:"10px 14px",borderRadius:8,zIndex:9999,fontSize:13,fontWeight:600}}>✓ אין שינויים בבינה</div>}
+    {result&&!refreshing&&!result.success&&<div style={{position:"fixed",bottom:20,right:20,background:"#ef4444",color:"white",padding:"10px 14px",borderRadius:8,zIndex:9999,fontSize:13,fontWeight:600}}>❌ שגיאה: {result.error}</div>}
+    {result&&result.success&&result.changes&&result.changes.length>0&&<BinaChangesModal changes={result.changes} task={task} onClose={()=>setResult(null)}/>}
+  </>;
+}
+
 function TaskInquiryModal({task,user,onClose}){
   const [step,setStep]=useState("selectTemplate");
   const [selectedTemplate,setSelectedTemplate]=useState(null);
@@ -797,6 +867,7 @@ function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onSchedu
         <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
         <TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={onUpdate} />
         <TaskInquiryButton task={t} user={user} />
+        <RefreshFromBinaButton task={t} onUpdate={onUpdate} />
         <TaskMoveToDeliveryBtn task={t}/>
         <button type="button" onClick={()=>{
           const recipients={"כפיר":"kfir.dfus@gmail.com","נטלי":"natalie.zem@gmail.com","דניאל":"daniel.natalie.print@gmail.com","אדם":"adam.dfusnatalie@gmail.com","איריס":"iris.z726@gmail.com","ברק":"BARAKDFUS268@gmail.com"};
@@ -2811,6 +2882,7 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
       {user&&!isDelivered&&<div onClick={e=>e.stopPropagation()} style={{marginTop:compact?4:6}}><TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRefresh} compact={!!compact}/></div>}
         {!readonly&&!compact&&!isDelivered&&<div style={{display:"flex",gap:4,marginTop:6,paddingTop:6,borderTop:"1px solid var(--bg2)",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
           {user&&<TaskInquiryButton task={task} user={user} compact/>}
+          <RefreshFromBinaButton task={task} compact onUpdate={onRefresh} />
           <button type="button" onClick={handleCopySingle} title="העתק משלוח זה" style={{flex:1,padding:"3px 4px",fontSize:10,background:copied?"#10b981":"var(--bg2)",color:copied?"#fff":"var(--text2)",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{copied?"✅ הועתק":"📋 העתק"}</button>
           <button type="button" onClick={e=>{e.stopPropagation();setShowEditDirect(true);}} title="ערוך משלוח" style={{padding:"3px 6px",fontSize:10,background:"#7c3aed",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>
           <button type="button" onClick={handleWhatsAppSingle} title="שלח ב-WhatsApp" style={{flex:1,padding:"3px 4px",fontSize:10,background:"#25d366",color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>📱 WA</button>
@@ -3490,6 +3562,7 @@ function CalendarTab({tasks,taskItems,user,isA,onTaskClick,clients,onTaskRefresh
                 <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={{...DELIVERY_NOTE_BTN_STYLE,padding:"2px 4px",fontSize:8,whiteSpace:"normal",lineHeight:1.15,textAlign:"center",maxWidth:72}}>📋 תעודת משלוח</button>
                 <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskMoveToDeliveryBtn task={t}/></div>
                 <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskInquiryButton task={t} user={user} compact/></div>
+                <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><RefreshFromBinaButton task={t} compact onUpdate={onTaskRefresh} /></div>
                 <div style={{flexShrink:0,transform:"scale(0.78)",transformOrigin:"center right"}}><TaskNotificationButtons task={t} user={user} clients={clients} onUpdate={onTaskRefresh} compact/></div>
 
               </div>;
@@ -9621,6 +9694,7 @@ function App(){
           <button type="button" onClick={()=>openDeliveryNoteFromTask(null,det)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
           <TaskNotificationButtons task={det} user={user} clients={clients} onUpdate={refreshAll} />
           <TaskInquiryButton task={det} user={user} />
+          <RefreshFromBinaButton task={det} onUpdate={refreshAll} />
           <TaskMoveToDeliveryBtn task={det}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>

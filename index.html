@@ -232,6 +232,25 @@ function daysUntilBirthday(birthDate){
   return Math.floor((nextBirthday-today)/(1000*60*60*24));
 }
 
+const DESIGN_REQUEST_TYPES=[
+  {id:"imposition",name:"סידור על פלטה + DXF",icon:"🗂️",color:"#3b82f6",description:"סידור הזמנות על פלטה עם צלבי רגיסטרציה, ייצוא PDF + DXF",priority:1,fields:["quantity","plate_size","bleed","gutter"]},
+  {id:"design",name:"עיצוב מאפס",icon:"🎨",color:"#ec4899",description:"עיצוב פלייר, רולאפ, פולדר וכו' מ-Brief",priority:2,fields:["product_type","brief","colors","style"]},
+  {id:"fix",name:"תיקון קובץ",icon:"🔧",color:"#f59e0b",description:"תיקון בעיות בקובץ קיים (גופנים, צבעים, bleed)",priority:3,fields:["issues"]},
+  {id:"closing",name:"סגירת קובץ",icon:"📐",color:"#10b981",description:"סגירת קובץ להדפסה (CMYK, 300dpi, embed fonts)",priority:4,fields:["output_format"]},
+  {id:"mockup",name:"הדמיה (Mockup)",icon:"🖼️",color:"#8b5cf6",description:"יצירת הדמיה ריאליסטית של העיצוב על המוצר",priority:5,fields:["product_type"]},
+  {id:"dtf",name:"סגירת TIF ל-DTF",icon:"🎽",color:"#06b6d4",description:"הכנת קובץ TIF להדפסת DTF עם Underbase לבן",priority:6,fields:["size","has_white_underbase"]},
+];
+function getRequestTypeById(id){
+  return DESIGN_REQUEST_TYPES.find(t=>t.id===id)||DESIGN_REQUEST_TYPES[0];
+}
+const STATUS_LABELS={
+  pending:{label:"ממתין",icon:"⏳",color:"#9ca3af"},
+  processing:{label:"בעיבוד",icon:"🔄",color:"#3b82f6"},
+  completed:{label:"הושלם",icon:"✅",color:"#10b981"},
+  failed:{label:"נכשל",icon:"❌",color:"#ef4444"},
+  cancelled:{label:"בוטל",icon:"🚫",color:"#6b7280"},
+};
+
 if(typeof window!=="undefined"){
   window.uploadFileToStorage=uploadFileToStorage;
   window.getSignedUrl=getSignedUrl;
@@ -1591,6 +1610,219 @@ function EmployeesDashboard({user}){
     </>}
     {showAddModal&&<EditEmployeeModal onClose={()=>setShowAddModal(false)} onSaved={()=>{loadData();setShowAddModal(false);}}/>}
     {selectedEmployee&&<EmployeeFileModal employee={selectedEmployee} user={user} onClose={()=>setSelectedEmployee(null)} onUpdate={loadData}/>}
+  </div>;
+}
+
+function DesignRequestCard({request,onUpdate}){
+  const [showDetails,setShowDetails]=useState(false);
+  const type=getRequestTypeById(request.request_type);
+  const statusInfo=STATUS_LABELS[request.status]||STATUS_LABELS.pending;
+  const timeAgo=(()=>{
+    const diffMins=Math.floor((Date.now()-new Date(request.created_at))/(1000*60));
+    if(diffMins<1)return "עכשיו";
+    if(diffMins<60)return `לפני ${diffMins} דק'`;
+    const diffHours=Math.floor(diffMins/60);
+    if(diffHours<24)return `לפני ${diffHours} שעות`;
+    return `לפני ${Math.floor(diffHours/24)} ימים`;
+  })();
+  const inputCount=(request.input_files||[]).length;
+  const outputCount=(request.output_files||[]).length;
+  return<>
+    <div onClick={()=>setShowDetails(true)} style={{background:"white",padding:14,borderRadius:10,border:`1px solid ${type.color}30`,borderLeft:`4px solid ${type.color}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+      <div style={{fontSize:32}}>{type.icon}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:600,fontSize:15}}>{request.title}</div>
+        <div style={{fontSize:12,color:"#6b7280",marginTop:3}}>{type.name} · {timeAgo}{inputCount>0&&` · 📎 ${inputCount} קלט`}{outputCount>0&&` · 📤 ${outputCount} פלט`}</div>
+      </div>
+      <div style={{padding:"6px 12px",borderRadius:20,background:statusInfo.color+"20",color:statusInfo.color,fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{statusInfo.icon} {statusInfo.label}</div>
+    </div>
+    {showDetails&&<RequestDetailsModal request={request} onClose={()=>setShowDetails(false)} onUpdate={()=>{onUpdate?.();setShowDetails(false);}}/>}
+  </>;
+}
+
+function NewRequestModal({presetType,onClose,onCreated,user}){
+  const [step,setStep]=useState(presetType?"details":"selectType");
+  const [selectedType,setSelectedType]=useState(presetType);
+  const [title,setTitle]=useState("");
+  const [description,setDescription]=useState("");
+  const [inputFiles,setInputFiles]=useState([]);
+  const [saving,setSaving]=useState(false);
+  const handleFileUploaded=fileResult=>{setInputFiles(prev=>[...prev,fileResult]);};
+  const handleRemoveFile=index=>{setInputFiles(prev=>prev.filter((_,i)=>i!==index));};
+  const handleCreate=async()=>{
+    if(!title.trim()){window.alert("יש למלא כותרת");return;}
+    if(inputFiles.length===0&&!window.confirm("לא הועלו קבצי קלט. להמשיך בכל זאת?"))return;
+    setSaving(true);
+    try{
+      await sb("design_requests",{method:"POST",body:JSON.stringify({request_type:selectedType.id,title:title.trim(),description:description.trim()||null,status:"pending",input_files:inputFiles,created_by:user?.name||"unknown"})});
+      onCreated?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+    finally{setSaving(false);}
+  };
+  return<Modal open onClose={onClose} title="➕ בקשה חדשה לגרפיקאי AI" maxWidth={600}>
+    {step==="selectType"?<>
+      <p style={{margin:"0 0 15px",color:"#6b7280"}}>איזה סוג בקשה?</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {DESIGN_REQUEST_TYPES.map(t=><button type="button" key={t.id} onClick={()=>{setSelectedType(t);setStep("details");}} style={{padding:15,background:"white",border:`2px solid ${t.color}`,borderRadius:8,cursor:"pointer",textAlign:"right",fontFamily:"inherit"}}>
+          <div style={{fontSize:28,marginBottom:6}}>{t.icon}</div>
+          <div style={{fontWeight:600,color:t.color,fontSize:14}}>{t.name}</div>
+          <div style={{fontSize:11,color:"#6b7280",marginTop:4}}>{t.description}</div>
+        </button>)}
+      </div>
+      <button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+    </>:selectedType&&<>
+      <div style={{background:selectedType.color+"15",padding:10,borderRadius:6,marginBottom:15,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontWeight:600,color:selectedType.color}}>{selectedType.icon} {selectedType.name}</div>
+        {!presetType&&<button type="button" onClick={()=>setStep("selectType")} style={{background:"transparent",border:"none",color:selectedType.color,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>שנה</button>}
+      </div>
+      <div style={{background:"#fef3c7",padding:10,borderRadius:6,marginBottom:15,fontSize:12,color:"#78350f"}}>⚠️ <strong>בשלב פיתוח:</strong> המערכת רושמת את הבקשה אבל עדיין לא מבצעת את הפעולה אוטומטית. כפיר יטפל ידנית בשלב זה.</div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>כותרת הבקשה *:</label><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="למשל: סידור פלטה - מדבקות לוגו לקוח X" style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}} autoFocus/></div>
+      <div style={{marginBottom:15}}><label style={{fontWeight:600,fontSize:13}}>תיאור / הוראות:</label><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="פרטים נוספים, הוראות מיוחדות, פרמטרים..." style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",minHeight:80,fontFamily:"inherit"}}/></div>
+      <div style={{marginBottom:15}}>
+        <label style={{fontWeight:600,fontSize:13,display:"block",marginBottom:6}}>קבצי קלט ({inputFiles.length}):</label>
+        {inputFiles.length>0&&<div style={{marginBottom:10,display:"flex",flexDirection:"column",gap:6}}>
+          {inputFiles.map((f,i)=><div key={i} style={{padding:8,background:"#f9fafb",borderRadius:6,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{fontSize:18}}>{getFileIcon(f.type,f.name)}</div>
+            <div style={{flex:1,fontSize:12}}>{f.name} <span style={{color:"#9ca3af"}}>({formatFileSize(f.size)})</span></div>
+            <button type="button" onClick={()=>handleRemoveFile(i)} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+          </div>)}
+        </div>}
+        <FileUploadField folder={`design_requests/${selectedType.id}`} onUploaded={handleFileUploaded} label="הוסף קובץ קלט"/>
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" onClick={handleCreate} disabled={saving} style={{flex:2,padding:12,background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"⏳ יוצר...":"✨ צור בקשה"}</button>
+      </div>
+    </>}
+  </Modal>;
+}
+
+function RequestDetailsModal({request,onClose,onUpdate}){
+  const type=getRequestTypeById(request.request_type);
+  const statusInfo=STATUS_LABELS[request.status]||STATUS_LABELS.pending;
+  const handleStatusChange=async newStatus=>{
+    const updates={status:newStatus};
+    if(newStatus==="processing"&&!request.started_at)updates.started_at=new Date().toISOString();
+    if(newStatus==="completed"&&!request.completed_at)updates.completed_at=new Date().toISOString();
+    try{
+      await sb(`design_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify(updates)});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  const handleAddOutput=async fileResult=>{
+    const newOutputs=[...(request.output_files||[]),fileResult];
+    try{
+      await sb(`design_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify({output_files:newOutputs})});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  const handleDelete=async()=>{
+    if(!window.confirm("למחוק את הבקשה? פעולה לא ניתנת לביטול."))return;
+    try{
+      for(const f of [...(request.input_files||[]),...(request.output_files||[])])await deleteFileFromStorage(f.path);
+      await sb(`design_requests?id=eq.${request.id}`,{method:"DELETE"});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  return<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:650,maxHeight:"90vh",overflowY:"auto",boxShadow:"var(--shadow-lg)"}}>
+      <div style={{background:`linear-gradient(135deg, ${type.color} 0%, ${type.color}dd 100%)`,padding:20,color:"white",borderTopLeftRadius:20,borderTopRightRadius:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{fontSize:13,opacity:0.9,marginBottom:6}}>{type.icon} {type.name}</div>
+            <h2 style={{margin:0,fontSize:18}}>{request.title}</h2>
+          </div>
+          <button type="button" onClick={onClose} style={{background:"rgba(255,255,255,0.2)",color:"white",border:"none",padding:"6px 12px",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        </div>
+      </div>
+      <div style={{padding:20}}>
+        <div style={{padding:12,background:statusInfo.color+"15",borderRadius:8,marginBottom:15,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <div style={{fontWeight:600,color:statusInfo.color}}>{statusInfo.icon} סטטוס: {statusInfo.label}</div>
+          <select value={request.status} onChange={e=>handleStatusChange(e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:"1px solid #d1d5db",fontSize:13,background:"white",fontFamily:"inherit"}}>
+            {Object.entries(STATUS_LABELS).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+          </select>
+        </div>
+        {request.description&&<div style={{marginBottom:15}}>
+          <div style={{fontWeight:600,fontSize:13,marginBottom:6}}>תיאור:</div>
+          <div style={{padding:10,background:"#f9fafb",borderRadius:6,fontSize:13,color:"#374151",whiteSpace:"pre-wrap"}}>{request.description}</div>
+        </div>}
+        <div style={{marginBottom:15}}>
+          <div style={{fontWeight:600,fontSize:13,marginBottom:6}}>📎 קבצי קלט ({(request.input_files||[]).length}):</div>
+          {(request.input_files||[]).length===0?<div style={{color:"#9ca3af",fontSize:13,padding:10,textAlign:"center"}}>אין קבצי קלט</div>:<div style={{display:"grid",gap:6}}>{request.input_files.map((f,i)=><FilePreviewLink key={i} filePath={f.path} fileName={f.name} fileType={f.type} fileSize={f.size}/>)}</div>}
+        </div>
+        <div style={{marginBottom:15}}>
+          <div style={{fontWeight:600,fontSize:13,marginBottom:6}}>📤 קבצי פלט ({(request.output_files||[]).length}):</div>
+          {(request.output_files||[]).length>0&&<div style={{display:"grid",gap:6,marginBottom:8}}>{request.output_files.map((f,i)=><FilePreviewLink key={i} filePath={f.path} fileName={f.name} fileType={f.type} fileSize={f.size}/>)}</div>}
+          <FileUploadField folder={`design_requests/${request.id}/output`} onUploaded={handleAddOutput} label="הוסף קובץ פלט"/>
+        </div>
+        <div style={{padding:10,background:"#f9fafb",borderRadius:6,marginBottom:15,fontSize:12,color:"#6b7280",display:"grid",gap:4}}>
+          <div>נוצר: {new Date(request.created_at).toLocaleString("he-IL")} · {request.created_by||"—"}</div>
+          {request.started_at&&<div>התחיל: {new Date(request.started_at).toLocaleString("he-IL")}</div>}
+          {request.completed_at&&<div>הושלם: {new Date(request.completed_at).toLocaleString("he-IL")}</div>}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button type="button" onClick={handleDelete} style={{padding:10,background:"white",color:"#ef4444",border:"1px solid #ef4444",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>🗑️ מחק</button>
+          <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>סגור</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function DesignerDashboard({user}){
+  const [requests,setRequests]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showNewRequest,setShowNewRequest]=useState(false);
+  const [selectedType,setSelectedType]=useState(null);
+  const [filterStatus,setFilterStatus]=useState("all");
+  const loadRequests=async()=>{
+    try{
+      const data=await sb("design_requests?order=created_at.desc&limit=100");
+      setRequests(data||[]);
+    }catch(e){console.error(e);}
+    finally{setLoading(false);}
+  };
+  useEffect(()=>{
+    loadRequests();
+    const interval=setInterval(loadRequests,30000);
+    return()=>clearInterval(interval);
+  },[]);
+  const filtered=useMemo(()=>{
+    if(filterStatus==="all")return requests;
+    if(filterStatus==="active")return requests.filter(r=>["pending","processing"].includes(r.status));
+    return requests.filter(r=>r.status===filterStatus);
+  },[requests,filterStatus]);
+  const activeCount=requests.filter(r=>["pending","processing"].includes(r.status)).length;
+  const completedCount=requests.filter(r=>r.status==="completed").length;
+  if(loading)return<div style={{padding:30,textAlign:"center"}}>טוען...</div>;
+  return<div style={{padding:20}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h2 style={{margin:"0 0 5px"}}>🎨 גרפיקאי AI</h2>
+        <p style={{margin:0,color:"#6b7280",fontSize:14}}>מערכת בקשות גרפיות אוטומטית</p>
+      </div>
+      <button type="button" onClick={()=>setShowNewRequest(true)} style={{padding:"12px 22px",background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:8,fontWeight:600,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 4px rgba(139,92,246,0.3)"}}>➕ בקשה חדשה</button>
+    </div>
+    <div style={{marginBottom:25}}>
+      <h3 style={{marginBottom:12,fontSize:15,color:"#6b7280"}}>סוגי בקשות זמינות:</h3>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))",gap:10}}>
+        {DESIGN_REQUEST_TYPES.map(type=><button type="button" key={type.id} onClick={()=>{setSelectedType(type);setShowNewRequest(true);}} style={{background:"white",padding:14,borderRadius:10,border:`2px solid ${type.color}30`,cursor:"pointer",textAlign:"right",transition:"all 0.2s",position:"relative",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=type.color;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 4px 12px ${type.color}30`;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=type.color+"30";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+          <div style={{fontSize:28,marginBottom:6}}>{type.icon}</div>
+          <div style={{fontWeight:600,fontSize:14,color:type.color}}>{type.name}</div>
+          <div style={{fontSize:11,color:"#6b7280",marginTop:4,minHeight:30}}>{type.description}</div>
+          {type.priority===1&&<div style={{position:"absolute",top:8,left:8,background:"#fef3c7",color:"#78350f",fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:600}}>⭐ ראשון לפיתוח</div>}
+        </button>)}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:15,background:"#f3f4f6",padding:4,borderRadius:8,width:"fit-content",flexWrap:"wrap"}}>
+      {[{id:"all",label:`הכל (${requests.length})`},{id:"active",label:`פעיל (${activeCount})`,color:"#3b82f6"},{id:"completed",label:`הושלם (${completedCount})`,color:"#10b981"}].map(f=><button type="button" key={f.id} onClick={()=>setFilterStatus(f.id)} style={{padding:"6px 14px",background:filterStatus===f.id?"white":"transparent",color:filterStatus===f.id?(f.color||"#374151"):"#6b7280",border:"none",borderRadius:6,cursor:"pointer",fontWeight:filterStatus===f.id?600:400,fontSize:13,boxShadow:filterStatus===f.id?"0 1px 2px rgba(0,0,0,0.1)":"none",fontFamily:"inherit"}}>{f.label}</button>)}
+    </div>
+    {filtered.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af",background:"#f9fafb",borderRadius:10}}>
+      <div style={{fontSize:48,marginBottom:10}}>🎨</div>
+      <div>אין בקשות {filterStatus==="all"?"":"בקטגוריה זו"}</div>
+      <div style={{fontSize:13,marginTop:6}}>לחץ "➕ בקשה חדשה" כדי להתחיל</div>
+    </div>:<div style={{display:"grid",gap:8}}>{filtered.map(req=><DesignRequestCard key={req.id} request={req} onUpdate={loadRequests}/>)}</div>}
+    {showNewRequest&&<NewRequestModal presetType={selectedType} user={user} onClose={()=>{setShowNewRequest(false);setSelectedType(null);}} onCreated={()=>{loadRequests();setShowNewRequest(false);setSelectedType(null);}}/>}
   </div>;
 }
 
@@ -9057,6 +9289,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="designer"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="shipments"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -9291,7 +9529,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -9562,6 +9800,8 @@ function App(){
       {tab==="documents"&&isA&&<DocumentsDashboard user={user}/>}
 
       {tab==="employees"&&isA&&<EmployeesDashboard user={user}/>}
+
+      {tab==="designer"&&isA&&<DesignerDashboard user={user}/>}
 
       {/* CALENDAR */}
       {tab==="recently_completed"&&<RecentlyCompletedTab tasks={tasks} loading={loading} user={user} clients={clients} onRestore={refreshAll}/>}

@@ -832,6 +832,22 @@ function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu}){
   </div>;
 }
 
+const DAY_COLORS=[
+  {bg:"#f0fdfa",border:"#a7f3d0"},
+  {bg:"#faf5ff",border:"#e9d5ff"},
+  {bg:"#fef3f2",border:"#fecaca"},
+  {bg:"#fffbeb",border:"#fde68a"},
+  {bg:"#eff6ff",border:"#bfdbfe"},
+  {bg:"#f0fdf4",border:"#bbf7d0"},
+  {bg:"#fdf2f8",border:"#fbcfe8"},
+];
+function getDayColor(group,index){
+  if(group.isPast)return{bg:"#fefce8",border:"#fde68a"};
+  if(group.key==="unscheduled")return{bg:"#f9fafb",border:"#e5e7eb"};
+  if(group.isHighlight)return{bg:"#ccfbf1",border:"#5eead4"};
+  return DAY_COLORS[index%DAY_COLORS.length];
+}
+
 function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onScheduleMenu,markTaskItemDone,updStatus,deleteTask,setEditTask,user,clients,onUpdate}){
   const groupedTasks=useMemo(()=>groupTasksByScheduledDate(tasks),[tasks]);
   const renderTaskCard=t=>{
@@ -882,13 +898,16 @@ function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onSchedu
     </div>;
   };
   return<div>
-    {groupedTasks.map(group=><div key={group.key} style={{marginBottom:20}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",marginBottom:10,borderRadius:8,background:group.isHighlight?"linear-gradient(90deg, #2dd4bf 0%, #0d9488 100%)":group.isPast?"#fef3c7":"#f3f4f6",color:group.isHighlight?"white":group.isPast?"#78350f":"#374151",fontWeight:600,boxShadow:group.isHighlight?"0 2px 4px rgba(13,148,136,0.2)":"none"}}>
-        <div style={{flex:1,fontSize:14}}>{group.label}</div>
-        <div style={{fontSize:12,padding:"2px 10px",borderRadius:12,background:group.isHighlight?"rgba(255,255,255,0.25)":"white",color:group.isHighlight?"white":"#6b7280",fontWeight:600}}>{group.tasks.length}</div>
-      </div>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>{group.tasks.map(renderTaskCard)}</div>
-    </div>)}
+    {groupedTasks.map((group,groupIndex)=>{
+      const dayColor=getDayColor(group,groupIndex);
+      return<div key={group.key} style={{marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",marginBottom:10,borderRadius:8,background:group.isHighlight?"linear-gradient(90deg, #2dd4bf 0%, #0d9488 100%)":group.isPast?"#fef3c7":"#f3f4f6",color:group.isHighlight?"white":group.isPast?"#78350f":"#374151",fontWeight:600,boxShadow:group.isHighlight?"0 2px 4px rgba(13,148,136,0.2)":"none"}}>
+          <div style={{flex:1,fontSize:14}}>{group.label}</div>
+          <div style={{fontSize:12,padding:"2px 10px",borderRadius:12,background:group.isHighlight?"rgba(255,255,255,0.25)":"white",color:group.isHighlight?"white":"#6b7280",fontWeight:600}}>{group.tasks.length}</div>
+        </div>
+        <div style={{background:dayColor.bg,border:`1px solid ${dayColor.border}`,borderRadius:8,padding:8,display:"flex",flexDirection:"column",gap:6}}>{group.tasks.map(renderTaskCard)}</div>
+      </div>;
+    })}
     {tasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
       <div style={{fontSize:36,marginBottom:10}}>📋</div>
       <div style={{fontWeight:600,fontSize:14}}>אין משימות</div>

@@ -592,31 +592,39 @@ function TaskInquiryModal({task,user,onClose}){
   </Modal>;
 }
 
-function RecentlyCompletedCard({task,onRestore}){
+function RecentlyCompletedCard({task,onRestore,user,clients}){
   const hoursAgo=Math.floor((Date.now()-new Date(task.completed_at).getTime())/(1000*60*60));
   const timeText=hoursAgo<1?"לפני פחות משעה":hoursAgo<24?`לפני ${hoursAgo} שעות`:`לפני ${Math.floor(hoursAgo/24)} ימים`;
   const restore=async()=>{
     if(!window.confirm("להחזיר את המשימה לרשימת הפעילות?"))return;
     try{await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({completed_at:null,status:"בביצוע"})});onRestore?.();}catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
   };
-  return<div style={{background:"#fff",padding:12,borderRadius:8,border:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-    <div style={{flex:1,minWidth:0}}>
-      <div style={{fontWeight:600,fontSize:14}}>✅ {task.client_name||"—"}{task.bina_order_id&&<span style={{color:"#9ca3af",marginRight:8,fontSize:12,direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span>}</div>
-      <div style={{fontSize:13,color:"#6b7280",marginTop:3}}>{task.title}</div>
-      <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>הושלם {timeText}{task.sales_agent?` · ${task.sales_agent}`:""}</div>
+  return<div style={{background:"white",padding:12,borderRadius:8,border:"1px solid #e5e7eb"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+      <div style={{flex:1}}>
+        <div style={{fontWeight:600,fontSize:14}}>
+          ✅ {task.client_name||"—"}
+          {task.bina_order_id&&<span style={{color:"#9ca3af",marginRight:8,fontSize:12,direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span>}
+        </div>
+        <div style={{fontSize:13,color:"#6b7280",marginTop:3}}>{task.title}</div>
+        <div style={{fontSize:11,color:"#9ca3af",marginTop:3}}>הושלם {timeText}{task.sales_agent?` · ${task.sales_agent}`:""}</div>
+      </div>
+      <button type="button" onClick={restore} style={{padding:"6px 10px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}} title="החזר לרשימת הפעילות">↩️ החזר</button>
     </div>
-    <button type="button" onClick={restore} title="החזר לרשימת הפעילות" style={{padding:"6px 10px",background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit",flexShrink:0}}>↩️ החזר</button>
+    <div style={{paddingTop:10,borderTop:"1px solid #f3f4f6"}}>
+      <TaskNotificationButtons task={task} user={user} clients={clients} onUpdate={onRestore}/>
+    </div>
   </div>;
 }
 
-function RecentlyCompletedTab({tasks,loading,onRestore}){
+function RecentlyCompletedTab({tasks,loading,onRestore,user,clients}){
   const recent=useMemo(()=>tasks.filter(isTaskRecentlyCompleted).sort((a,b)=>new Date(b.completed_at)-new Date(a.completed_at)),[tasks]);
   if(loading)return<div style={{padding:30,textAlign:"center"}}><Spinner sz={28}/></div>;
   return<div style={{padding:4}}>
     <h2 style={{marginTop:0,fontSize:22,fontWeight:800}}>🗂️ משימות שהושלמו ב-3 ימים האחרונים</h2>
     <div style={{background:"#f0fdfa",padding:12,borderRadius:8,marginBottom:15,fontSize:13,color:"#0d9488"}}>ℹ️ כאן מופיעות משימות שהושלמו לאחרונה. אחרי 3 ימים — הן יעברו לארכיון המלא.</div>
     {recent.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>🎉 אין משימות שהושלמו לאחרונה</div>:
-    <><div style={{marginBottom:10,color:"#6b7280",fontSize:13}}>{recent.length} משימות</div><div style={{display:"grid",gap:8}}>{recent.map(t=><RecentlyCompletedCard key={t.id} task={t} onRestore={onRestore}/>)}</div></>}
+    <><div style={{marginBottom:10,color:"#6b7280",fontSize:13}}>{recent.length} משימות</div><div style={{display:"grid",gap:8}}>{recent.map(t=><RecentlyCompletedCard key={t.id} task={t} user={user} clients={clients} onRestore={onRestore}/>)}</div></>}
   </div>;
 }
 
@@ -9464,7 +9472,7 @@ function App(){
       {tab==="employees"&&isA&&<EmployeesDashboard user={user}/>}
 
       {/* CALENDAR */}
-      {tab==="recently_completed"&&<RecentlyCompletedTab tasks={tasks} loading={loading} onRestore={refreshAll}/>}
+      {tab==="recently_completed"&&<RecentlyCompletedTab tasks={tasks} loading={loading} user={user} clients={clients} onRestore={refreshAll}/>}
       {tab==="calendar"&&<CalendarTab tasks={tasks} taskItems={taskItems} user={user} isA={isA} onTaskClick={setDet} clients={clients} onTaskRefresh={refreshAll}/>}
 
       {/* ARCHIVE (admin) */}

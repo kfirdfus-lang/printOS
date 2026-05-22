@@ -192,6 +192,32 @@ function getCategoryById(id){
   return DOCUMENT_CATEGORIES.find(c=>c.id===id)||DOCUMENT_CATEGORIES[DOCUMENT_CATEGORIES.length-1];
 }
 
+const EMPLOYEE_DOC_CATEGORIES=[
+  {id:"agreement",name:"הסכמים",icon:"📑",color:"#3b82f6",description:"הסכמי עבודה, נספחים, תוספות"},
+  {id:"payslip",name:"תלושי שכר",icon:"💰",color:"#10b981",description:"תלושי שכר חודשיים",monthly:true},
+  {id:"general",name:"מסמכים כלליים",icon:"📁",color:"#6b7280",description:"ת.ז, אישורים, תעודות, וכו"},
+];
+function getEmployeeCatById(id){
+  return EMPLOYEE_DOC_CATEGORIES.find(c=>c.id===id)||EMPLOYEE_DOC_CATEGORIES[2];
+}
+function calculateAge(birthDate){
+  if(!birthDate)return null;
+  const today=new Date();
+  const birth=new Date(birthDate);
+  let age=today.getFullYear()-birth.getFullYear();
+  const monthDiff=today.getMonth()-birth.getMonth();
+  if(monthDiff<0||(monthDiff===0&&today.getDate()<birth.getDate()))age--;
+  return age;
+}
+function daysUntilBirthday(birthDate){
+  if(!birthDate)return null;
+  const today=new Date();today.setHours(0,0,0,0);
+  const birth=new Date(birthDate);
+  const nextBirthday=new Date(today.getFullYear(),birth.getMonth(),birth.getDate());
+  if(nextBirthday<today)nextBirthday.setFullYear(today.getFullYear()+1);
+  return Math.floor((nextBirthday-today)/(1000*60*60*24));
+}
+
 if(typeof window!=="undefined"){
   window.uploadFileToStorage=uploadFileToStorage;
   window.getSignedUrl=getSignedUrl;
@@ -1105,6 +1131,368 @@ function DocumentsDashboard({user}){
     {view==="category"&&selectedCategory&&<CategoryView category={selectedCategory} docs={allDocs.filter(d=>d.category===selectedCategory.id)} onBack={()=>{setSelectedCategory(null);setView("categories");}} onUpdate={loadDocs}/>}
     {view==="search"&&<SearchResults query={searchQuery} results={searchResults} onUpdate={loadDocs}/>}
     {showUpload&&<UploadDocumentModal user={user} onClose={()=>setShowUpload(false)} onUploaded={()=>{loadDocs();setShowUpload(false);}} defaultCategory={selectedCategory?.id}/>}
+  </div>;
+}
+
+function BirthdayBanner({birthdays,onSelect}){
+  return<div style={{background:"linear-gradient(135deg, #fce7f3 0%, #ddd6fe 100%)",border:"2px solid #d8b4fe",borderRadius:10,padding:15,marginBottom:20}}>
+    <div style={{fontWeight:700,fontSize:15,color:"#581c87",marginBottom:10}}>🎂 ימי הולדת קרובים</div>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {birthdays.map(emp=>{
+        const birth=new Date(emp.birth_date);
+        const age=calculateAge(emp.birth_date);
+        const nextAge=age+(emp.daysUntil===0?0:1);
+        let timeText,emoji;
+        if(emp.daysUntil===0){timeText="🎉 היום!!! זמן לחגוג!";emoji="🎂";}
+        else if(emp.daysUntil===1){timeText="מחר! יש לסדר מתנה";emoji="🎁";}
+        else if(emp.daysUntil<=4){timeText=`בעוד ${emp.daysUntil} ימים - זמן לתכנן מתנה`;emoji="🎁";}
+        else{timeText=`בעוד ${emp.daysUntil} ימים`;emoji="🎈";}
+        const birthdayStr=birth.toLocaleDateString("he-IL",{day:"2-digit",month:"2-digit"});
+        return<button type="button" key={emp.id} onClick={()=>onSelect?.(emp)} style={{background:"white",padding:12,borderRadius:8,border:emp.daysUntil<=4?"2px solid #c084fc":"1px solid #e9d5ff",cursor:"pointer",textAlign:"right",display:"flex",alignItems:"center",gap:12,fontFamily:"inherit",width:"100%"}}>
+          <div style={{fontSize:28}}>{emoji}</div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:15}}>{emp.full_name}</div>
+            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>📅 {birthdayStr} · גיל {nextAge}</div>
+          </div>
+          <div style={{fontSize:13,fontWeight:600,color:"#581c87",whiteSpace:"nowrap",maxWidth:160,textAlign:"left"}}>{timeText}</div>
+        </button>;
+      })}
+    </div>
+  </div>;
+}
+
+function EmployeeCard({employee,docCount,onClick}){
+  const age=calculateAge(employee.birth_date);
+  const daysUntil=employee.birth_date?daysUntilBirthday(employee.birth_date):null;
+  return<button type="button" onClick={onClick} style={{background:"white",padding:16,borderRadius:10,border:"1px solid #e5e7eb",cursor:"pointer",textAlign:"right",transition:"all 0.2s",fontFamily:"inherit",width:"100%"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#0d9488";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 4px 12px rgba(13,148,136,0.15)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#e5e7eb";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+      <div style={{width:50,height:50,borderRadius:"50%",background:"linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:20}}>{employee.full_name.charAt(0)}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:700,fontSize:16}}>{employee.full_name}</div>
+        {daysUntil!==null&&daysUntil<=7&&<div style={{fontSize:11,color:"#c026d3",marginTop:2}}>🎂 בעוד {daysUntil} ימים!</div>}
+      </div>
+    </div>
+    <div style={{fontSize:13,color:"#374151"}}>
+      {employee.phone&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span>📞</span><span style={{direction:"ltr"}}>{employee.phone}</span></div>}
+      {employee.birth_date&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span>🎂</span><span>{new Date(employee.birth_date).toLocaleDateString("he-IL")}{age!==null&&` (גיל ${age})`}</span></div>}
+      <div style={{display:"flex",alignItems:"center",gap:8}}><span>📎</span><span>{docCount} מסמכים</span></div>
+    </div>
+  </button>;
+}
+
+function DetailItem({icon,label,value,ltr,highlight}){
+  return<div style={{display:"flex",alignItems:"center",gap:12,padding:10,background:highlight?"#fce7f3":"#f9fafb",borderRadius:6}}>
+    <div style={{fontSize:20}}>{icon}</div>
+    <div style={{flex:1}}>
+      <div style={{fontSize:11,color:"#6b7280"}}>{label}</div>
+      <div style={{fontWeight:600,marginTop:2,direction:ltr?"ltr":"rtl",textAlign:"right"}}>{value}</div>
+    </div>
+  </div>;
+}
+
+function EmployeeDetailsTab({employee,editing,setEditing,onUpdate,onDelete}){
+  const [fullName,setFullName]=useState(employee.full_name);
+  const [phone,setPhone]=useState(employee.phone||"");
+  const [birthDate,setBirthDate]=useState(employee.birth_date||"");
+  const [notes,setNotes]=useState(employee.notes||"");
+  const age=calculateAge(employee.birth_date);
+  const daysUntil=employee.birth_date?daysUntilBirthday(employee.birth_date):null;
+  const handleSave=async()=>{
+    if(!fullName.trim()){window.alert("יש למלא שם");return;}
+    try{
+      await sb(`employees?id=eq.${employee.id}`,{method:"PATCH",body:JSON.stringify({full_name:fullName.trim(),phone:phone.trim()||null,birth_date:birthDate||null,notes:notes.trim()||null,updated_at:new Date().toISOString()})});
+      onUpdate?.();
+      setEditing(false);
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  const handleDelete=async()=>{
+    if(!window.confirm(`למחוק את העובד "${employee.full_name}" וכל המסמכים שלו? פעולה זו לא ניתנת לביטול.`))return;
+    try{
+      const empDocs=await sb(`documents?employee_id=eq.${employee.id}`);
+      for(const d of (empDocs||[]))await deleteFileFromStorage(d.file_path);
+      await sb(`documents?employee_id=eq.${employee.id}`,{method:"DELETE"});
+      await sb(`employees?id=eq.${employee.id}`,{method:"DELETE"});
+      onUpdate?.();
+      onDelete?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  if(editing)return<div>
+    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מלא *:</label><input value={fullName} onChange={e=>setFullName(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
+    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>טלפון:</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="050-1234567" style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",direction:"ltr",fontFamily:"inherit"}}/></div>
+    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>תאריך לידה:</label><input type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
+    <div style={{marginBottom:15}}><label style={{fontWeight:600,fontSize:13}}>הערות:</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",minHeight:60,fontFamily:"inherit"}}/></div>
+    <div style={{display:"flex",gap:10}}>
+      <button type="button" onClick={()=>setEditing(false)} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+      <button type="button" onClick={handleSave} style={{flex:2,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור</button>
+    </div>
+  </div>;
+  return<div>
+    <div style={{display:"grid",gap:12,marginBottom:20}}>
+      <DetailItem icon="📞" label="טלפון" value={employee.phone||"—"} ltr={!!employee.phone}/>
+      <DetailItem icon="🎂" label="תאריך לידה" value={employee.birth_date?`${new Date(employee.birth_date).toLocaleDateString("he-IL")} (גיל ${age})`:"—"}/>
+      {daysUntil!==null&&<DetailItem icon="⭐" label="ימים עד יום הולדת הבא" value={daysUntil===0?"🎉 היום!":`${daysUntil} ימים`} highlight={daysUntil<=7}/>}
+      {employee.notes&&<DetailItem icon="📝" label="הערות" value={employee.notes}/>}
+    </div>
+    <div style={{display:"flex",gap:10}}>
+      <button type="button" onClick={handleDelete} style={{padding:10,background:"white",color:"#ef4444",border:"1px solid #ef4444",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>🗑️ מחק עובד</button>
+      <button type="button" onClick={()=>setEditing(true)} style={{flex:1,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך פרטים</button>
+    </div>
+  </div>;
+}
+
+function EmployeeDocRow({doc,onUpdate,customLabel}){
+  const [previewing,setPreviewing]=useState(false);
+  const handleOpen=async()=>{
+    setPreviewing(true);
+    try{
+      const url=await getSignedUrl(doc.file_path);
+      if(url)window.open(url,"_blank");
+      else window.alert("שגיאה בפתיחה");
+    }finally{setPreviewing(false);}
+  };
+  const handleDelete=async()=>{
+    if(!window.confirm(`למחוק את "${doc.title}"?`))return;
+    try{
+      await deleteFileFromStorage(doc.file_path);
+      await sb(`documents?id=eq.${doc.id}`,{method:"DELETE"});
+      onUpdate?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+  };
+  return<div style={{background:"white",padding:10,borderRadius:6,border:"1px solid #e5e7eb",display:"flex",alignItems:"center",gap:10}}>
+    <div style={{fontSize:24}}>{getFileIcon(doc.file_type,doc.file_name)}</div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontWeight:600,fontSize:13}}>{customLabel||doc.title}</div>
+      <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{doc.document_date&&`📅 ${new Date(doc.document_date).toLocaleDateString("he-IL")} · `}{formatFileSize(doc.file_size)}</div>
+    </div>
+    <button type="button" onClick={handleOpen} disabled={previewing} style={{padding:"6px 10px",background:"#0d9488",color:"white",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>{previewing?"⏳":"👁️"}</button>
+    <button type="button" onClick={handleDelete} style={{padding:"6px 10px",background:"white",color:"#ef4444",border:"1px solid #ef4444",borderRadius:6,cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>🗑️</button>
+  </div>;
+}
+
+function PayslipRow({doc,onUpdate}){
+  const date=doc.document_date?new Date(doc.document_date):new Date(doc.uploaded_at);
+  const monthName=date.toLocaleDateString("he-IL",{month:"long"});
+  return<EmployeeDocRow doc={doc} onUpdate={onUpdate} customLabel={`💰 ${monthName} ${date.getFullYear()}`}/>;
+}
+
+function UploadEmployeeDocModal({employee,category,isPayslip,onClose,onUploaded,user}){
+  const [step,setStep]=useState("upload");
+  const [uploadedFile,setUploadedFile]=useState(null);
+  const [title,setTitle]=useState("");
+  const [docDate,setDocDate]=useState(isPayslip?new Date().toISOString().substring(0,10):"");
+  const [saving,setSaving]=useState(false);
+  const cat=getEmployeeCatById(category);
+  const handleFileUploaded=fileResult=>{
+    setUploadedFile(fileResult);
+    if(isPayslip){
+      const now=new Date();
+      const monthName=now.toLocaleDateString("he-IL",{month:"long",year:"numeric"});
+      setTitle(`תלוש שכר ${monthName}`);
+    }else setTitle(fileResult.name.replace(/\.[^.]+$/,""));
+    setStep("details");
+  };
+  const handleSave=async()=>{
+    if(!title.trim()){window.alert("יש למלא שם");return;}
+    setSaving(true);
+    try{
+      await sb("documents",{method:"POST",body:JSON.stringify({employee_id:employee.id,category,title:title.trim(),file_path:uploadedFile.path,file_name:uploadedFile.name,file_size:uploadedFile.size,file_type:uploadedFile.type,document_date:docDate||null,uploaded_by:user?.name||"unknown"})});
+      onUploaded?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+    finally{setSaving(false);}
+  };
+  return<Modal open onClose={onClose} title={`➕ העלה ${cat.name} - ${employee.full_name}`} maxWidth={500}>
+    {step==="upload"?<>
+      <FileUploadField folder={`employees/${employee.id}/${category}`} onUploaded={handleFileUploaded} label={`בחר/גרור קובץ ${cat.name}`}/>
+      <button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:15,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+    </>:<>
+      <div style={{padding:10,background:cat.color+"15",borderRadius:6,marginBottom:15}}>
+        <div style={{fontSize:12,color:cat.color,marginBottom:4}}>{cat.icon} {cat.name}</div>
+        <div style={{fontWeight:600,fontSize:13}}>{uploadedFile.name}</div>
+      </div>
+      <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מסמך *:</label><input value={title} onChange={e=>setTitle(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}} autoFocus/></div>
+      <div style={{marginBottom:15}}>
+        <label style={{fontWeight:600,fontSize:13}}>{isPayslip?"חודש התלוש *:":"תאריך המסמך:"}</label>
+        <input type="date" value={docDate} onChange={e=>setDocDate(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/>
+        {isPayslip&&<div style={{fontSize:11,color:"#6b7280",marginTop:4}}>💡 התלושים יסודרו לפי תאריך זה</div>}
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" onClick={handleSave} disabled={saving} style={{flex:2,padding:12,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"⏳ שומר...":"💾 שמור"}</button>
+      </div>
+    </>}
+  </Modal>;
+}
+
+function EmployeeDocsTab({employee,category,docs,onUpdate,user}){
+  const [showUpload,setShowUpload]=useState(false);
+  const cat=getEmployeeCatById(category);
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+      <div style={{color:"#6b7280",fontSize:13}}>{cat.description} · {docs.length} מסמכים</div>
+      <button type="button" onClick={()=>setShowUpload(true)} style={{padding:"8px 14px",background:cat.color,color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ העלה {cat.name}</button>
+    </div>
+    {docs.length===0?<div style={{textAlign:"center",padding:30,color:"#9ca3af",background:"#f9fafb",borderRadius:8}}>אין {cat.name} בתיק עדיין</div>:<div style={{display:"grid",gap:8}}>{docs.map(d=><EmployeeDocRow key={d.id} doc={d} onUpdate={onUpdate}/>)}</div>}
+    {showUpload&&<UploadEmployeeDocModal employee={employee} category={category} user={user} onClose={()=>setShowUpload(false)} onUploaded={()=>{onUpdate?.();setShowUpload(false);}}/>}
+  </div>;
+}
+
+function PayslipsTab({employee,docs,onUpdate,user}){
+  const [showUpload,setShowUpload]=useState(false);
+  const docsByYear=useMemo(()=>{
+    const groups={};
+    docs.forEach(d=>{
+      const date=d.document_date||d.uploaded_at;
+      const year=new Date(date).getFullYear();
+      if(!groups[year])groups[year]=[];
+      groups[year].push(d);
+    });
+    Object.keys(groups).forEach(year=>{
+      groups[year].sort((a,b)=>{
+        const dA=new Date(a.document_date||a.uploaded_at);
+        const dB=new Date(b.document_date||b.uploaded_at);
+        return dB-dA;
+      });
+    });
+    return groups;
+  },[docs]);
+  const years=Object.keys(docsByYear).sort((a,b)=>b-a);
+  return<div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:15}}>
+      <div style={{color:"#6b7280",fontSize:13}}>{docs.length} תלושי שכר · מסודרים לפי חודש ושנה</div>
+      <button type="button" onClick={()=>setShowUpload(true)} style={{padding:"8px 14px",background:"#10b981",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ העלה תלוש</button>
+    </div>
+    {docs.length===0?<div style={{textAlign:"center",padding:30,color:"#9ca3af",background:"#f9fafb",borderRadius:8}}>אין תלושי שכר בתיק עדיין</div>:<div>{years.map(year=><div key={year} style={{marginBottom:20}}>
+      <div style={{background:"#f0fdfa",padding:"8px 14px",borderRadius:6,fontWeight:700,color:"#0d9488",marginBottom:8}}>📅 {year} ({docsByYear[year].length} תלושים)</div>
+      <div style={{display:"grid",gap:6}}>{docsByYear[year].map(d=><PayslipRow key={d.id} doc={d} onUpdate={onUpdate}/>)}</div>
+    </div>)}</div>}
+    {showUpload&&<UploadEmployeeDocModal employee={employee} category="payslip" isPayslip user={user} onClose={()=>setShowUpload(false)} onUploaded={()=>{onUpdate?.();setShowUpload(false);}}/>}
+  </div>;
+}
+
+function EmployeeFileModal({employee,onClose,onUpdate,user}){
+  const [fileTab,setFileTab]=useState("details");
+  const [editing,setEditing]=useState(false);
+  const [docs,setDocs]=useState([]);
+  const [loadingDocs,setLoadingDocs]=useState(true);
+  const loadDocs=async()=>{
+    try{
+      const data=await sb(`documents?employee_id=eq.${employee.id}&order=document_date.desc.nullslast,uploaded_at.desc`);
+      setDocs(data||[]);
+    }catch(e){console.error(e);}
+    finally{setLoadingDocs(false);}
+  };
+  useEffect(()=>{setLoadingDocs(true);loadDocs();},[employee.id]);
+  const docsByCategory=useMemo(()=>{
+    const groups={agreement:[],payslip:[],general:[]};
+    docs.forEach(d=>{if(groups[d.category]!==undefined)groups[d.category].push(d);});
+    return groups;
+  },[docs]);
+  const tabDefs=[
+    {id:"details",label:"👤 פרטים"},
+    {id:"agreement",label:"📑 הסכמים",count:docsByCategory.agreement.length},
+    {id:"payslip",label:"💰 תלושי שכר",count:docsByCategory.payslip.length},
+    {id:"general",label:"📁 כללי",count:docsByCategory.general.length},
+  ];
+  return<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:750,maxHeight:"90vh",overflowY:"auto",boxShadow:"var(--shadow-lg)"}}>
+      <div style={{background:"linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)",padding:20,color:"white",borderTopLeftRadius:20,borderTopRightRadius:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:15}}>
+          <div style={{width:60,height:60,borderRadius:"50%",background:"rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:700}}>{employee.full_name.charAt(0)}</div>
+          <div style={{flex:1}}>
+            <h2 style={{margin:0,fontSize:20}}>{employee.full_name}</h2>
+            {employee.phone&&<div style={{fontSize:13,opacity:0.9,marginTop:4,direction:"ltr"}}>📞 {employee.phone}</div>}
+          </div>
+          <button type="button" onClick={onClose} style={{background:"rgba(255,255,255,0.2)",color:"white",border:"none",padding:"6px 12px",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        </div>
+      </div>
+      <div style={{padding:20}}>
+        <div style={{display:"flex",gap:4,marginBottom:15,borderBottom:"1px solid #e5e7eb",flexWrap:"wrap"}}>
+          {tabDefs.map(t=><button type="button" key={t.id} onClick={()=>setFileTab(t.id)} style={{padding:"10px 16px",background:"transparent",border:"none",borderBottom:fileTab===t.id?"3px solid #0d9488":"3px solid transparent",color:fileTab===t.id?"#0d9488":"#6b7280",cursor:"pointer",fontWeight:600,fontSize:14,fontFamily:"inherit"}}>
+            {t.label}
+            {t.count!==undefined&&<span style={{marginRight:6,padding:"1px 8px",borderRadius:10,background:fileTab===t.id?"#0d9488":"#e5e7eb",color:fileTab===t.id?"white":"#6b7280",fontSize:11}}>{t.count}</span>}
+          </button>)}
+        </div>
+        {loadingDocs&&fileTab!=="details"?<div style={{padding:20,textAlign:"center",color:"#6b7280"}}>טוען מסמכים...</div>:<>
+          {fileTab==="details"&&<EmployeeDetailsTab employee={employee} editing={editing} setEditing={setEditing} onUpdate={onUpdate} onDelete={onClose}/>}
+          {fileTab==="agreement"&&<EmployeeDocsTab employee={employee} category="agreement" docs={docsByCategory.agreement} onUpdate={loadDocs} user={user}/>}
+          {fileTab==="payslip"&&<PayslipsTab employee={employee} docs={docsByCategory.payslip} onUpdate={loadDocs} user={user}/>}
+          {fileTab==="general"&&<EmployeeDocsTab employee={employee} category="general" docs={docsByCategory.general} onUpdate={loadDocs} user={user}/>}
+        </>}
+      </div>
+    </div>
+  </div>;
+}
+
+function EditEmployeeModal({onClose,onSaved}){
+  const [fullName,setFullName]=useState("");
+  const [phone,setPhone]=useState("");
+  const [birthDate,setBirthDate]=useState("");
+  const [saving,setSaving]=useState(false);
+  const handleSave=async()=>{
+    if(!fullName.trim()){window.alert("יש למלא שם");return;}
+    setSaving(true);
+    try{
+      await sb("employees",{method:"POST",body:JSON.stringify({full_name:fullName.trim(),phone:phone.trim()||null,birth_date:birthDate||null})});
+      onSaved?.();
+    }catch(e){window.alert("שגיאה: "+e.message);}
+    finally{setSaving(false);}
+  };
+  return<Modal open onClose={onClose} title="➕ הוסף עובד חדש" maxWidth={450}>
+    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מלא *:</label><input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="יוסי כהן" style={{width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}} autoFocus/></div>
+    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>טלפון:</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="050-1234567" style={{width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",direction:"ltr",fontFamily:"inherit"}}/></div>
+    <div style={{marginBottom:15}}><label style={{fontWeight:600,fontSize:13}}>תאריך לידה:</label><input type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} style={{width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/><div style={{fontSize:11,color:"#6b7280",marginTop:4}}>💡 לקבלת תזכורות ליום הולדת</div></div>
+    <div style={{display:"flex",gap:10}}>
+      <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+      <button type="button" onClick={handleSave} disabled={saving} style={{flex:2,padding:12,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"⏳":"💾 שמור"}</button>
+    </div>
+  </Modal>;
+}
+
+function EmployeesDashboard({user}){
+  const [employees,setEmployees]=useState([]);
+  const [docCounts,setDocCounts]=useState({});
+  const [loading,setLoading]=useState(true);
+  const [selectedEmployee,setSelectedEmployee]=useState(null);
+  const [showAddModal,setShowAddModal]=useState(false);
+  const loadData=async()=>{
+    try{
+      const emps=await sb("employees?is_active=eq.true&order=full_name");
+      setEmployees(emps||[]);
+      const docs=await sb("documents?employee_id=not.is.null&select=employee_id");
+      const counts={};
+      (docs||[]).forEach(d=>{counts[d.employee_id]=(counts[d.employee_id]||0)+1;});
+      setDocCounts(counts);
+    }catch(e){console.error(e);}
+    finally{setLoading(false);}
+  };
+  useEffect(()=>{
+    loadData();
+    const interval=setInterval(loadData,60000);
+    return()=>clearInterval(interval);
+  },[]);
+  const upcomingBirthdays=useMemo(()=>employees.filter(e=>e.birth_date).map(e=>({...e,daysUntil:daysUntilBirthday(e.birth_date)})).filter(e=>e.daysUntil<=7).sort((a,b)=>a.daysUntil-b.daysUntil),[employees]);
+  if(loading)return<div style={{padding:30,textAlign:"center"}}>טוען...</div>;
+  return<div style={{padding:20}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h2 style={{margin:"0 0 5px"}}>👥 דשבורד עובדים</h2>
+        <p style={{margin:0,color:"#6b7280",fontSize:14}}>ניהול עובדים, ימי הולדת, הסכמים ותלושי שכר</p>
+      </div>
+      <button type="button" onClick={()=>setShowAddModal(true)} style={{padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ הוסף עובד</button>
+    </div>
+    {upcomingBirthdays.length>0&&<BirthdayBanner birthdays={upcomingBirthdays} onSelect={emp=>setSelectedEmployee(emp)}/>}
+    {employees.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af",background:"#f9fafb",borderRadius:10}}>
+      <div style={{fontSize:48,marginBottom:10}}>👥</div>
+      <div>אין עובדים במערכת עדיין</div>
+      <div style={{fontSize:13,marginTop:6}}>לחץ "➕ הוסף עובד" כדי להתחיל</div>
+    </div>:<>
+      <h3 style={{marginBottom:12}}>רשימת עובדים ({employees.length})</h3>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:12}}>
+        {employees.map(emp=><EmployeeCard key={emp.id} employee={emp} docCount={docCounts[emp.id]||0} onClick={()=>setSelectedEmployee(emp)}/>)}
+      </div>
+    </>}
+    {showAddModal&&<EditEmployeeModal onClose={()=>setShowAddModal(false)} onSaved={()=>{loadData();setShowAddModal(false);}}/>}
+    {selectedEmployee&&<EmployeeFileModal employee={selectedEmployee} user={user} onClose={()=>setSelectedEmployee(null)} onUpdate={loadData}/>}
   </div>;
 }
 
@@ -8563,6 +8951,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="employees"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="shipments"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -8797,7 +9191,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -9066,6 +9460,8 @@ function App(){
       {tab==="vacations"&&isA&&<VacationFormManager user={user}/>}
 
       {tab==="documents"&&isA&&<DocumentsDashboard user={user}/>}
+
+      {tab==="employees"&&isA&&<EmployeesDashboard user={user}/>}
 
       {/* CALENDAR */}
       {tab==="recently_completed"&&<RecentlyCompletedTab tasks={tasks} loading={loading} onRestore={refreshAll}/>}

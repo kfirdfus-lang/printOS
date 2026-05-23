@@ -1935,7 +1935,7 @@ function MockupRequestForm({onClose,onCreated,user}){
       })});
       const newRequest=Array.isArray(result)?result[0]:result;
       if(!newRequest?.id)throw new Error("לא נוצרה בקשה");
-      setProcessingStatus("⏳ AI יוצר הדמיה - זה ייקח 30-60 שניות...");
+      setProcessingStatus("⏳ AI יוצר הדמיה - זה ייקח 60-90 שניות...");
       const {data,error}=await supabaseClient.functions.invoke("mockup-generate",{body:{
         request_id:newRequest.id,
         product_id:selectedProduct.id,
@@ -2056,7 +2056,16 @@ function MockupRequestForm({onClose,onCreated,user}){
               {brief.trim()&&<div style={{marginTop:8,padding:8,background:"white",borderRadius:6,fontSize:12}}>💬 {brief}</div>}
             </div>
           </div>
-          <div style={{background:"#fef3c7",padding:10,borderRadius:6,marginBottom:15,fontSize:12,color:"#78350f"}}>💡 <strong>הערה:</strong> AI יצירתי — הלוגו עשוי להיראות דומה אבל לא מדויק 100%. מצוין לרושם כללי עם הלקוח.<br/>💰 עלות משוערת: ~$0.04–0.08 לתמונה.</div>
+          <div style={{background:"#dbeafe",padding:12,borderRadius:8,marginBottom:12,border:"1px solid #93c5fd"}}>
+            <div style={{fontWeight:700,color:"#1e3a8a",marginBottom:6,fontSize:13}}>🤖 איך זה יעבוד:</div>
+            <div style={{fontSize:12,color:"#1e3a8a",lineHeight:1.6}}>
+              1. המערכת תזהה אוטומטית אם ללוגו יש רקע<br/>
+              2. אם יש — תסיר אותו ב-Remove.bg<br/>
+              3. תייצר הדמיה ריאליסטית עם OpenAI<br/>
+              <strong>זמן משוער: 60-90 שניות</strong>
+            </div>
+          </div>
+          <div style={{background:"#fef3c7",padding:10,borderRadius:6,marginBottom:15,fontSize:12,color:"#78350f"}}>💡 <strong>הערה:</strong> AI יצירתי — הלוגו עשוי להיראות דומה אבל לא מדויק 100%. מצוין לרושם כללי עם הלקוח.<br/>💰 עלות משוערת: ~$0.04–0.08 לתמונה (+ Remove.bg אם נדרש).</div>
           <div style={{display:"flex",gap:10}}>
             <button type="button" onClick={()=>setStep("upload")} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>← חזור</button>
             <button type="button" onClick={handleCreate} disabled={creating} style={{flex:2,padding:12,background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,fontWeight:700,fontSize:14,cursor:creating?"wait":"pointer",fontFamily:"inherit"}}>{creating?"⏳ יוצר...":"✨ צור הדמיה!"}</button>
@@ -2066,7 +2075,7 @@ function MockupRequestForm({onClose,onCreated,user}){
           <div style={{fontSize:60,marginBottom:20}}>⏳</div>
           <div style={{fontSize:18,fontWeight:600,marginBottom:8}}>AI יוצר הדמיה...</div>
           <div style={{fontSize:13,color:"#6b7280",marginBottom:20}}>{processingStatus||"מעבד..."}</div>
-          <div style={{fontSize:11,color:"#9ca3af"}}>זה ייקח 30-60 שניות. אל תסגור את החלון.</div>
+          <div style={{fontSize:11,color:"#9ca3af"}}>זה ייקח 60-90 שניות (זיהוי + הסרת רקע + יצירת הדמיה).<br/>אל תסגור את החלון.</div>
         </div>}
       </div>
     </div>
@@ -2178,6 +2187,13 @@ function RequestDetailsModal({request,onClose,onUpdate}){
         {request.description&&<div style={{marginBottom:15}}>
           <div style={{fontWeight:600,fontSize:13,marginBottom:6}}>תיאור:</div>
           <div style={{padding:10,background:"#f9fafb",borderRadius:6,fontSize:13,color:"#374151",whiteSpace:"pre-wrap"}}>{request.description}</div>
+        </div>}
+        {request.error_message&&<div style={{marginBottom:15,padding:10,background:"#fef2f2",borderRadius:6,border:"1px solid #fecaca",fontSize:12,color:"#991b1b"}}>❌ {request.error_message}</div>}
+        {Array.isArray(request.processing_log)&&request.processing_log.length>0&&<div style={{marginBottom:15}}>
+          <div style={{fontWeight:600,fontSize:13,marginBottom:6}}>📋 לוג עיבוד:</div>
+          <div style={{padding:10,background:"#f9fafb",borderRadius:6,fontSize:11,color:"#374151",maxHeight:160,overflowY:"auto",fontFamily:"monospace"}}>
+            {request.processing_log.map((entry,i)=><div key={i} style={{marginBottom:4}}>{entry.step||"—"}{entry.is_transparent!=null?` · שקוף: ${entry.is_transparent}`:""}{entry.error?` · ${entry.error}`:""}</div>)}
+          </div>
         </div>}
         <div style={{marginBottom:15}}>
           <div style={{fontWeight:600,fontSize:13,marginBottom:6}}>📎 קבצי קלט ({(request.input_files||[]).length}):</div>

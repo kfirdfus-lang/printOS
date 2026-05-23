@@ -1883,6 +1883,9 @@ function MockupRequestForm({onClose,onCreated,user}){
   const [selectedLocations,setSelectedLocations]=useState([]);
   const [locationFiles,setLocationFiles]=useState({});
   const [brief,setBrief]=useState("");
+  const [generatePdf,setGeneratePdf]=useState(true);
+  const [clientName,setClientName]=useState("");
+  const [projectName,setProjectName]=useState("");
   const [creating,setCreating]=useState(false);
   const [processingStatus,setProcessingStatus]=useState(null);
   useEffect(()=>{(async()=>{
@@ -1940,11 +1943,15 @@ function MockupRequestForm({onClose,onCreated,user}){
         request_id:newRequest.id,
         product_id:selectedProduct.id,
         product_name_en:selectedProduct.name_en,
+        product_name_he:selectedProduct.name,
         product_ai_description:selectedProduct.ai_description||selectedProduct.name_en,
         color:selectedColor,
         views:asJsonArray(selectedProduct.views),
         print_locations:allLocations,
-        brief:brief.trim()||undefined
+        brief:brief.trim()||undefined,
+        generate_pdf:generatePdf,
+        client_name:clientName.trim()||undefined,
+        project_name:projectName.trim()||undefined
       }});
       if(error)throw error;
       if(data?.error)throw new Error(data.error);
@@ -2066,6 +2073,22 @@ function MockupRequestForm({onClose,onCreated,user}){
             </div>
           </div>
           <div style={{background:"#fef3c7",padding:10,borderRadius:6,marginBottom:15,fontSize:12,color:"#78350f"}}>💡 <strong>הערה:</strong> AI יצירתי — הלוגו עשוי להיראות דומה אבל לא מדויק 100%. מצוין לרושם כללי עם הלקוח.<br/>💰 עלות משוערת: ~$0.04–0.08 לתמונה (+ Remove.bg אם נדרש).</div>
+          <div style={{background:"#ecfdf5",padding:15,borderRadius:8,marginBottom:15,border:"1px solid #6ee7b7"}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600,fontSize:14,marginBottom:generatePdf?12:0}}>
+              <input type="checkbox" checked={generatePdf} onChange={e=>setGeneratePdf(e.target.checked)} style={{width:18,height:18}}/>
+              📄 צור PDF הצעה מקצועי (עברית)
+            </label>
+            {generatePdf&&<>
+              <div style={{marginBottom:10}}>
+                <label style={{fontWeight:600,fontSize:12,marginBottom:4,display:"block"}}>שם לקוח:</label>
+                <input value={clientName} onChange={e=>setClientName(e.target.value)} placeholder="למשל: צ'קפוינט" style={{width:"100%",padding:8,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit",fontSize:13}}/>
+              </div>
+              <div>
+                <label style={{fontWeight:600,fontSize:12,marginBottom:4,display:"block"}}>שם פרויקט (אופציונלי):</label>
+                <input value={projectName} onChange={e=>setProjectName(e.target.value)} placeholder="למשל: כנס שנתי 2026" style={{width:"100%",padding:8,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit",fontSize:13}}/>
+              </div>
+            </>}
+          </div>
           <div style={{display:"flex",gap:10}}>
             <button type="button" onClick={()=>setStep("upload")} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>← חזור</button>
             <button type="button" onClick={handleCreate} disabled={creating} style={{flex:2,padding:12,background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,fontWeight:700,fontSize:14,cursor:creating?"wait":"pointer",fontFamily:"inherit"}}>{creating?"⏳ יוצר...":"✨ צור הדמיה!"}</button>

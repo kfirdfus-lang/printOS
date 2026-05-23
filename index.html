@@ -1874,6 +1874,22 @@ const MOCKUP_CATEGORY_LABELS={
   displays:"🏗️ מתקני תצוגה"
 };
 
+function PositionGrid({value,onChange,color}){
+  const positions=[
+    "top-left","top-center","top-right",
+    "middle-left","middle-center","middle-right",
+    "bottom-left","bottom-center","bottom-right"
+  ];
+  const labels={
+    "top-left":"↖️","top-center":"⬆️","top-right":"↗️",
+    "middle-left":"⬅️","middle-center":"🎯","middle-right":"➡️",
+    "bottom-left":"↙️","bottom-center":"⬇️","bottom-right":"↘️"
+  };
+  return<div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:4,padding:8,background:"#f9fafb",borderRadius:6,maxWidth:180}}>
+    {positions.map(pos=><button type="button" key={pos} onClick={()=>onChange(pos)} title={pos} style={{padding:10,fontSize:18,background:value===pos?color:"white",color:value===pos?"white":"#6b7280",border:`2px solid ${value===pos?color:"#d1d5db"}`,borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>{labels[pos]}</button>)}
+  </div>;
+}
+
 function MockupRequestForm({onClose,onCreated,user}){
   const [step,setStep]=useState("product");
   const [products,setProducts]=useState([]);
@@ -1881,6 +1897,7 @@ function MockupRequestForm({onClose,onCreated,user}){
   const [selectedProduct,setSelectedProduct]=useState(null);
   const [selectedColor,setSelectedColor]=useState("");
   const [selectedLocations,setSelectedLocations]=useState([]);
+  const [locationConfigs,setLocationConfigs]=useState({});
   const [locationFiles,setLocationFiles]=useState({});
   const [brief,setBrief]=useState("");
   const [generatePdf,setGeneratePdf]=useState(true);
@@ -1911,18 +1928,31 @@ function MockupRequestForm({onClose,onCreated,user}){
     const colors=asJsonArray(p.colors);
     setSelectedColor(colors[0]||"");
     setSelectedLocations([]);
+    setLocationConfigs({});
     setLocationFiles({});
     setStep("configure");
-  };
-  const toggleLocation=locName=>{
-    setSelectedLocations(prev=>prev.includes(locName)?prev.filter(l=>l!==locName):[...prev,locName]);
   };
   const handleCreate=async()=>{
     if(!selectedProduct||!selectedColor||selectedLocations.length===0||!allFilesReady)return;
     const allLocations=selectedLocations.map(locName=>{
       const loc=productLocations.find(l=>l.name===locName);
       const file=locationFiles[locName];
-      return{name:locName,view:loc?.view||"",width_cm:loc?.max_width_cm||0,height_cm:loc?.max_height_cm||0,file_path:file?.path,file_url:file?.path};
+      const config=locationConfigs[locName]||{
+        position:"middle-center",
+        custom_width:loc?.max_width_cm||0,
+        custom_height:loc?.max_height_cm||0,
+        rotation:0
+      };
+      return{
+        name:locName,
+        view:loc?.view||"",
+        width_cm:config.custom_width,
+        height_cm:config.custom_height,
+        position:config.position,
+        rotation:config.rotation,
+        file_path:file?.path,
+        file_url:file?.path
+      };
     });
     setCreating(true);
     setStep("processing");
@@ -2010,17 +2040,65 @@ function MockupRequestForm({onClose,onCreated,user}){
             </div>
           </div>}
           <div style={{marginBottom:20}}>
-            <label style={{fontWeight:600,fontSize:14,marginBottom:8,display:"block"}}>📍 מיקומי הדפסה (בחר אחד או יותר):</label>
-            <div style={{display:"grid",gap:8}}>
+            <label style={{fontWeight:600,fontSize:14,marginBottom:8,display:"block"}}>📍 מיקומי הדפסה — בחר ותגדיר לכל מיקום:</label>
+            <div style={{display:"grid",gap:12}}>
               {productLocations.map(loc=>{
                 const isSelected=selectedLocations.includes(loc.name);
-                return<button type="button" key={loc.name} onClick={()=>toggleLocation(loc.name)} style={{padding:12,textAlign:"right",background:isSelected?"#f3e8ff":"white",border:`2px solid ${isSelected?"#8b5cf6":"#d1d5db"}`,borderRadius:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10,fontFamily:"inherit"}}>
-                  <div style={{width:20,height:20,borderRadius:4,background:isSelected?"#8b5cf6":"white",border:`2px solid ${isSelected?"#8b5cf6":"#d1d5db"}`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:12}}>{isSelected?"✓":""}</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:600,fontSize:14}}>{loc.name}</div>
-                    <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>מקסימום: {loc.max_width_cm} × {loc.max_height_cm} ס"מ · {loc.view}</div>
+                const config=locationConfigs[loc.name]||{
+                  position:"middle-center",
+                  custom_width:loc.max_width_cm,
+                  custom_height:loc.max_height_cm,
+                  rotation:0
+                };
+                const updateConfig=(key,value)=>{
+                  setLocationConfigs({...locationConfigs,[loc.name]:{...config,[key]:value}});
+                };
+                return<div key={loc.name} style={{padding:12,background:isSelected?"#f3e8ff":"white",border:`2px solid ${isSelected?"#8b5cf6":"#d1d5db"}`,borderRadius:8}}>
+                  <div role="button" tabIndex={0} onClick={()=>{
+                    if(isSelected){
+                      setSelectedLocations(selectedLocations.filter(l=>l!==loc.name));
+                    }else{
+                      if(!locationConfigs[loc.name]){
+                        setLocationConfigs({...locationConfigs,[loc.name]:{
+                          position:"middle-center",
+                          custom_width:loc.max_width_cm,
+                          custom_height:loc.max_height_cm,
+                          rotation:0
+                        }});
+                      }
+                      setSelectedLocations([...selectedLocations,loc.name]);
+                    }
+                  }} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.currentTarget.click();}}} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:isSelected?12:0}}>
+                    <div style={{width:20,height:20,borderRadius:4,background:isSelected?"#8b5cf6":"white",border:`2px solid ${isSelected?"#8b5cf6":"#d1d5db"}`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:12}}>{isSelected?"✓":""}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:600,fontSize:14}}>{loc.name}</div>
+                      <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>מקסימום: {loc.max_width_cm} × {loc.max_height_cm} ס"מ · {loc.view}</div>
+                    </div>
                   </div>
-                </button>;
+                  {isSelected&&<div style={{paddingTop:12,borderTop:"1px solid #e9d5ff",display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:600,color:"#6b21a8",display:"block",marginBottom:6}}>📍 מיקום מדויק:</label>
+                      <PositionGrid value={config.position} onChange={v=>updateConfig("position",v)} color="#8b5cf6"/>
+                    </div>
+                    <div>
+                      <label style={{fontSize:11,fontWeight:600,color:"#6b21a8",display:"block",marginBottom:6}}>📐 גודל מותאם (ס"מ):</label>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                        <div>
+                          <label style={{fontSize:10,color:"#6b7280"}}>רוחב</label>
+                          <input type="number" value={config.custom_width} onChange={e=>updateConfig("custom_width",parseFloat(e.target.value)||0)} min={1} max={loc.max_width_cm} style={{width:"100%",padding:6,borderRadius:4,border:"1px solid #d1d5db",fontSize:13,fontFamily:"inherit"}}/>
+                        </div>
+                        <div>
+                          <label style={{fontSize:10,color:"#6b7280"}}>גובה</label>
+                          <input type="number" value={config.custom_height} onChange={e=>updateConfig("custom_height",parseFloat(e.target.value)||0)} min={1} max={loc.max_height_cm} style={{width:"100%",padding:6,borderRadius:4,border:"1px solid #d1d5db",fontSize:13,fontFamily:"inherit"}}/>
+                        </div>
+                      </div>
+                      <div style={{marginTop:8}}>
+                        <label style={{fontSize:10,color:"#6b7280"}}>סיבוב: {config.rotation}°</label>
+                        <input type="range" value={config.rotation} onChange={e=>updateConfig("rotation",parseInt(e.target.value,10))} min={-180} max={180} step={15} style={{width:"100%"}}/>
+                      </div>
+                    </div>
+                  </div>}
+                </div>;
               })}
             </div>
           </div>
@@ -2059,7 +2137,12 @@ function MockupRequestForm({onClose,onCreated,user}){
               <div>{selectedProduct.emoji} <strong>{selectedProduct.name}</strong></div>
               <div>🎨 צבע: <strong>{selectedColor}</strong></div>
               <div>📍 מיקומי הדפסה: <strong>{selectedLocations.length}</strong></div>
-              {selectedLocations.map(loc=><div key={loc} style={{fontSize:12,marginRight:10,color:"#6b7280"}}>• {loc}</div>)}
+              {selectedLocations.map(loc=>{
+                const cfg=locationConfigs[loc];
+                const ploc=productLocations.find(l=>l.name===loc);
+                const posLabel={"top-left":"↖️","top-center":"⬆️","top-right":"↗️","middle-left":"⬅️","middle-center":"🎯","middle-right":"➡️","bottom-left":"↙️","bottom-center":"⬇️","bottom-right":"↘️"}[cfg?.position||"middle-center"]||"🎯";
+                return<div key={loc} style={{fontSize:12,marginRight:10,color:"#6b7280"}}>• {loc} — {posLabel} {cfg?.custom_width||ploc?.max_width_cm}×{cfg?.custom_height||ploc?.max_height_cm} ס"מ{(cfg?.rotation)?`, סיבוב ${cfg.rotation}°`:""}</div>;
+              })}
               {brief.trim()&&<div style={{marginTop:8,padding:8,background:"white",borderRadius:6,fontSize:12}}>💬 {brief}</div>}
             </div>
           </div>

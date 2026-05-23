@@ -15,6 +15,8 @@ interface PrintLocation {
   width_cm: number
   height_cm: number
   file_path: string
+  position?: string
+  rotation?: number
 }
 
 interface MockupRequest {
@@ -71,6 +73,21 @@ function locationToEn(locName: string): string {
     'חזית שמאל': 'front left side',
   }
   return map[locName] || locName
+}
+
+function positionToEn(pos: string): string {
+  const map: Record<string, string> = {
+    'top-left': 'top-left corner',
+    'top-center': 'top center',
+    'top-right': 'top-right corner',
+    'middle-left': 'middle left',
+    'middle-center': 'exact center',
+    'middle-right': 'middle right',
+    'bottom-left': 'bottom-left corner',
+    'bottom-center': 'bottom center',
+    'bottom-right': 'bottom-right corner',
+  }
+  return map[pos] || 'center'
 }
 
 async function detectTransparency(imageBytes: Uint8Array): Promise<boolean> {
@@ -136,7 +153,9 @@ function buildPrompt(req: MockupRequest): string {
   const printsDescription = req.print_locations
     .map((loc) => {
       const locEn = locationToEn(loc.name)
-      return `${locEn} (size approximately ${loc.width_cm}×${loc.height_cm} cm)`
+      const posEn = positionToEn(loc.position || 'middle-center')
+      const rotation = loc.rotation ? ` rotated ${loc.rotation} degrees` : ''
+      return `${locEn} at ${posEn} (size ${loc.width_cm}×${loc.height_cm} cm${rotation})`
     })
     .join(', ')
 

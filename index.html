@@ -1651,8 +1651,8 @@ function ImpositionRequestForm({onClose,onCreated,user}){
   const [productWidth,setProductWidth]=useState(50);
   const [productHeight,setProductHeight]=useState(50);
   const [quantity,setQuantity]=useState(100);
-  const [plateWidth,setPlateWidth]=useState(594);
-  const [plateHeight,setPlateHeight]=useState(420);
+  const [plateWidth,setPlateWidth]=useState(420);
+  const [plateHeight,setPlateHeight]=useState(594);
   const [bleed,setBleed]=useState(3);
   const [gutter,setGutter]=useState(5);
   const [creating,setCreating]=useState(false);
@@ -1785,13 +1785,20 @@ function ImpositionRequestForm({onClose,onCreated,user}){
           <div style={{background:"#f9fafb",padding:12,borderRadius:8,marginBottom:15}}>
             <div style={{fontWeight:600,fontSize:13,marginBottom:8}}>📏 גודל פלטה (מ"מ):</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
-              <button type="button" onClick={()=>{setPlateWidth(594);setPlateHeight(420);}} style={{padding:6,fontSize:11,background:plateWidth===594?"#3b82f6":"white",color:plateWidth===594?"white":"#374151",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>A2 (594×420)</button>
-              <button type="button" onClick={()=>{setPlateWidth(420);setPlateHeight(297);}} style={{padding:6,fontSize:11,background:plateWidth===420&&plateHeight===297?"#3b82f6":"white",color:plateWidth===420&&plateHeight===297?"white":"#374151",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>A3 (420×297)</button>
-              <button type="button" onClick={()=>{setPlateWidth(297);setPlateHeight(210);}} style={{padding:6,fontSize:11,background:plateWidth===297&&plateHeight===210?"#3b82f6":"white",color:plateWidth===297&&plateHeight===210?"white":"#374151",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>A4 (297×210)</button>
+              <button type="button" onClick={()=>{setPlateWidth(420);setPlateHeight(594);}} style={{padding:6,fontSize:11,background:plateWidth===420&&plateHeight===594?"#3b82f6":"white",color:plateWidth===420&&plateHeight===594?"white":"#374151",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>A2 (420×594)</button>
+              <button type="button" onClick={()=>{setPlateWidth(297);setPlateHeight(420);}} style={{padding:6,fontSize:11,background:plateWidth===297&&plateHeight===420?"#3b82f6":"white",color:plateWidth===297&&plateHeight===420?"white":"#374151",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>A3 (297×420)</button>
+              <button type="button" onClick={()=>{setPlateWidth(210);setPlateHeight(297);}} style={{padding:6,fontSize:11,background:plateWidth===210&&plateHeight===297?"#3b82f6":"white",color:plateWidth===210&&plateHeight===297?"white":"#374151",border:"1px solid #d1d5db",borderRadius:4,cursor:"pointer",fontFamily:"inherit"}}>A4 (210×297)</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <input type="number" value={plateWidth} onChange={e=>setPlateWidth(parseFloat(e.target.value)||0)} placeholder="רוחב" style={{padding:6,fontSize:13,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/>
               <input type="number" value={plateHeight} onChange={e=>setPlateHeight(parseFloat(e.target.value)||0)} placeholder="גובה" style={{padding:6,fontSize:13,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/>
+            </div>
+          </div>
+          <div style={{marginBottom:15}}>
+            <label style={{fontWeight:600,fontSize:13}}>כיוון פלטה:</label>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:6}}>
+              <button type="button" onClick={()=>{if(plateWidth>plateHeight){const t=plateWidth;setPlateWidth(plateHeight);setPlateHeight(t);}}} style={{padding:10,background:plateWidth<plateHeight?"#3b82f6":"white",color:plateWidth<plateHeight?"white":"#374151",border:"2px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📄 עומד (Portrait)</button>
+              <button type="button" onClick={()=>{if(plateHeight>plateWidth){const t=plateWidth;setPlateWidth(plateHeight);setPlateHeight(t);}}} style={{padding:10,background:plateWidth>plateHeight?"#3b82f6":"white",color:plateWidth>plateHeight?"white":"#374151",border:"2px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📃 שכוב (Landscape)</button>
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:15}}>

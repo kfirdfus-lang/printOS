@@ -1903,6 +1903,7 @@ function MockupRequestForm({onClose,onCreated,user}){
   const [generatePdf,setGeneratePdf]=useState(true);
   const [clientName,setClientName]=useState("");
   const [projectName,setProjectName]=useState("");
+  const [precisionMode,setPrecisionMode]=useState(false);
   const [creating,setCreating]=useState(false);
   const [processingStatus,setProcessingStatus]=useState(null);
   useEffect(()=>{(async()=>{
@@ -1981,7 +1982,8 @@ function MockupRequestForm({onClose,onCreated,user}){
         brief:brief.trim()||undefined,
         generate_pdf:generatePdf,
         client_name:clientName.trim()||undefined,
-        project_name:projectName.trim()||undefined
+        project_name:projectName.trim()||undefined,
+        precision_mode:precisionMode
       }});
       if(error)throw error;
       if(data?.error)throw new Error(data.error);
@@ -2102,6 +2104,17 @@ function MockupRequestForm({onClose,onCreated,user}){
               })}
             </div>
           </div>
+          <div style={{marginBottom:15,padding:12,background:precisionMode?"#fef3c7":"#f9fafb",borderRadius:8,border:`2px solid ${precisionMode?"#f59e0b":"#e5e7eb"}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <input type="checkbox" id="precisionMode" checked={precisionMode} onChange={e=>setPrecisionMode(e.target.checked)} style={{width:18,height:18,cursor:"pointer"}}/>
+              <label htmlFor="precisionMode" style={{fontWeight:600,fontSize:14,cursor:"pointer"}}>📐 מצב דיוק מקסימלי</label>
+            </div>
+            <div style={{fontSize:11,color:"#78350f",lineHeight:1.5}}>
+              {precisionMode
+                ? "✅ הלוגו יושם במיקום ובגודל שבחרת בדיוק - 100% מדויק"
+                : "ה-AI יחליט על המיקום והגודל (יותר ריאליסטי, פחות מדויק)"}
+            </div>
+          </div>
           <div style={{display:"flex",gap:10}}>
             <button type="button" onClick={()=>setStep("product")} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>← חזור</button>
             <button type="button" onClick={()=>setStep("upload")} disabled={selectedLocations.length===0} style={{flex:2,padding:10,background:selectedLocations.length===0?"#d1d5db":"#8b5cf6",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:selectedLocations.length===0?"not-allowed":"pointer",fontFamily:"inherit"}}>הבא: העלה קבצים →</button>
@@ -2144,6 +2157,7 @@ function MockupRequestForm({onClose,onCreated,user}){
                 return<div key={loc} style={{fontSize:12,marginRight:10,color:"#6b7280"}}>• {loc} — {posLabel} {cfg?.custom_width||ploc?.max_width_cm}×{cfg?.custom_height||ploc?.max_height_cm} ס"מ{(cfg?.rotation)?`, סיבוב ${cfg.rotation}°`:""}</div>;
               })}
               {brief.trim()&&<div style={{marginTop:8,padding:8,background:"white",borderRadius:6,fontSize:12}}>💬 {brief}</div>}
+              {precisionMode&&<div style={{fontSize:12,marginTop:6,color:"#b45309"}}>📐 מצב דיוק מקסימלי: פעיל</div>}
             </div>
           </div>
           <div style={{background:"#dbeafe",padding:12,borderRadius:8,marginBottom:12,border:"1px solid #93c5fd"}}>

@@ -1892,15 +1892,36 @@ function PositionGrid({value,onChange,color}){
   </div>;
 }
 
+const MOCKUP_CANVAS_QUICK_BTN={flex:1,padding:"6px 10px",background:"white",border:"1px solid #d1d5db",borderRadius:5,cursor:"pointer",fontSize:12,fontWeight:500,color:"#374151",whiteSpace:"nowrap",fontFamily:"inherit"};
+
 function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLocation,onConfirm,onCancel}){
   const containerRef=useRef(null);
   const stageRef=useRef(null);
   const logoLayerRef=useRef(null);
   const logoNodeRef=useRef(null);
+  const transformerRef=useRef(null);
   const [stageSize,setStageSize]=useState({width:600,height:600});
-  const [logoPosition,setLogoPosition]=useState({x:300,y:300});
+  const [logoState,setLogoState]=useState({x:300,y:300,width:150,height:150,rotation:0});
   const [logoLoaded,setLogoLoaded]=useState(false);
   const [productLoaded,setProductLoaded]=useState(false);
+  const PRODUCT_AREA_RATIO=0.6;
+  const calculateCm=pixels=>{
+    if(!productData?.real_width_cm)return"0";
+    const productWidthInPixels=stageSize.width*PRODUCT_AREA_RATIO;
+    const pixelsPerCm=productWidthInPixels/productData.real_width_cm;
+    return(pixels/pixelsPerCm).toFixed(1);
+  };
+  const logoWidthCm=calculateCm(logoState.width);
+  const logoHeightCm=calculateCm(logoState.height);
+  const syncLogoStateFromNode=node=>{
+    setLogoState({
+      x:node.x(),
+      y:node.y(),
+      width:node.width()*node.scaleX(),
+      height:node.height()*node.scaleY(),
+      rotation:node.rotation()
+    });
+  };
   useEffect(()=>{
     if(!containerRef.current||typeof Konva==="undefined")return;
     const containerWidth=Math.min(containerRef.current.clientWidth||600,700);
@@ -1917,12 +1938,11 @@ function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLoca
     const productImg=new window.Image();
     productImg.crossOrigin="anonymous";
     productImg.onload=()=>{
-      const productNode=new Konva.Image({x:0,y:0,image:productImg,width:stageW,height:stageH});
-      bgLayer.add(productNode);
+      bgLayer.add(new Konva.Image({x:0,y:0,image:productImg,width:stageW,height:stageH}));
       bgLayer.draw();
       setProductLoaded(true);
     };
-    productImg.onerror=(e)=>console.error("Failed to load product image:",e);
+    productImg.onerror=(e)=>console.error("Product image failed:",e);
     productImg.src=mockupImageUrl;
     const logoImg=new window.Image();
     logoImg.crossOrigin="anonymous";
@@ -1937,58 +1957,92 @@ function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLoca
         width:startWidth,
         height:startHeight,
         draggable:true,
-        stroke:"transparent",
-        strokeWidth:0
+        rotation:0
       });
-      logoNode.on("dragstart",()=>{logoNode.opacity(0.7);logoLayer.draw();});
-      logoNode.on("dragmove",()=>{setLogoPosition({x:logoNode.x(),y:logoNode.y()});});
-      logoNode.on("dragend",()=>{logoNode.opacity(1);logoLayer.draw();});
-      logoNode.on("mouseenter",()=>{
-        document.body.style.cursor="move";
-        logoNode.stroke("#8b5cf6");
-        logoNode.strokeWidth(2);
+      logoNode.on("dragmove",()=>{setLogoState(prev=>({...prev,x:logoNode.x(),y:logoNode.y()}));});
+      logoNode.on("transform",()=>{syncLogoStateFromNode(logoNode);});
+      logoNode.on("transformend",()=>{
+        const newWidth=logoNode.width()*logoNode.scaleX();
+        const newHeight=logoNode.height()*logoNode.scaleY();
+        logoNode.width(newWidth);
+        logoNode.height(newHeight);
+        logoNode.scaleX(1);
+        logoNode.scaleY(1);
+        syncLogoStateFromNode(logoNode);
+        transformerRef.current?.forceUpdate();
         logoLayer.draw();
       });
-      logoNode.on("mouseleave",()=>{
-        document.body.style.cursor="default";
-        logoNode.stroke("transparent");
-        logoNode.strokeWidth(0);
-        logoLayer.draw();
-      });
+      logoNode.on("mouseenter",()=>{document.body.style.cursor="move";});
+      logoNode.on("mouseleave",()=>{document.body.style.cursor="default";});
       logoLayer.add(logoNode);
-      logoLayer.draw();
       logoNodeRef.current=logoNode;
-      setLogoPosition({x:logoNode.x(),y:logoNode.y()});
+      const transformer=new Konva.Transformer({
+        nodes:[logoNode],
+        keepRatio:true,
+        enabledAnchors:["top-left","top-right","bottom-left","bottom-right"],
+        rotateEnabled:true,
+        anchorSize:12,
+        anchorStroke:"#8b5cf6",
+        anchorFill:"white",
+        anchorCornerRadius:6,
+        borderStroke:"#8b5cf6",
+        borderStrokeWidth:2,
+        borderDash:[5,5]
+      });
+      logoLayer.add(transformer);
+      transformerRef.current=transformer;
+      logoLayer.draw();
+      setLogoState({x:logoNode.x(),y:logoNode.y(),width:startWidth,height:startHeight,rotation:0});
       setLogoLoaded(true);
     };
-    logoImg.onerror=(e)=>console.error("Failed to load logo image:",e);
+    logoImg.onerror=(e)=>console.error("Logo image failed:",e);
     logoImg.src=logoImageUrl;
     return()=>{stage.destroy();};
   },[mockupImageUrl,logoImageUrl]);
   const resetToCenter=()=>{
     if(!logoNodeRef.current)return;
     const node=logoNodeRef.current;
-    node.x((stageSize.width-node.width())/2);
-    node.y((stageSize.height-node.height())/2);
+    const newX=(stageSize.width-node.width())/2;
+    const newY=(stageSize.height-node.height())/2;
+    node.x(newX);
+    node.y(newY);
+    node.rotation(0);
+    transformerRef.current?.forceUpdate();
     logoLayerRef.current?.draw();
-    setLogoPosition({x:node.x(),y:node.y()});
+    setLogoState({x:newX,y:newY,width:node.width(),height:node.height(),rotation:0});
+  };
+  const setRotation=degrees=>{
+    if(!logoNodeRef.current)return;
+    logoNodeRef.current.rotation(degrees);
+    transformerRef.current?.forceUpdate();
+    logoLayerRef.current?.draw();
+    setLogoState(prev=>({...prev,rotation:degrees}));
+  };
+  const adjustSize=percent=>{
+    if(!logoNodeRef.current)return;
+    const node=logoNodeRef.current;
+    const newWidth=node.width()*percent;
+    const newHeight=node.height()*percent;
+    if(newWidth>stageSize.width*0.9||newWidth<30)return;
+    node.width(newWidth);
+    node.height(newHeight);
+    transformerRef.current?.forceUpdate();
+    logoLayerRef.current?.draw();
+    setLogoState(prev=>({...prev,width:newWidth,height:newHeight}));
   };
   const handleConfirm=()=>{
     if(!logoNodeRef.current)return;
     const node=logoNodeRef.current;
-    const relativePosition={
+    const wCm=calculateCm(node.width());
+    const hCm=calculateCm(node.height());
+    onConfirm({
       x_percent:node.x()/stageSize.width,
       y_percent:node.y()/stageSize.height,
       width_percent:node.width()/stageSize.width,
-      height_percent:node.height()/stageSize.height
-    };
-    const productWidthCm=productData?.real_width_cm||50;
-    const widthCm=(relativePosition.width_percent*productWidthCm).toFixed(1);
-    const heightCm=(relativePosition.height_percent*productWidthCm*(node.height()/node.width())).toFixed(1);
-    onConfirm({
-      ...relativePosition,
-      logo_width_cm:parseFloat(widthCm),
-      logo_height_cm:parseFloat(heightCm),
+      height_percent:node.height()/stageSize.height,
+      rotation:node.rotation(),
+      logo_width_cm:parseFloat(wCm),
+      logo_height_cm:parseFloat(hCm),
       pixel_x:node.x(),
       pixel_y:node.y(),
       pixel_width:node.width(),
@@ -2000,27 +2054,56 @@ function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLoca
   };
   const isLoading=!logoLoaded||!productLoaded;
   return<div onClick={e=>e.stopPropagation()} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.55)",backdropFilter:"blur(4px)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:800,maxHeight:"95vh",overflowY:"auto",boxShadow:"var(--shadow-lg)",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:850,maxHeight:"95vh",overflowY:"auto",boxShadow:"var(--shadow-lg)",padding:20}}>
       <div style={{background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",margin:-20,marginBottom:15,padding:20,color:"white",borderTopLeftRadius:20,borderTopRightRadius:20}}>
-        <h2 style={{margin:0,fontSize:20}}>🎨 עיצוב הדמיה - גרור את הלוגו</h2>
-        <div style={{fontSize:13,opacity:0.9,marginTop:6}}>גרור את הלוגו למיקום הרצוי על המוצר</div>
+        <h2 style={{margin:0,fontSize:20}}>🎨 עיצוב הדמיה אינטראקטיבי</h2>
+        <div style={{fontSize:13,opacity:0.9,marginTop:6}}>גרור • שנה גודל מהפינות • סובב באמצעות הידית העליונה</div>
       </div>
-      <div style={{background:"#f3f4f6",borderRadius:8,padding:10,marginBottom:15,position:"relative",minHeight:400,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12,padding:12,background:"linear-gradient(135deg, #f3e8ff 0%, #fce7f3 100%)",borderRadius:8,fontSize:13}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:10,color:"#6b21a8",fontWeight:600,marginBottom:4}}>📐 רוחב</div>
+          <div style={{fontWeight:700,fontSize:16,color:"#581c87"}}>{logoWidthCm} ס״מ</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:10,color:"#6b21a8",fontWeight:600,marginBottom:4}}>📐 גובה</div>
+          <div style={{fontWeight:700,fontSize:16,color:"#581c87"}}>{logoHeightCm} ס״מ</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:10,color:"#6b21a8",fontWeight:600,marginBottom:4}}>🔄 סיבוב</div>
+          <div style={{fontWeight:700,fontSize:16,color:"#581c87"}}>{Math.round(logoState.rotation)}°</div>
+        </div>
+      </div>
+      <div style={{background:"#f3f4f6",borderRadius:8,padding:10,marginBottom:12,position:"relative",minHeight:400,display:"flex",alignItems:"center",justifyContent:"center"}}>
         {isLoading&&<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%, -50%)",zIndex:10,background:"white",padding:"15px 20px",borderRadius:8,boxShadow:"0 2px 8px rgba(0,0,0,0.1)"}}>⏳ טוען...</div>}
         <div ref={containerRef} style={{width:"100%",maxWidth:700,border:"2px dashed #d1d5db",borderRadius:8,background:"white"}}/>
       </div>
-      <div style={{padding:12,background:"#f9fafb",borderRadius:8,marginBottom:15,fontSize:13}}>
-        <div style={{fontWeight:600,marginBottom:8,color:"#1f2937"}}>📐 מיקום נוכחי (פיקסלים):</div>
-        <div style={{display:"flex",gap:15,color:"#6b7280"}}>
-          <div>X: <strong>{Math.round(logoPosition.x)}</strong>px</div>
-          <div>Y: <strong>{Math.round(logoPosition.y)}</strong>px</div>
+      <div style={{padding:12,background:"#f9fafb",borderRadius:8,marginBottom:15}}>
+        <div style={{fontWeight:600,fontSize:12,marginBottom:8,color:"#374151"}}>🎛️ פעולות מהירות:</div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,color:"#6b7280",marginBottom:4}}>גודל:</div>
+          <div style={{display:"flex",gap:6}}>
+            <button type="button" onClick={()=>adjustSize(0.8)} style={MOCKUP_CANVAS_QUICK_BTN}>➖ הקטן</button>
+            <button type="button" onClick={()=>adjustSize(1.25)} style={MOCKUP_CANVAS_QUICK_BTN}>➕ הגדל</button>
+            <button type="button" onClick={resetToCenter} style={MOCKUP_CANVAS_QUICK_BTN}>🎯 מרכז</button>
+          </div>
         </div>
-        <div style={{marginTop:8,fontSize:11,color:"#9ca3af",fontStyle:"italic"}}>💡 בהוראה הבאה: שינוי גודל, סיבוב, ומדידה מדויקת ב-ס״מ</div>
+        <div>
+          <div style={{fontSize:11,color:"#6b7280",marginBottom:4}}>סיבוב:</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <button type="button" onClick={()=>setRotation(0)} style={MOCKUP_CANVAS_QUICK_BTN}>↕️ 0°</button>
+            <button type="button" onClick={()=>setRotation(90)} style={MOCKUP_CANVAS_QUICK_BTN}>↻ 90°</button>
+            <button type="button" onClick={()=>setRotation(180)} style={MOCKUP_CANVAS_QUICK_BTN}>↻ 180°</button>
+            <button type="button" onClick={()=>setRotation(-90)} style={MOCKUP_CANVAS_QUICK_BTN}>↺ -90°</button>
+            <input type="range" min="-180" max="180" step="5" value={Math.round(logoState.rotation)} onChange={e=>setRotation(parseFloat(e.target.value))} style={{flex:1,minWidth:120,marginRight:8}}/>
+          </div>
+        </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:10}}>
+      <div style={{padding:8,background:"#fef3c7",borderRadius:6,marginBottom:12,fontSize:11,color:"#78350f",textAlign:"center"}}>
+        💡 טיפ: גרור את הפינות לשינוי גודל • ידית עליונה לסיבוב • לחץ באמצע לגרירה
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
         <button type="button" onClick={onCancel} style={{padding:12,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:14,fontFamily:"inherit"}}>❌ ביטול</button>
-        <button type="button" onClick={resetToCenter} style={{padding:12,background:"white",border:"1px solid #8b5cf6",color:"#8b5cf6",borderRadius:6,cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:"inherit"}}>🎯 איפוס למרכז</button>
-        <button type="button" onClick={handleConfirm} disabled={isLoading} style={{padding:12,background:isLoading?"#d1d5db":"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,cursor:isLoading?"not-allowed":"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>✅ אישור מיקום והמשך</button>
+        <button type="button" onClick={handleConfirm} disabled={isLoading} style={{padding:12,background:isLoading?"#d1d5db":"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,cursor:isLoading?"not-allowed":"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>✅ אישור מיקום ויצירת הדמיה</button>
       </div>
     </div>
   </div>;
@@ -2383,7 +2466,8 @@ function MockupRequestForm({onClose,onCreated,user}){
       console.log("Logo positioned at:",positionData);
       window.alert("מיקום הלוגו נשמר! בהוראה D נמשיך ליצירת ההדמיה הסופית.\n\n"+
         `מיקום: x=${Math.round(positionData.pixel_x)}, y=${Math.round(positionData.pixel_y)}\n`+
-        `גודל: ${positionData.logo_width_cm} × ${positionData.logo_height_cm} ס״מ`);
+        `גודל: ${positionData.logo_width_cm} × ${positionData.logo_height_cm} ס״מ\n`+
+        `סיבוב: ${Math.round(positionData.rotation||0)}°`);
       setShowCanvas(false);
       setCanvasData(null);
       onCreated?.();

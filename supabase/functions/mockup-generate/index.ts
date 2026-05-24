@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Image, decode } from 'https://deno.land/x/imagescript@1.2.15/mod.ts'
+import { Image, decode } from 'https://deno.land/x/imagescript@1.2.17/mod.ts'
 
 const PDFSHIFT_API_URL = 'https://api.pdfshift.io/v3/convert/pdf'
 
@@ -299,6 +299,28 @@ function buildScenePrompt(req: MockupRequest): string {
   return prompt
 }
 
+async function compressImageToJpeg(
+  bytes: Uint8Array,
+  quality = 75,
+  maxWidth = 800,
+): Promise<Uint8Array> {
+  try {
+    const img = (await decode(bytes)) as Image
+
+    if (img.width > maxWidth) {
+      const ratio = maxWidth / img.width
+      img.resize(maxWidth, Math.round(img.height * ratio))
+    }
+
+    const jpegBytes = await img.encodeJPEG(quality)
+    console.log(`Compressed: ${bytes.length} -> ${jpegBytes.length} bytes`)
+    return new Uint8Array(jpegBytes)
+  } catch (e) {
+    console.error('Compression failed, using original:', e)
+    return bytes
+  }
+}
+
 async function compositeLogoOnMockup(
   mockupBytes: Uint8Array,
   logoBytes: Uint8Array,
@@ -357,9 +379,9 @@ async function compositeLogoOnMockup(
 }
 
 async function buildProposalPDF(
-  mockupUrl: string,
-  originalLogoUrl: string,
-  natalieLogoUrl: string | null,
+  mockupBytes: Uint8Array,
+  originalLogoBytes: Uint8Array,
+  natalieLogoBytes: Uint8Array | null,
   data: {
     client_name: string
     project_name: string
@@ -373,6 +395,22 @@ async function buildProposalPDF(
   if (!pdfshiftKey) {
     throw new Error('PDFSHIFT_API_KEY not configured')
   }
+
+  const compressedMockup = await compressImageToJpeg(mockupBytes, 75, 800)
+  const compressedLogo = await compressImageToJpeg(originalLogoBytes, 80, 400)
+  const compressedNatalieLogo = natalieLogoBytes
+    ? await compressImageToJpeg(natalieLogoBytes, 80, 300)
+    : null
+
+  const toBase64 = (bytes: Uint8Array) => {
+    let binary = ''
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
+  }
+
+  const mockupBase64 = toBase64(compressedMockup)
+  const logoBase64 = toBase64(compressedLogo)
+  const natalieLogoBase64 = compressedNatalieLogo ? toBase64(compressedNatalieLogo) : null
 
   const dateStr = new Date().toLocaleDateString('he-IL')
 
@@ -494,8 +532,8 @@ async function buildProposalPDF(
   <div class="header">
     <div class="header-left">
       ${
-        natalieLogoUrl
-          ? `<img src="${natalieLogoUrl}" class="natalie-logo" alt="Natalie">`
+        natalieLogoBase64
+          ? `<img src="data:image/jpeg;base64,${natalieLogoBase64}" class="natalie-logo" alt="Natalie">`
           : `<div class="company-name" style="font-size:22px">נטלי</div>`
       }
     </div>
@@ -514,12 +552,12 @@ async function buildProposalPDF(
     <div><span class="label">תאריך:</span> ${dateStr}</div>
   </div>
   <div class="mockup-container">
-    <img src="${mockupUrl}" class="mockup-image" alt="Mockup">
+    <img src="data:image/jpeg;base64,${mockupBase64}" class="mockup-image" alt="Mockup">
   </div>
   <div class="details-section">
     <div class="original-logo-block">
       <div class="block-title">לוגו מקורי</div>
-      <img src="${originalLogoUrl}" alt="Logo">
+      <img src="data:image/jpeg;base64,${logoBase64}" alt="Logo">
     </div>
     <div class="print-details">
       <h3>📐 פרטי הדפס</h3>
@@ -553,7 +591,7 @@ async function buildProposalPDF(
 </body>
 </html>`
 
-  console.log('Calling PDFShift API with URLs (HTML size:', html.length, 'bytes)')
+  console.log('Calling PDFShift API with compressed base64 (HTML size:', html.length, 'bytes)')
 
   const response = await fetch(PDFSHIFT_API_URL, {
     method: 'POST',
@@ -738,7 +776,8 @@ Deno.serve(async (req) => {
 
     const outputFiles: typeof outputFile[] = [outputFile]
 
-    if (!isTransparent) {
+    const shouldSaveCleanLogo = mode === 'clean_product' || !isTransparent
+    if (shouldSaveCleanLogo) {
       const logoFileName = `logo_clean_${timestamp}.png`
       const logoFilePath = `design_requests/${requestId}/output/${logoFileName}`
 
@@ -758,59 +797,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (body.generate_pdf) {
+    if (body.generate_pdf && mode === 'ai_realistic') {
       try {
-        log.push({ step: 'generating_proposal_pdf_with_urls' })
+        log.push({ step: 'generating_proposal_pdf_compressed_base64' })
 
-        const { data: mockupUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(filePath)
-        const logoPathForPdf =
-          outputFiles.find((f) => f.name.startsWith('logo_clean_'))?.path ?? firstLocation.file_path
-        const { data: logoUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(logoPathForPdf)
-
-        const mockupUrl = mockupUrlData.publicUrl
-        const logoUrl = logoUrlData.publicUrl
-
-        console.log('PDF URLs about to be used:')
-        console.log('mockupUrl:', mockupUrl)
-        console.log('logoUrl:', logoUrl)
-
-        if (!mockupUrl || !mockupUrl.startsWith('http')) {
-          log.push({ step: 'mockup_url_invalid', got: mockupUrl })
-          throw new Error('Failed to generate public URL for mockup')
-        }
-        if (!logoUrl || !logoUrl.startsWith('http')) {
-          log.push({ step: 'logo_url_invalid', got: logoUrl })
-          throw new Error('Failed to generate public URL for logo')
-        }
-
-        log.push({ step: 'urls_created', mockup_url: mockupUrl, logo_url: logoUrl })
-
-        let natalieLogoUrl: string | null = null
+        let natalieLogoBytes: Uint8Array | null = null
         try {
-          const { data: natalieCheck } = await supabase.storage
+          const { data: natalieData } = await supabase.storage
             .from(STORAGE_BUCKET)
             .download('branding/natalie_logo.png')
 
-          if (natalieCheck) {
-            const { data: natalieUrlData } = supabase.storage
-              .from(STORAGE_BUCKET)
-              .getPublicUrl('branding/natalie_logo.png')
-            natalieLogoUrl = natalieUrlData.publicUrl
-            log.push({ step: 'natalie_logo_url_created' })
+          if (natalieData) {
+            natalieLogoBytes = new Uint8Array(await natalieData.arrayBuffer())
+            log.push({ step: 'natalie_logo_loaded' })
           }
         } catch {
           log.push({ step: 'natalie_logo_not_found' })
         }
 
-        console.log('natalieLogoUrl:', natalieLogoUrl)
-        log.push({
-          step: 'pdf_urls_check',
-          mockup_url: mockupUrl,
-          logo_url: logoUrl,
-          natalie_logo_url: natalieLogoUrl,
-        })
-
-        const pdfBytes = await buildProposalPDF(mockupUrl, logoUrl, natalieLogoUrl, {
+        const pdfBytes = await buildProposalPDF(imgBytes, logoBytes, natalieLogoBytes, {
           client_name: body.client_name || '',
           project_name: body.project_name || '',
           product_name_he: body.product_name_he || body.product_name_en,
@@ -818,6 +823,7 @@ Deno.serve(async (req) => {
           print_locations: body.print_locations,
           brief: body.brief || '',
         })
+        log.push({ step: 'pdfshift_complete' })
 
         const pdfFileName = `proposal_${timestamp}.pdf`
         const pdfFilePath = `design_requests/${requestId}/output/${pdfFileName}`
@@ -848,8 +854,8 @@ Deno.serve(async (req) => {
     await supabase
       .from('design_requests')
       .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
+        status: mode === 'clean_product' ? 'awaiting_canvas' : 'completed',
+        completed_at: mode === 'clean_product' ? null : new Date().toISOString(),
         output_files: outputFiles,
         processing_log: log,
         error_message: null,

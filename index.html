@@ -10,6 +10,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/konva@9.3.6/konva.min.js"></script>
 <script>
   // Fallback until app helper is initialized inside the main script.
   window.sendAlert = function() {
@@ -257,6 +258,7 @@ function asJsonArray(v){
 const STATUS_LABELS={
   pending:{label:"ממתין",icon:"⏳",color:"#9ca3af"},
   processing:{label:"בעיבוד",icon:"🔄",color:"#3b82f6"},
+  awaiting_canvas:{label:"ממתין לעיצוב",icon:"🎨",color:"#8b5cf6"},
   completed:{label:"הושלם",icon:"✅",color:"#10b981"},
   failed:{label:"נכשל",icon:"❌",color:"#ef4444"},
   cancelled:{label:"בוטל",icon:"🚫",color:"#6b7280"},
@@ -280,7 +282,7 @@ const isTaskRecentlyCompleted=t=>{
 };
 const archiveStaleCompleted=async()=>{
   try{
-    await sb(`tasks?archived_at=is.null&completed_at=lt.${threeDaysAgoIso()}&status=in.(הושלם,הושלמה)`,{method:"PATCH",body:JSON.stringify({archived_at:new Date().toISOString()})});
+    await sb(`tasks?archived_at=is.null&completed_at=lt.${threeDaysAgoIso()}&status=in.(הושלם,הושלמה)&delivery_status=not.in.(ready,in_transit)`,{method:"PATCH",body:JSON.stringify({archived_at:new Date().toISOString()})});
   }catch(e){console.warn("archiveStaleCompleted",e);}
 };
 const taskSchedDateKey=t=>t.scheduled_for_date?String(t.scheduled_for_date).split("T")[0]:null;
@@ -1890,6 +1892,140 @@ function PositionGrid({value,onChange,color}){
   </div>;
 }
 
+function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLocation,onConfirm,onCancel}){
+  const containerRef=useRef(null);
+  const stageRef=useRef(null);
+  const logoLayerRef=useRef(null);
+  const logoNodeRef=useRef(null);
+  const [stageSize,setStageSize]=useState({width:600,height:600});
+  const [logoPosition,setLogoPosition]=useState({x:300,y:300});
+  const [logoLoaded,setLogoLoaded]=useState(false);
+  const [productLoaded,setProductLoaded]=useState(false);
+  useEffect(()=>{
+    if(!containerRef.current||typeof Konva==="undefined")return;
+    const containerWidth=Math.min(containerRef.current.clientWidth||600,700);
+    const stageW=containerWidth;
+    const stageH=containerWidth;
+    setStageSize({width:stageW,height:stageH});
+    const stage=new Konva.Stage({container:containerRef.current,width:stageW,height:stageH});
+    stageRef.current=stage;
+    const bgLayer=new Konva.Layer();
+    stage.add(bgLayer);
+    const logoLayer=new Konva.Layer();
+    stage.add(logoLayer);
+    logoLayerRef.current=logoLayer;
+    const productImg=new window.Image();
+    productImg.crossOrigin="anonymous";
+    productImg.onload=()=>{
+      const productNode=new Konva.Image({x:0,y:0,image:productImg,width:stageW,height:stageH});
+      bgLayer.add(productNode);
+      bgLayer.draw();
+      setProductLoaded(true);
+    };
+    productImg.onerror=(e)=>console.error("Failed to load product image:",e);
+    productImg.src=mockupImageUrl;
+    const logoImg=new window.Image();
+    logoImg.crossOrigin="anonymous";
+    logoImg.onload=()=>{
+      const startWidth=stageW*0.25;
+      const ratio=logoImg.height/logoImg.width;
+      const startHeight=startWidth*ratio;
+      const logoNode=new Konva.Image({
+        x:(stageW-startWidth)/2,
+        y:(stageH-startHeight)/2,
+        image:logoImg,
+        width:startWidth,
+        height:startHeight,
+        draggable:true,
+        stroke:"transparent",
+        strokeWidth:0
+      });
+      logoNode.on("dragstart",()=>{logoNode.opacity(0.7);logoLayer.draw();});
+      logoNode.on("dragmove",()=>{setLogoPosition({x:logoNode.x(),y:logoNode.y()});});
+      logoNode.on("dragend",()=>{logoNode.opacity(1);logoLayer.draw();});
+      logoNode.on("mouseenter",()=>{
+        document.body.style.cursor="move";
+        logoNode.stroke("#8b5cf6");
+        logoNode.strokeWidth(2);
+        logoLayer.draw();
+      });
+      logoNode.on("mouseleave",()=>{
+        document.body.style.cursor="default";
+        logoNode.stroke("transparent");
+        logoNode.strokeWidth(0);
+        logoLayer.draw();
+      });
+      logoLayer.add(logoNode);
+      logoLayer.draw();
+      logoNodeRef.current=logoNode;
+      setLogoPosition({x:logoNode.x(),y:logoNode.y()});
+      setLogoLoaded(true);
+    };
+    logoImg.onerror=(e)=>console.error("Failed to load logo image:",e);
+    logoImg.src=logoImageUrl;
+    return()=>{stage.destroy();};
+  },[mockupImageUrl,logoImageUrl]);
+  const resetToCenter=()=>{
+    if(!logoNodeRef.current)return;
+    const node=logoNodeRef.current;
+    node.x((stageSize.width-node.width())/2);
+    node.y((stageSize.height-node.height())/2);
+    logoLayerRef.current?.draw();
+    setLogoPosition({x:node.x(),y:node.y()});
+  };
+  const handleConfirm=()=>{
+    if(!logoNodeRef.current)return;
+    const node=logoNodeRef.current;
+    const relativePosition={
+      x_percent:node.x()/stageSize.width,
+      y_percent:node.y()/stageSize.height,
+      width_percent:node.width()/stageSize.width,
+      height_percent:node.height()/stageSize.height
+    };
+    const productWidthCm=productData?.real_width_cm||50;
+    const widthCm=(relativePosition.width_percent*productWidthCm).toFixed(1);
+    const heightCm=(relativePosition.height_percent*productWidthCm*(node.height()/node.width())).toFixed(1);
+    onConfirm({
+      ...relativePosition,
+      logo_width_cm:parseFloat(widthCm),
+      logo_height_cm:parseFloat(heightCm),
+      pixel_x:node.x(),
+      pixel_y:node.y(),
+      pixel_width:node.width(),
+      pixel_height:node.height(),
+      stage_width:stageSize.width,
+      stage_height:stageSize.height,
+      location:initialLocation
+    });
+  };
+  const isLoading=!logoLoaded||!productLoaded;
+  return<div onClick={e=>e.stopPropagation()} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.55)",backdropFilter:"blur(4px)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:800,maxHeight:"95vh",overflowY:"auto",boxShadow:"var(--shadow-lg)",padding:20}}>
+      <div style={{background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",margin:-20,marginBottom:15,padding:20,color:"white",borderTopLeftRadius:20,borderTopRightRadius:20}}>
+        <h2 style={{margin:0,fontSize:20}}>🎨 עיצוב הדמיה - גרור את הלוגו</h2>
+        <div style={{fontSize:13,opacity:0.9,marginTop:6}}>גרור את הלוגו למיקום הרצוי על המוצר</div>
+      </div>
+      <div style={{background:"#f3f4f6",borderRadius:8,padding:10,marginBottom:15,position:"relative",minHeight:400,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        {isLoading&&<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%, -50%)",zIndex:10,background:"white",padding:"15px 20px",borderRadius:8,boxShadow:"0 2px 8px rgba(0,0,0,0.1)"}}>⏳ טוען...</div>}
+        <div ref={containerRef} style={{width:"100%",maxWidth:700,border:"2px dashed #d1d5db",borderRadius:8,background:"white"}}/>
+      </div>
+      <div style={{padding:12,background:"#f9fafb",borderRadius:8,marginBottom:15,fontSize:13}}>
+        <div style={{fontWeight:600,marginBottom:8,color:"#1f2937"}}>📐 מיקום נוכחי (פיקסלים):</div>
+        <div style={{display:"flex",gap:15,color:"#6b7280"}}>
+          <div>X: <strong>{Math.round(logoPosition.x)}</strong>px</div>
+          <div>Y: <strong>{Math.round(logoPosition.y)}</strong>px</div>
+        </div>
+        <div style={{marginTop:8,fontSize:11,color:"#9ca3af",fontStyle:"italic"}}>💡 בהוראה הבאה: שינוי גודל, סיבוב, ומדידה מדויקת ב-ס״מ</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:10}}>
+        <button type="button" onClick={onCancel} style={{padding:12,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:14,fontFamily:"inherit"}}>❌ ביטול</button>
+        <button type="button" onClick={resetToCenter} style={{padding:12,background:"white",border:"1px solid #8b5cf6",color:"#8b5cf6",borderRadius:6,cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:"inherit"}}>🎯 איפוס למרכז</button>
+        <button type="button" onClick={handleConfirm} disabled={isLoading} style={{padding:12,background:isLoading?"#d1d5db":"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,cursor:isLoading?"not-allowed":"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>✅ אישור מיקום והמשך</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function MockupRequestForm({onClose,onCreated,user}){
   const [step,setStep]=useState("product");
   const [products,setProducts]=useState([]);
@@ -1906,6 +2042,8 @@ function MockupRequestForm({onClose,onCreated,user}){
   const [generationMode,setGenerationMode]=useState("clean_product");
   const [creating,setCreating]=useState(false);
   const [processingStatus,setProcessingStatus]=useState(null);
+  const [showCanvas,setShowCanvas]=useState(false);
+  const [canvasData,setCanvasData]=useState(null);
   useEffect(()=>{(async()=>{
     try{
       const data=await sb("mockup_products?is_active=eq.true&order=sort_order");
@@ -1987,8 +2125,29 @@ function MockupRequestForm({onClose,onCreated,user}){
       }});
       if(error)throw error;
       if(data?.error)throw new Error(data.error);
-      setProcessingStatus("✅ הושלם!");
-      setTimeout(()=>{onCreated?.();},800);
+      if(generationMode==="clean_product"){
+        const mockupFile=data.output_files?.find(f=>f.name?.startsWith("mockup_"));
+        const logoFile=data.output_files?.find(f=>f.name?.startsWith("logo_clean_"));
+        if(!mockupFile)throw new Error("לא נמצא קובץ הדמיה בפלט");
+        const mockupUrl=`${SU}/storage/v1/object/public/${STORAGE_BUCKET}/${mockupFile.path}`;
+        const firstInput=Object.values(locationFiles).find(Boolean);
+        const logoUrl=logoFile
+          ?`${SU}/storage/v1/object/public/${STORAGE_BUCKET}/${logoFile.path}`
+          :`${SU}/storage/v1/object/public/${STORAGE_BUCKET}/${firstInput?.path}`;
+        setCanvasData({
+          requestId:newRequest.id,
+          mockupUrl,
+          logoUrl,
+          productData:selectedProduct,
+          location:allLocations[0]
+        });
+        setShowCanvas(true);
+        setStep("review");
+        setProcessingStatus("🎨 מקם את הלוגו על המוצר");
+      }else{
+        setProcessingStatus("✅ הושלם!");
+        setTimeout(()=>{onCreated?.();},800);
+      }
     }catch(e){
       window.alert("שגיאה: "+(e.message||String(e)));
       setStep("review");
@@ -1997,7 +2156,7 @@ function MockupRequestForm({onClose,onCreated,user}){
   if(loadingProducts)return<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:30,textAlign:"center"}}>טוען מוצרים...</div>
   </div>;
-  return<div onClick={creating?undefined:onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+  return<><div onClick={creating||showCanvas?undefined:onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:700,maxHeight:"90vh",overflowY:"auto",boxShadow:"var(--shadow-lg)"}}>
       <div style={{background:"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",padding:20,color:"white",borderTopLeftRadius:20,borderTopRightRadius:20}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2214,7 +2373,27 @@ function MockupRequestForm({onClose,onCreated,user}){
         </div>}
       </div>
     </div>
-  </div>;
+  </div>
+  {showCanvas&&canvasData&&<MockupCanvasEditor
+    mockupImageUrl={canvasData.mockupUrl}
+    logoImageUrl={canvasData.logoUrl}
+    productData={canvasData.productData}
+    initialLocation={canvasData.location}
+    onConfirm={async(positionData)=>{
+      console.log("Logo positioned at:",positionData);
+      window.alert("מיקום הלוגו נשמר! בהוראה D נמשיך ליצירת ההדמיה הסופית.\n\n"+
+        `מיקום: x=${Math.round(positionData.pixel_x)}, y=${Math.round(positionData.pixel_y)}\n`+
+        `גודל: ${positionData.logo_width_cm} × ${positionData.logo_height_cm} ס״מ`);
+      setShowCanvas(false);
+      setCanvasData(null);
+      onCreated?.();
+    }}
+    onCancel={()=>{
+      setShowCanvas(false);
+      setCanvasData(null);
+    }}
+  />}
+  </>;
 }
 
 function NewRequestModal({presetType,onClose,onCreated,user}){
@@ -3605,7 +3784,10 @@ function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote,
   return<Modal open={true} onClose={onClose} title="📦 פרטי משלוח" maxWidth={600}>
     <div style={{direction:"rtl",fontSize:14,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{background:"#f0f9ff",padding:12,borderRadius:8}}>
-        <div style={{fontSize:17,fontWeight:700,marginBottom:6}}>{task.client_name}</div>
+        <div style={{fontSize:17,fontWeight:700,marginBottom:6}}>
+          {task.archived_at&&<span style={{fontSize:10,background:"#fef3c7",color:"#92400e",padding:"2px 6px",borderRadius:4,marginRight:6}}>🗄️ מארכיון</span>}
+          {task.client_name}
+        </div>
         {(task.bina_order_id||task.sales_agent)&&<div style={{display:"flex",gap:15,flexWrap:"wrap",fontSize:13,color:"var(--text2)"}}>
           {task.bina_order_id&&<div>📝 <strong>הזמנה:</strong> <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></div>}
           {task.sales_agent&&<div>👤 <strong>סוכן:</strong> {task.sales_agent}</div>}
@@ -3702,7 +3884,10 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
       </div>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:4}}>
         <span style={{fontSize:14}}>{typeIcon}</span>
-        <span style={{fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:textMain}}>{task.client_name||"—"}</span>
+        <span style={{fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:textMain}}>
+          {task.archived_at&&<span style={{fontSize:10,background:"#fef3c7",color:"#92400e",padding:"2px 6px",borderRadius:4,marginRight:4}} title="המשימה בארכיון — מוצגת כי המשלוח עדיין פעיל">🗄️ מארכיון</span>}
+          {task.client_name||"—"}
+        </span>
       </div>
       {!compact&&(task.bina_order_id||task.sales_agent)&&<div style={{fontSize:10,color:textMuted,marginTop:3,display:"flex",justifyContent:"space-between",gap:6}}>
         {task.bina_order_id&&<span>📝 <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></span>}
@@ -3860,7 +4045,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
     try{
       const drs=await sb("drivers?is_active=eq.true&order=name.asc");
       setDrivers(Array.isArray(drs)?drs:[]);
-      const data=await sb("tasks?archived_at=is.null&delivery_status=in.(ready,in_transit,delivered)&order=scheduled_delivery_date.asc,delivery_order.asc");
+      const data=await sb("tasks?delivery_status=in.(ready,in_transit,delivered)&or=(archived_at.is.null,delivery_status.in.(ready,in_transit))&order=scheduled_delivery_date.asc,delivery_order.asc");
       let enriched=Array.isArray(data)?data:[];
       if(enriched.length>0){
         const taskIds=enriched.map(t=>t.id);

@@ -9,6 +9,9 @@ const corsHeaders = {
 
 const COMPLETED_STATUSES = ["הושלם", "הושלמה"];
 
+/** משימות במשלוחים שעדיין לא נמסרו — לא לארכב */
+const ACTIVE_DELIVERY_STATUSES = ["ready", "in_transit"];
+
 function cronAuthorized(req: Request): boolean {
   const expected = Deno.env.get("CRON_SECRET")?.trim();
   if (!expected) {
@@ -43,33 +46,84 @@ Deno.serve(async (req) => {
   const supabase = createClient(url, serviceKey);
 
   const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
   const orClause = COMPLETED_STATUSES.map((s) => `status.eq.${s}`).join(",");
 
-  const { data: updated, error } = await supabase
+  const { data: candidates, error: candidatesError } = await supabase
     .from("tasks")
-    .update({ archived_at: new Date().toISOString() })
+    .select("id, delivery_status")
     .is("archived_at", null)
     .lt("updated_at", cutoffIso)
-    .or(orClause)
-    .select("id");
+    .or(orClause);
 
-  if (error) {
-    console.error("[archive-completed-tasks]", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+  if (candidatesError) {
+    console.error("[archive-completed-tasks] fetch candidates:", candidatesError);
+    return new Response(JSON.stringify({ error: candidatesError.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const count = updated?.length ?? 0;
+  const candidateCount = candidates?.length ?? 0;
+  console.log(`[archive-completed-tasks] Found ${candidateCount} archive candidates`);
 
-  console.log("[archive-completed-tasks] archived rows:", count);
+  if (!candidates || candidates.length === 0) {
+    return new Response(
+      JSON.stringify({ success: true, archivedCount: 0, skippedActiveDelivery: 0 }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
+  const blockedTaskIds = new Set(
+    candidates
+      .filter((t) =>
+        t.delivery_status &&
+        ACTIVE_DELIVERY_STATUSES.includes(t.delivery_status)
+      )
+      .map((t) => t.id),
+  );
+
+  const toArchive = candidates.filter((t) => !blockedTaskIds.has(t.id));
+
+  console.log(
+    `[archive-completed-tasks] ${blockedTaskIds.size} tasks have active delivery (ready/in_transit) — skipping`,
+  );
+  console.log(`[archive-completed-tasks] Archiving ${toArchive.length} tasks`);
+
+  if (toArchive.length === 0) {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        archivedCount: 0,
+        skippedActiveDelivery: blockedTaskIds.size,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
+  const archiveIds = toArchive.map((t) => t.id);
+  const archivedAt = new Date().toISOString();
+
+  const { error: archiveError } = await supabase
+    .from("tasks")
+    .update({ archived_at: archivedAt })
+    .in("id", archiveIds);
+
+  if (archiveError) {
+    console.error("[archive-completed-tasks] archive update:", archiveError);
+    return new Response(JSON.stringify({ error: archiveError.message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  console.log(`[archive-completed-tasks] Successfully archived ${archiveIds.length} tasks`);
 
   return new Response(
-    JSON.stringify({ success: true, archivedCount: count }),
-    {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    },
+    JSON.stringify({
+      success: true,
+      archivedCount: archiveIds.length,
+      skippedActiveDelivery: blockedTaskIds.size,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 });

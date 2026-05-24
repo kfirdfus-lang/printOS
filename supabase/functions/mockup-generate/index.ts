@@ -34,6 +34,7 @@ interface MockupRequest {
   client_name?: string
   project_name?: string
   precision_mode?: boolean
+  generation_mode?: 'ai_realistic' | 'clean_product'
 }
 
 function colorToEn(color: string): string {
@@ -219,6 +220,55 @@ async function generateMockupAI(logoBytes: Uint8Array, prompt: string): Promise<
 
   if (!data.data?.[0]?.b64_json) {
     throw new Error('No image in OpenAI response')
+  }
+
+  return data.data[0].b64_json as string
+}
+
+async function generateCleanProduct(body: MockupRequest): Promise<string> {
+  const openaiKey = Deno.env.get('OPENAI_API_KEY')
+  if (!openaiKey) {
+    throw new Error('OPENAI_API_KEY not configured')
+  }
+
+  const colorEn = colorToEn(body.color)
+
+  const prompt =
+    `Professional product mockup photography of a clean blank ${colorEn} ${body.product_ai_description}. ` +
+    `IMPORTANT: The product must be COMPLETELY BLANK - no logo, no print, no graphic, no text, no design. ` +
+    `Just the plain product on a clean white studio background. ` +
+    `Centered composition, soft studio lighting, realistic fabric/material texture, ` +
+    `high quality commercial photography, 4K resolution, sharp details. ` +
+    `The product should be positioned facing forward, well-centered in the frame, ` +
+    `taking up approximately 70% of the image area.`
+
+  console.log('Generating clean product:', prompt)
+
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${openaiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'high',
+      output_format: 'png',
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`OpenAI clean product failed: ${errorText}`)
+  }
+
+  const data = await response.json()
+
+  if (!data.data?.[0]?.b64_json) {
+    throw new Error('No image in OpenAI clean product response')
   }
 
   return data.data[0].b64_json as string
@@ -606,42 +656,62 @@ Deno.serve(async (req) => {
       log.push({ step: 'skipping_background_removal', reason: 'already_transparent' })
     }
 
-    const prompt = buildPrompt(body)
-    log.push({ step: 'prompt_built', prompt })
+    let imgBytes: Uint8Array
+    const mode = body.generation_mode || 'ai_realistic'
 
-    let imageB64 = await generateMockupAI(logoBytes, prompt)
-    log.push({ step: 'ai_generation_complete' })
+    log.push({ step: 'generation_mode', mode })
 
-    let imgBytes = Uint8Array.from(atob(imageB64), (c) => c.charCodeAt(0))
-
-    if (isSceneDescription(body.brief) && !body.precision_mode) {
-      const scenePrompt = buildScenePrompt(body)
-      log.push({ step: 'scene_prompt_built', prompt: scenePrompt })
-      imageB64 = await generateMockupAI(imgBytes, scenePrompt)
+    if (mode === 'clean_product') {
+      log.push({ step: 'generating_clean_product' })
+      const imageB64 = await generateCleanProduct(body)
       imgBytes = Uint8Array.from(atob(imageB64), (c) => c.charCodeAt(0))
-      log.push({ step: 'scene_generation_complete' })
-    }
+      log.push({ step: 'clean_product_generated' })
+    } else {
+      const wantsScene = isSceneDescription(body.brief)
+      log.push({ step: 'scene_detection', wants_scene: wantsScene })
 
-    if (body.precision_mode && body.print_locations.length > 0) {
-      try {
-        log.push({ step: 'precision_mode_active' })
+      let imageB64 = ''
+      let usedCompositing = false
 
-        const cleanPrompt =
-          `Professional product mockup photography of a clean ${colorToEn(body.color)} ${body.product_ai_description}. ` +
-          `Studio lighting, white background, NO logo, NO print, NO graphic on the product. Plain product only, high quality 4K.`
-
-        log.push({ step: 'generating_clean_product' })
-
-        const cleanB64 = await generateMockupAI(logoBytes, cleanPrompt)
-        const cleanBytes = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0))
-
-        imgBytes = await compositeLogoOnMockup(cleanBytes, logoBytes, body.print_locations[0])
-        log.push({ step: 'precision_compositing_complete' })
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        console.error('Compositing failed:', e)
-        log.push({ step: 'compositing_failed', error: msg })
+      if (wantsScene) {
+        const basePrompt = buildPrompt(body)
+        log.push({ step: 'prompt_built', prompt: basePrompt })
+        const baseMockupB64 = await generateMockupAI(logoBytes, basePrompt)
+        log.push({ step: 'base_mockup_complete' })
+        const sceneBytes = Uint8Array.from(atob(baseMockupB64), (c) => c.charCodeAt(0))
+        const scenePrompt = buildScenePrompt(body)
+        log.push({ step: 'scene_prompt_built', prompt: scenePrompt })
+        imageB64 = await generateMockupAI(sceneBytes, scenePrompt)
+        log.push({ step: 'scene_generation_complete' })
+      } else if (body.precision_mode && body.print_locations.length > 0) {
+        try {
+          log.push({ step: 'precision_mode_active' })
+          const cleanPrompt =
+            `Professional product mockup photography of a clean ${colorToEn(body.color)} ${body.product_ai_description}. ` +
+            `Studio lighting, white background, NO logo, NO print, NO graphic on the product. Plain product only, high quality 4K.`
+          log.push({ step: 'generating_clean_product_for_composite' })
+          const cleanB64 = await generateMockupAI(logoBytes, cleanPrompt)
+          const cleanBytes = Uint8Array.from(atob(cleanB64), (c) => c.charCodeAt(0))
+          imgBytes = await compositeLogoOnMockup(cleanBytes, logoBytes, body.print_locations[0])
+          usedCompositing = true
+          log.push({ step: 'precision_compositing_complete' })
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error('Compositing failed:', e)
+          log.push({ step: 'compositing_failed', error: msg })
+          const prompt = buildPrompt(body)
+          imageB64 = await generateMockupAI(logoBytes, prompt)
+        }
+      } else {
+        const prompt = buildPrompt(body)
+        log.push({ step: 'prompt_built', prompt })
+        imageB64 = await generateMockupAI(logoBytes, prompt)
       }
+
+      if (!usedCompositing) {
+        imgBytes = Uint8Array.from(atob(imageB64), (c) => c.charCodeAt(0))
+      }
+      log.push({ step: 'ai_generation_complete' })
     }
 
     const timestamp = Date.now()
@@ -700,6 +770,19 @@ Deno.serve(async (req) => {
         const mockupUrl = mockupUrlData.publicUrl
         const logoUrl = logoUrlData.publicUrl
 
+        console.log('PDF URLs about to be used:')
+        console.log('mockupUrl:', mockupUrl)
+        console.log('logoUrl:', logoUrl)
+
+        if (!mockupUrl || !mockupUrl.startsWith('http')) {
+          log.push({ step: 'mockup_url_invalid', got: mockupUrl })
+          throw new Error('Failed to generate public URL for mockup')
+        }
+        if (!logoUrl || !logoUrl.startsWith('http')) {
+          log.push({ step: 'logo_url_invalid', got: logoUrl })
+          throw new Error('Failed to generate public URL for logo')
+        }
+
         log.push({ step: 'urls_created', mockup_url: mockupUrl, logo_url: logoUrl })
 
         let natalieLogoUrl: string | null = null
@@ -718,6 +801,14 @@ Deno.serve(async (req) => {
         } catch {
           log.push({ step: 'natalie_logo_not_found' })
         }
+
+        console.log('natalieLogoUrl:', natalieLogoUrl)
+        log.push({
+          step: 'pdf_urls_check',
+          mockup_url: mockupUrl,
+          logo_url: logoUrl,
+          natalie_logo_url: natalieLogoUrl,
+        })
 
         const pdfBytes = await buildProposalPDF(mockupUrl, logoUrl, natalieLogoUrl, {
           client_name: body.client_name || '',

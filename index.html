@@ -1903,7 +1903,7 @@ function MockupRequestForm({onClose,onCreated,user}){
   const [generatePdf,setGeneratePdf]=useState(true);
   const [clientName,setClientName]=useState("");
   const [projectName,setProjectName]=useState("");
-  const [precisionMode,setPrecisionMode]=useState(false);
+  const [generationMode,setGenerationMode]=useState("clean_product");
   const [creating,setCreating]=useState(false);
   const [processingStatus,setProcessingStatus]=useState(null);
   useEffect(()=>{(async()=>{
@@ -1964,7 +1964,7 @@ function MockupRequestForm({onClose,onCreated,user}){
         title:`הדמיה - ${selectedProduct.name} (${selectedColor})`,
         status:"pending",
         input_files:Object.values(locationFiles).filter(Boolean),
-        parameters:{product_id:selectedProduct.id,product_name:selectedProduct.name,color:selectedColor,locations:allLocations,brief:brief.trim()||null},
+        parameters:{product_id:selectedProduct.id,product_name:selectedProduct.name,color:selectedColor,locations:allLocations,brief:brief.trim()||null,generation_mode:generationMode},
         created_by:user?.name||"unknown"
       })});
       const newRequest=Array.isArray(result)?result[0]:result;
@@ -1983,7 +1983,7 @@ function MockupRequestForm({onClose,onCreated,user}){
         generate_pdf:generatePdf,
         client_name:clientName.trim()||undefined,
         project_name:projectName.trim()||undefined,
-        precision_mode:precisionMode
+        generation_mode:generationMode
       }});
       if(error)throw error;
       if(data?.error)throw new Error(data.error);
@@ -2104,15 +2104,23 @@ function MockupRequestForm({onClose,onCreated,user}){
               })}
             </div>
           </div>
-          <div style={{marginBottom:15,padding:12,background:precisionMode?"#fef3c7":"#f9fafb",borderRadius:8,border:`2px solid ${precisionMode?"#f59e0b":"#e5e7eb"}`}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-              <input type="checkbox" id="precisionMode" checked={precisionMode} onChange={e=>setPrecisionMode(e.target.checked)} style={{width:18,height:18,cursor:"pointer"}}/>
-              <label htmlFor="precisionMode" style={{fontWeight:600,fontSize:14,cursor:"pointer"}}>📐 מצב דיוק מקסימלי</label>
-            </div>
-            <div style={{fontSize:11,color:"#78350f",lineHeight:1.5}}>
-              {precisionMode
-                ? "✅ הלוגו יושם במיקום ובגודל שבחרת בדיוק - 100% מדויק"
-                : "ה-AI יחליט על המיקום והגודל (יותר ריאליסטי, פחות מדויק)"}
+          <div style={{marginBottom:15,padding:12,background:"#fef3c7",borderRadius:8,border:"2px solid #f59e0b"}}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:10,color:"#78350f"}}>🎨 מצב יצירת ההדמיה:</div>
+            <div style={{display:"grid",gap:8}}>
+              <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:10,background:generationMode==="clean_product"?"white":"transparent",border:`2px solid ${generationMode==="clean_product"?"#f59e0b":"#fde68a"}`,borderRadius:6}}>
+                <input type="radio" name="genMode" value="clean_product" checked={generationMode==="clean_product"} onChange={()=>setGenerationMode("clean_product")} style={{width:18,height:18,cursor:"pointer"}}/>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13}}>🎯 מצב מקצועי (מומלץ)</div>
+                  <div style={{fontSize:11,color:"#78350f",marginTop:2}}>AI יוצר את המוצר ריק → אתה ממקם את הלוגו בעצמך (דיוק מוחלט)</div>
+                </div>
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:10,background:generationMode==="ai_realistic"?"white":"transparent",border:`2px solid ${generationMode==="ai_realistic"?"#f59e0b":"#fde68a"}`,borderRadius:6}}>
+                <input type="radio" name="genMode" value="ai_realistic" checked={generationMode==="ai_realistic"} onChange={()=>setGenerationMode("ai_realistic")} style={{width:18,height:18,cursor:"pointer"}}/>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13}}>✨ מצב AI יצירתי</div>
+                  <div style={{fontSize:11,color:"#78350f",marginTop:2}}>AI יוצר את כל ההדמיה (כולל הלוגו - אולי יישנה)</div>
+                </div>
+              </label>
             </div>
           </div>
           <div style={{display:"flex",gap:10}}>
@@ -2157,7 +2165,7 @@ function MockupRequestForm({onClose,onCreated,user}){
                 return<div key={loc} style={{fontSize:12,marginRight:10,color:"#6b7280"}}>• {loc} — {posLabel} {cfg?.custom_width||ploc?.max_width_cm}×{cfg?.custom_height||ploc?.max_height_cm} ס"מ{(cfg?.rotation)?`, סיבוב ${cfg.rotation}°`:""}</div>;
               })}
               {brief.trim()&&<div style={{marginTop:8,padding:8,background:"white",borderRadius:6,fontSize:12}}>💬 {brief}</div>}
-              {precisionMode&&<div style={{fontSize:12,marginTop:6,color:"#b45309"}}>📐 מצב דיוק מקסימלי: פעיל</div>}
+              <div style={{fontSize:12,marginTop:6,color:"#b45309"}}>{generationMode==="clean_product"?"🎯 מצב מקצועי (מוצר נקי)":"✨ מצב AI יצירתי"}</div>
             </div>
           </div>
           <div style={{background:"#dbeafe",padding:12,borderRadius:8,marginBottom:12,border:"1px solid #93c5fd"}}>
@@ -2194,8 +2202,15 @@ function MockupRequestForm({onClose,onCreated,user}){
         {step==="processing"&&<div style={{textAlign:"center",padding:40}}>
           <div style={{fontSize:60,marginBottom:20}}>⏳</div>
           <div style={{fontSize:18,fontWeight:600,marginBottom:8}}>AI יוצר הדמיה...</div>
-          <div style={{fontSize:13,color:"#6b7280",marginBottom:20}}>{processingStatus||"מעבד..."}</div>
-          <div style={{fontSize:11,color:"#9ca3af"}}>זה ייקח 60-90 שניות (זיהוי + הסרת רקע + יצירת הדמיה).<br/>אל תסגור את החלון.</div>
+          <div style={{fontSize:13,color:"#6b7280",marginBottom:20}}>
+            {processingStatus||"מעבד..."}
+            <div style={{marginTop:8}}>
+              {generationMode==="clean_product"
+                ? "🎨 יוצר תמונת המוצר... בקרוב תוכל למקם את הלוגו!"
+                : "✨ יוצר הדמיה ריאליסטית עם הלוגו..."}
+            </div>
+          </div>
+          <div style={{fontSize:11,color:"#9ca3af"}}>זה ייקח 60-90 שניות. אל תסגור את החלון.</div>
         </div>}
       </div>
     </div>

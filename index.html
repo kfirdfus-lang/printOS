@@ -1894,7 +1894,7 @@ function PositionGrid({value,onChange,color}){
 
 const MOCKUP_CANVAS_QUICK_BTN={flex:1,padding:"6px 10px",background:"white",border:"1px solid #d1d5db",borderRadius:5,cursor:"pointer",fontSize:12,fontWeight:500,color:"#374151",whiteSpace:"nowrap",fontFamily:"inherit"};
 
-function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLocation,onConfirm,onCancel}){
+function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLocation,onConfirm,onCancel,finalizing=false,finalizingStatus=""}){
   const containerRef=useRef(null);
   const stageRef=useRef(null);
   const logoLayerRef=useRef(null);
@@ -2031,7 +2031,7 @@ function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLoca
     setLogoState(prev=>({...prev,width:newWidth,height:newHeight}));
   };
   const handleConfirm=()=>{
-    if(!logoNodeRef.current)return;
+    if(finalizing||!logoNodeRef.current)return;
     const node=logoNodeRef.current;
     const wCm=calculateCm(node.width());
     const hCm=calculateCm(node.height());
@@ -2102,8 +2102,8 @@ function MockupCanvasEditor({mockupImageUrl,logoImageUrl,productData,initialLoca
         💡 טיפ: גרור את הפינות לשינוי גודל • ידית עליונה לסיבוב • לחץ באמצע לגרירה
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
-        <button type="button" onClick={onCancel} style={{padding:12,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontSize:14,fontFamily:"inherit"}}>❌ ביטול</button>
-        <button type="button" onClick={handleConfirm} disabled={isLoading} style={{padding:12,background:isLoading?"#d1d5db":"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,cursor:isLoading?"not-allowed":"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>✅ אישור מיקום ויצירת הדמיה</button>
+        <button type="button" onClick={onCancel} disabled={finalizing} style={{padding:12,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:finalizing?"not-allowed":"pointer",fontSize:14,fontFamily:"inherit",opacity:finalizing?0.5:1}}>❌ ביטול</button>
+        <button type="button" onClick={handleConfirm} disabled={isLoading||finalizing} style={{padding:12,background:(isLoading||finalizing)?"#d1d5db":"linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",color:"white",border:"none",borderRadius:6,cursor:(isLoading||finalizing)?"not-allowed":"pointer",fontSize:14,fontWeight:700,fontFamily:"inherit"}}>{finalizing?`⏳ ${finalizingStatus||"מעבד..."}`:"✅ אישור מיקום ויצירת הדמיה"}</button>
       </div>
     </div>
   </div>;
@@ -2127,6 +2127,8 @@ function MockupRequestForm({onClose,onCreated,user}){
   const [processingStatus,setProcessingStatus]=useState(null);
   const [showCanvas,setShowCanvas]=useState(false);
   const [canvasData,setCanvasData]=useState(null);
+  const [finalizing,setFinalizing]=useState(false);
+  const [finalizingStatus,setFinalizingStatus]=useState("");
   useEffect(()=>{(async()=>{
     try{
       const data=await sb("mockup_products?is_active=eq.true&order=sort_order");
@@ -2462,17 +2464,37 @@ function MockupRequestForm({onClose,onCreated,user}){
     logoImageUrl={canvasData.logoUrl}
     productData={canvasData.productData}
     initialLocation={canvasData.location}
+    finalizing={finalizing}
+    finalizingStatus={finalizingStatus}
     onConfirm={async(positionData)=>{
-      console.log("Logo positioned at:",positionData);
-      window.alert("מיקום הלוגו נשמר! בהוראה D נמשיך ליצירת ההדמיה הסופית.\n\n"+
-        `מיקום: x=${Math.round(positionData.pixel_x)}, y=${Math.round(positionData.pixel_y)}\n`+
-        `גודל: ${positionData.logo_width_cm} × ${positionData.logo_height_cm} ס״מ\n`+
-        `סיבוב: ${Math.round(positionData.rotation||0)}°`);
-      setShowCanvas(false);
-      setCanvasData(null);
-      onCreated?.();
+      setFinalizing(true);
+      setFinalizingStatus("🎨 יוצר הדמיה סופית...");
+      try{
+        const {data,error}=await supabaseClient.functions.invoke("mockup-finalize",{body:{
+          request_id:canvasData.requestId,
+          position:positionData,
+          generate_pdf:generatePdf,
+          client_name:clientName.trim()||undefined,
+          project_name:projectName.trim()||undefined
+        }});
+        if(error)throw error;
+        if(data?.error)throw new Error(data.error);
+        setFinalizingStatus("✅ הושלם!");
+        setTimeout(()=>{
+          setShowCanvas(false);
+          setCanvasData(null);
+          setFinalizing(false);
+          setFinalizingStatus("");
+          onCreated?.();
+        },1500);
+      }catch(e){
+        window.alert("שגיאה ביצירת ההדמיה הסופית: "+(e.message||String(e)));
+        setFinalizing(false);
+        setFinalizingStatus("");
+      }
     }}
     onCancel={()=>{
+      if(finalizing)return;
       setShowCanvas(false);
       setCanvasData(null);
     }}

@@ -307,9 +307,9 @@ async function compositeLogoOnMockup(
 }
 
 async function buildProposalPDF(
-  mockupBytes: Uint8Array,
-  originalLogoBytes: Uint8Array,
-  natalieLogoBytes: Uint8Array | null,
+  mockupUrl: string,
+  originalLogoUrl: string,
+  natalieLogoUrl: string | null,
   data: {
     client_name: string
     project_name: string
@@ -323,23 +323,6 @@ async function buildProposalPDF(
   if (!pdfshiftKey) {
     throw new Error('PDFSHIFT_API_KEY not configured')
   }
-
-  const toBase64 = (bytes: Uint8Array) => {
-    let binary = ''
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-    return btoa(binary)
-  }
-
-  const mockupBase64 = toBase64(mockupBytes)
-  const logoBase64 = toBase64(originalLogoBytes)
-  const natalieLogoBase64 = natalieLogoBytes ? toBase64(natalieLogoBytes) : null
-
-  const isLogoPng =
-    originalLogoBytes[0] === 0x89 &&
-    originalLogoBytes[1] === 0x50 &&
-    originalLogoBytes[2] === 0x4e &&
-    originalLogoBytes[3] === 0x47
-  const logoMime = isLogoPng ? 'image/png' : 'image/jpeg'
 
   const dateStr = new Date().toLocaleDateString('he-IL')
 
@@ -461,8 +444,8 @@ async function buildProposalPDF(
   <div class="header">
     <div class="header-left">
       ${
-        natalieLogoBase64
-          ? `<img src="data:image/png;base64,${natalieLogoBase64}" class="natalie-logo" alt="Natalie">`
+        natalieLogoUrl
+          ? `<img src="${natalieLogoUrl}" class="natalie-logo" alt="Natalie">`
           : `<div class="company-name" style="font-size:22px">נטלי</div>`
       }
     </div>
@@ -481,12 +464,12 @@ async function buildProposalPDF(
     <div><span class="label">תאריך:</span> ${dateStr}</div>
   </div>
   <div class="mockup-container">
-    <img src="data:image/png;base64,${mockupBase64}" class="mockup-image" alt="Mockup">
+    <img src="${mockupUrl}" class="mockup-image" alt="Mockup">
   </div>
   <div class="details-section">
     <div class="original-logo-block">
       <div class="block-title">לוגו מקורי</div>
-      <img src="data:${logoMime};base64,${logoBase64}" alt="Logo">
+      <img src="${originalLogoUrl}" alt="Logo">
     </div>
     <div class="print-details">
       <h3>📐 פרטי הדפס</h3>
@@ -520,7 +503,7 @@ async function buildProposalPDF(
 </body>
 </html>`
 
-  console.log('Calling PDFShift API...')
+  console.log('Calling PDFShift API with URLs (HTML size:', html.length, 'bytes)')
 
   const response = await fetch(PDFSHIFT_API_URL, {
     method: 'POST',
@@ -706,50 +689,69 @@ Deno.serve(async (req) => {
     }
 
     if (body.generate_pdf) {
-      log.push({ step: 'pdf_generation_start' })
-
-      let natalieLogoBytes: Uint8Array | null = null
       try {
-        const { data: natalieData } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .download('branding/natalie_logo.png')
-        if (natalieData) {
-          natalieLogoBytes = new Uint8Array(await natalieData.arrayBuffer())
-          log.push({ step: 'natalie_logo_loaded' })
+        log.push({ step: 'generating_proposal_pdf_with_urls' })
+
+        const { data: mockupUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(filePath)
+        const logoPathForPdf =
+          outputFiles.find((f) => f.name.startsWith('logo_clean_'))?.path ?? firstLocation.file_path
+        const { data: logoUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(logoPathForPdf)
+
+        const mockupUrl = mockupUrlData.publicUrl
+        const logoUrl = logoUrlData.publicUrl
+
+        log.push({ step: 'urls_created', mockup_url: mockupUrl, logo_url: logoUrl })
+
+        let natalieLogoUrl: string | null = null
+        try {
+          const { data: natalieCheck } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .download('branding/natalie_logo.png')
+
+          if (natalieCheck) {
+            const { data: natalieUrlData } = supabase.storage
+              .from(STORAGE_BUCKET)
+              .getPublicUrl('branding/natalie_logo.png')
+            natalieLogoUrl = natalieUrlData.publicUrl
+            log.push({ step: 'natalie_logo_url_created' })
+          }
+        } catch {
+          log.push({ step: 'natalie_logo_not_found' })
         }
-      } catch {
-        log.push({ step: 'natalie_logo_missing' })
+
+        const pdfBytes = await buildProposalPDF(mockupUrl, logoUrl, natalieLogoUrl, {
+          client_name: body.client_name || '',
+          project_name: body.project_name || '',
+          product_name_he: body.product_name_he || body.product_name_en,
+          color: body.color,
+          print_locations: body.print_locations,
+          brief: body.brief || '',
+        })
+
+        const pdfFileName = `proposal_${timestamp}.pdf`
+        const pdfFilePath = `design_requests/${requestId}/output/${pdfFileName}`
+
+        const { error: pdfUpError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(pdfFilePath, pdfBytes, { contentType: 'application/pdf', upsert: true })
+
+        if (!pdfUpError) {
+          outputFiles.push({
+            path: pdfFilePath,
+            name: pdfFileName,
+            size: pdfBytes.length,
+            type: 'application/pdf',
+            uploaded_at: new Date().toISOString(),
+          })
+          log.push({ step: 'pdf_uploaded', file_path: pdfFilePath, size: pdfBytes.length })
+        } else {
+          log.push({ step: 'pdf_upload_failed', error: pdfUpError.message })
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error('PDF generation failed:', e)
+        log.push({ step: 'pdf_failed', error: msg })
       }
-
-      const pdfBytes = await buildProposalPDF(imgBytes, logoBytes, natalieLogoBytes, {
-        client_name: body.client_name || '',
-        project_name: body.project_name || '',
-        product_name_he: body.product_name_he || body.product_name_en,
-        color: body.color,
-        print_locations: body.print_locations,
-        brief: body.brief || '',
-      })
-      log.push({ step: 'pdfshift_complete' })
-
-      const pdfFileName = `proposal_${timestamp}.pdf`
-      const pdfFilePath = `design_requests/${requestId}/output/${pdfFileName}`
-
-      const { error: pdfUpError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(pdfFilePath, pdfBytes, { contentType: 'application/pdf', upsert: true })
-
-      if (pdfUpError) {
-        throw new Error('Failed to upload PDF: ' + pdfUpError.message)
-      }
-
-      outputFiles.push({
-        path: pdfFilePath,
-        name: pdfFileName,
-        size: pdfBytes.length,
-        type: 'application/pdf',
-        uploaded_at: new Date().toISOString(),
-      })
-      log.push({ step: 'pdf_uploaded', file_path: pdfFilePath, size: pdfBytes.length })
     }
 
     await supabase

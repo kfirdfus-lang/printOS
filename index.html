@@ -9978,8 +9978,9 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
     let cancelled=false;
     (async()=>{
       try{
-        const rows=await sb("alut_pricing?order=category.asc,key.asc");
-        if(!cancelled){setLocalPricingRows(rows||[]);setPricingLoading(false);}
+        const {data,error}=await supabaseClient.from("alut_pricing").select().order("category",{ascending:true}).order("key",{ascending:true});
+        if(error)throw error;
+        if(!cancelled){setLocalPricingRows(data||[]);setPricingLoading(false);}
       }catch(e){console.warn("alut pricing load",e);if(!cancelled)setPricingLoading(false);}
     })();
     return()=>{cancelled=true;};

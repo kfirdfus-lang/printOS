@@ -9915,31 +9915,88 @@ function AlutItemFormCard({item,index,pricing,calcItem,onChange,onRemove,canRemo
   </div>;
 }
 
-function AlutNewOrderModal({projectId,pricingRows,onClose,onSaved}){
+function alutItemsFromParsed(items){
+  if(!items?.length)return[ALUT_EMPTY_ITEM()];
+  return items.map(i=>({
+    calendar_type:i.calendar_type||"hard",
+    quantity:i.quantity||100,
+    needs_design:i.needs_design!==false,
+    is_template_only:i.needs_design===false,
+  }));
+}
+
+function AlutPasteEmailModal({onClose,onParsed,onManualFill}){
+  const [emailText,setEmailText]=useState("");
+  const [isParsing,setIsParsing]=useState(false);
+  const [parseError,setParseError]=useState(null);
+  const handleParse=async()=>{
+    if(!emailText.trim()){window.alert("אנא הדבק את המייל");return;}
+    setIsParsing(true);
+    setParseError(null);
+    try{
+      const {data,error}=await supabaseClient.functions.invoke("parse-karin-email",{body:{email_text:emailText}});
+      if(error)throw error;
+      if(!data?.success)throw new Error(data?.error||data?.details||"שגיאה בפרסור");
+      onParsed?.({...data.data,original_email:emailText});
+    }catch(err){
+      setParseError(err.message||String(err)||"שגיאה בפרסור המייל");
+    }finally{setIsParsing(false);}
+  };
+  const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"12px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl",resize:"vertical",minHeight:220};
+  return<Modal open={true} onClose={isParsing?()=>{}:onClose} title="📧 הדבק מייל של קארין" maxWidth={560}>
+    <div style={{direction:"rtl"}}>
+      <p style={{fontSize:13,color:"var(--text2)",margin:"0 0 12px",lineHeight:1.6}}>הדבק את המייל שקיבלת מקארין. Claude יזהה אוטומטית את הפרטים.</p>
+      <textarea value={emailText} onChange={e=>setEmailText(e.target.value)} placeholder="הדבק כאן את תוכן המייל..." disabled={isParsing} style={IS}/>
+      {parseError&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:12,marginTop:12,fontSize:13,color:"#991b1b"}}>
+        <div style={{fontWeight:600,marginBottom:6}}>לא הצלחתי לפרסר את המייל:</div>
+        <div style={{marginBottom:10}}>{parseError}</div>
+        <button type="button" onClick={()=>onManualFill?.(emailText)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>מלא ידנית</button>
+      </div>}
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+        <button type="button" onClick={onClose} disabled={isParsing} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:isParsing?"wait":"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
+        <button type="button" onClick={handleParse} disabled={isParsing} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:isParsing?"wait":"pointer",fontFamily:"inherit",minHeight:44,display:"flex",alignItems:"center",gap:8}}>
+          {isParsing?<><Spinner sz={16} color="#fff"/> מפרסר...</>:<>🤖 פרסר את המייל</>}
+        </button>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
+  const fromEmail=!!(initialData&&(initialData.company_name||initialData.items?.length));
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
-  const [orderNumber,setOrderNumber]=useState("");
-  const [companyName,setCompanyName]=useState("");
-  const [contactName,setContactName]=useState("");
-  const [contactPhone,setContactPhone]=useState("");
-  const [contactEmail,setContactEmail]=useState("");
-  const [isPickup,setIsPickup]=useState(false);
-  const [deliveryAddress,setDeliveryAddress]=useState("");
+  const [orderNumber,setOrderNumber]=useState(initialData?.order_number||"");
+  const [companyName,setCompanyName]=useState(initialData?.company_name||"");
+  const [contactName,setContactName]=useState(initialData?.contact_name||"");
+  const [contactPhone,setContactPhone]=useState(initialData?.contact_phone||"");
+  const [contactEmail,setContactEmail]=useState(initialData?.contact_email||"");
+  const [isPickup,setIsPickup]=useState(!!initialData?.is_pickup);
+  const [deliveryAddress,setDeliveryAddress]=useState(initialData?.delivery_address||"");
   const [notes,setNotes]=useState("");
-  const [items,setItems]=useState([ALUT_EMPTY_ITEM()]);
+  const [originalEmail,setOriginalEmail]=useState(initialData?.original_email||"");
+  const [orderDupWarn,setOrderDupWarn]=useState(false);
+  const [items,setItems]=useState(alutItemsFromParsed(initialData?.items));
   const [saving,setSaving]=useState(false);
   const calc=useMemo(()=>calculateAlutOrderTotals(items.map(i=>({...i,needs_design:!i.is_template_only})),pricing,isPickup),[items,isPickup,pricing]);
   useEffect(()=>{
-    sb(`alut_orders?select=order_number&project_id=eq.${projectId}&order=order_number.desc&limit=1`).then(r=>setOrderNumber((r?.[0]?.order_number||0)+1)).catch(()=>setOrderNumber(1));
-  },[projectId]);
+    if(initialData?.order_number){
+      setOrderNumber(initialData.order_number);
+      sb(`alut_orders?project_id=eq.${projectId}&order_number=eq.${initialData.order_number}&limit=1`).then(r=>setOrderDupWarn(!!r?.length)).catch(()=>setOrderDupWarn(false));
+    }else{
+      sb(`alut_orders?select=order_number&project_id=eq.${projectId}&order=order_number.desc&limit=1`).then(r=>setOrderNumber((r?.[0]?.order_number||0)+1)).catch(()=>setOrderNumber(1));
+      setOrderDupWarn(false);
+    }
+  },[projectId,initialData?.order_number]);
   const updateItem=(idx,patch)=>setItems(prev=>prev.map((it,i)=>i===idx?patch:it));
   const removeItem=(idx)=>setItems(prev=>prev.length<=1?prev:prev.filter((_,i)=>i!==idx));
   const addItem=()=>setItems(prev=>[...prev,ALUT_EMPTY_ITEM()]);
   const handleSave=async()=>{
     if(!companyName.trim()){window.alert("יש למלא שם חברה");return;}
     if(items.some(i=>!i.quantity||Number(i.quantity)<1)){window.alert("יש למלא כמות בכל פריט");return;}
+    if(orderDupWarn&&!confirm(`⚠️ הזמנה #${orderNumber} כבר קיימת במערכת. האם להמשיך?`))return;
     setSaving(true);
     try{
-      const header={project_id:projectId,order_number:Number(orderNumber),company_name:companyName.trim(),contact_name:contactName.trim()||null,contact_phone:contactPhone.trim()||null,contact_email:contactEmail.trim()||null,delivery_address:deliveryAddress.trim()||null,is_pickup:isPickup,notes:notes.trim()||null};
+      const header={project_id:projectId,order_number:Number(orderNumber),company_name:companyName.trim(),contact_name:contactName.trim()||null,contact_phone:contactPhone.trim()||null,contact_email:contactEmail.trim()||null,delivery_address:deliveryAddress.trim()||null,is_pickup:isPickup,notes:notes.trim()||null,original_email:originalEmail.trim()||null};
       const created=await sb("alut_orders",{method:"POST",body:JSON.stringify(header)});
       const orderId=(Array.isArray(created)?created[0]:created)?.id;
       if(!orderId)throw new Error("לא נוצרה הזמנה");
@@ -9956,10 +10013,13 @@ function AlutNewOrderModal({projectId,pricingRows,onClose,onSaved}){
     finally{setSaving(false);}
   };
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
-  return<Modal open={true} onClose={onClose} title="🗓️ הזמנה חדשה - אלוט" maxWidth={600}>
+  const modalTitle=fromEmail?"➕ הזמנה חדשה (נטענה מהמייל)":"🗓️ הזמנה חדשה - אלוט";
+  return<Modal open={true} onClose={onClose} title={modalTitle} maxWidth={600}>
     <div style={{direction:"rtl"}}>
+      {fromEmail&&<div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:10,padding:12,marginBottom:14,fontSize:13,color:"#92400e"}}>ℹ️ הנתונים נטענו אוטומטית מהמייל. עבור עליהם ותקן אם צריך לפני שמירה.</div>}
+      {orderDupWarn&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:10,marginBottom:12,fontSize:13,color:"#991b1b",fontWeight:600}}>⚠️ הזמנה #{orderNumber} כבר קיימת במערכת</div>}
       <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>מספר הזמנה</label>
-      <input value={orderNumber} readOnly style={{...IS,direction:"ltr",width:120,marginBottom:12}}/>
+      <input value={orderNumber} onChange={e=>setOrderNumber(e.target.value)} style={{...IS,direction:"ltr",width:120,marginBottom:12}}/>
       <div style={{fontWeight:700,color:"#0d9488",margin:"8px 0 10px"}}>🏢 פרטי לקוח</div>
       <input value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="שם חברה *" style={{...IS,marginBottom:8}}/>
       <input value={contactName} onChange={e=>setContactName(e.target.value)} placeholder="איש קשר" style={{...IS,marginBottom:8}}/>
@@ -10160,7 +10220,9 @@ function AlutDashboard(){
   const [filterType,setFilterType]=useState("all");
   const [urgentOnly,setUrgentOnly]=useState(false);
   const [showPricing,setShowPricing]=useState(false);
+  const [pasteEmailOpen,setPasteEmailOpen]=useState(false);
   const [newOrderOpen,setNewOrderOpen]=useState(false);
+  const [newOrderInitial,setNewOrderInitial]=useState(null);
   const [detailOrder,setDetailOrder]=useState(null);
   const loadData=async()=>{
     try{
@@ -10221,7 +10283,8 @@ function AlutDashboard(){
       <h1 style={{fontSize:22,fontWeight:800,margin:0,color:"var(--text)"}}>🗓️ {projectName}</h1>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button type="button" onClick={()=>setShowPricing(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>⚙️ הגדרות מחירים</button>
-        <button type="button" onClick={()=>setNewOrderOpen(true)} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>➕ הזמנה חדשה</button>
+        <button type="button" onClick={()=>setPasteEmailOpen(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📧 הדבק מייל של קארין</button>
+        <button type="button" onClick={()=>{setNewOrderInitial(null);setNewOrderOpen(true);}} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>➕ הזמנה חדשה</button>
       </div>
     </div>
     <div className="kg4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
@@ -10295,7 +10358,8 @@ function AlutDashboard(){
       </div>
     </>}
     {showPricing&&<AlutPricingModal pricingRows={pricingRows} onClose={()=>setShowPricing(false)} onSaved={loadData}/>}
-    {newOrderOpen&&project&&<AlutNewOrderModal projectId={project.id} pricingRows={pricingRows} onClose={()=>setNewOrderOpen(false)} onSaved={loadData}/>}
+    {pasteEmailOpen&&<AlutPasteEmailModal onClose={()=>setPasteEmailOpen(false)} onParsed={data=>{setPasteEmailOpen(false);setNewOrderInitial(data);setNewOrderOpen(true);}} onManualFill={text=>{setPasteEmailOpen(false);setNewOrderInitial({original_email:text});setNewOrderOpen(true);}}/>}
+    {newOrderOpen&&project&&<AlutNewOrderModal projectId={project.id} pricingRows={pricingRows} initialData={newOrderInitial} onClose={()=>{setNewOrderOpen(false);setNewOrderInitial(null);}} onSaved={loadData}/>}
     {detailOrder&&<AlutOrderDetailModal order={detailOrder} pricingRows={pricingRows} onClose={()=>setDetailOrder(null)} onSaved={loadData}/>}
   </div>;
 }

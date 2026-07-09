@@ -71,6 +71,12 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 }
 .alut-table-wrap{display:block}
 .alut-cards-wrap{display:none}
+.alut-btn-davach{background:linear-gradient(135deg,#a855f7 0%,#7c3aed 100%);color:#fff;padding:8px 16px;border-radius:8px;font-weight:600;font-size:14px;border:none;cursor:pointer;font-family:inherit;transition:transform .15s,box-shadow .15s;margin-top:10px;min-height:44px}
+.alut-btn-davach:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(168,85,247,.3)}
+.alut-davach-history{background:#faf5ff;border-right:3px solid #a855f7;padding:12px;border-radius:8px;margin-top:12px}
+.alut-davach-history-title{font-weight:700;color:#6b21a8;margin-bottom:8px;font-size:13px}
+.alut-davach-history-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#4c1d95;flex-wrap:wrap}
+.alut-davach-download-btn{background:#fff;border:1px solid #c4b5fd;color:#6b21a8;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;min-height:32px}
 @media(max-width:768px){
   .alut-table-wrap{display:none!important}
   .alut-cards-wrap{display:flex!important;flex-direction:column;gap:12px}
@@ -10121,6 +10127,92 @@ function AlutItemEditModal({item,order,pricingRows,onClose,onSaved}){
   </Modal>;
 }
 
+function alutBuildDavachPdfPayload(order,item,itemIndex,pricing,notes){
+  const itemLetter=String.fromCharCode(65+itemIndex);
+  const costPerUnit=Number(pricing.cost_davach_per_unit)||0;
+  const quantity=Number(item.quantity)||0;
+  const cartonsSize=item.calendar_type==="wall"?Number(pricing.carton_wall):Number(pricing.carton_duplex);
+  return{
+    order_number:order.order_number,
+    item_letter:itemLetter,
+    company_name:order.company_name,
+    contact_name:order.contact_name,
+    calendar_type_label:item.calendar_type==="wall"?"לוח קיר":"לוח דופלקס",
+    quantity,
+    cartons_count:Number(item.cartons_count)||0,
+    cartons_size:cartonsSize,
+    cost_per_unit:costPerUnit,
+    total_cost:quantity*costPerUnit,
+    notes:notes||null,
+  };
+}
+async function alutDownloadDavachPdf(payload){
+  const {data,error}=await supabaseClient.functions.invoke("generate-davach-pdf",{body:payload});
+  if(error)throw error;
+  if(!data?.success)throw new Error(data?.error||data?.details||"שגיאה ביצירת PDF");
+  const link=document.createElement("a");
+  link.href=`data:application/pdf;base64,${data.pdf_base64}`;
+  link.download=data.filename;
+  link.click();
+  return data;
+}
+
+function AlutDavachModal({item,itemIndex,order,pricing,onClose,onSaved}){
+  const [notes,setNotes]=useState("");
+  const [isGenerating,setIsGenerating]=useState(false);
+  const [updateStatus,setUpdateStatus]=useState(false);
+  const payload=useMemo(()=>alutBuildDavachPdfPayload(order,item,itemIndex,pricing,notes.trim()||null),[order,item,itemIndex,pricing,notes]);
+  const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
+  const handleGeneratePdf=async()=>{
+    setIsGenerating(true);
+    try{
+      const data=await alutDownloadDavachPdf(payload);
+      const {error:insertError}=await supabaseClient.from("alut_davach_orders").insert({
+        item_id:item.id,
+        order_id:order.id,
+        calendar_type:item.calendar_type,
+        quantity:payload.quantity,
+        cartons_count:payload.cartons_count,
+        cost_per_unit:payload.cost_per_unit,
+        total_cost:payload.total_cost,
+        pdf_filename:data.filename,
+        notes:notes.trim()||null,
+      });
+      if(insertError)throw insertError;
+      if(updateStatus){
+        await sb(`alut_order_items?id=eq.${item.id}`,{method:"PATCH",body:JSON.stringify({status:"at_davach",davach_sent_at:new Date().toISOString()})});
+      }
+      onSaved?.();
+      onClose();
+    }catch(err){
+      window.alert("שגיאה: "+(err.message||String(err)));
+    }finally{setIsGenerating(false);}
+  };
+  const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"12px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl",resize:"vertical",minHeight:80};
+  return<Modal open={true} onClose={isGenerating?()=>{}:onClose} title={`📄 הזמנת עבודה לדבח - הזמנה #${order.order_number} / פריט ${payload.item_letter}`} maxWidth={520}>
+    <div style={{direction:"rtl"}}>
+      <div style={{background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:12,padding:16,marginBottom:16,fontSize:14,lineHeight:1.8}}>
+        <div><strong>👤 לקוח:</strong> {order.company_name}</div>
+        <div><strong>📦 סוג:</strong> {ct.icon} {payload.calendar_type_label}</div>
+        <div><strong>🔢 כמות:</strong> {payload.quantity.toLocaleString("he-IL")} יחידות</div>
+        <div><strong>📦 קרטונים:</strong> {payload.cartons_count} ({payload.cartons_size.toLocaleString("he-IL")} יחידות בקרטון)</div>
+        <div style={{marginTop:10,fontWeight:800,color:"#7c3aed",fontSize:16}}>💰 עלות: {payload.quantity.toLocaleString("he-IL")} × {payload.cost_per_unit.toFixed(2)} = {alutFmtMoney(payload.total_cost)}</div>
+      </div>
+      <label style={{display:"block",fontSize:12,fontWeight:700,color:"var(--text3)",marginBottom:6}}>📝 הערות (אופציונלי)</label>
+      <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="הערות לדבח..." disabled={isGenerating} style={IS}/>
+      <label style={{display:"flex",alignItems:"center",gap:8,margin:"12px 0 16px",fontSize:13,cursor:"pointer"}}>
+        <input type="checkbox" checked={updateStatus} onChange={e=>setUpdateStatus(e.target.checked)} disabled={isGenerating}/> עדכן סטטוס פריט ל״אצל דבח״ אחרי הפקה
+      </label>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <button type="button" onClick={onClose} disabled={isGenerating} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:isGenerating?"wait":"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
+        <button type="button" onClick={handleGeneratePdf} disabled={isGenerating} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#a855f7 0%,#7c3aed 100%)",color:"#fff",fontWeight:700,cursor:isGenerating?"wait":"pointer",fontFamily:"inherit",minHeight:44,display:"flex",alignItems:"center",gap:8}}>
+          {isGenerating?<><Spinner sz={16} color="#fff"/> מפיק PDF...</>:<>📥 הפק PDF</>}
+        </button>
+      </div>
+    </div>
+  </Modal>;
+}
+
 function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [data,setData]=useState(order);
   const [editingCustomer,setEditingCustomer]=useState(false);
@@ -10129,7 +10221,16 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [editItem,setEditItem]=useState(null);
   const [addItemOpen,setAddItemOpen]=useState(false);
   const [newItem,setNewItem]=useState(ALUT_EMPTY_ITEM());
+  const [davachRecords,setDavachRecords]=useState([]);
+  const [showDavachModal,setShowDavachModal]=useState(null);
+  const [redownloadingId,setRedownloadingId]=useState(null);
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
+  const loadDavachRecords=async()=>{
+    try{
+      const {data,error}=await supabaseClient.from("alut_davach_orders").select("*").eq("order_id",order.id).order("generated_at",{ascending:false});
+      if(!error)setDavachRecords(data||[]);
+    }catch(e){console.warn("alut davach load",e);}
+  };
   const reload=async()=>{
     const [o,items]=await Promise.all([
       sb(`alut_orders?id=eq.${order.id}&limit=1`),
@@ -10137,6 +10238,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     ]);
     const ord=o?.[0];
     if(ord)setData({...ord,items:items||[]});
+    await loadDavachRecords();
     onSaved?.();
   };
   useEffect(()=>{reload();},[]);
@@ -10173,6 +10275,14 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     })});
     setAddItemOpen(false);setNewItem(ALUT_EMPTY_ITEM());reload();
   };
+  const handleRedownloadDavach=async(record,item,itemIndex)=>{
+    setRedownloadingId(record.id);
+    try{
+      await alutDownloadDavachPdf(alutBuildDavachPdfPayload(data,item,itemIndex,pricing,record.notes));
+    }catch(err){
+      window.alert("שגיאה: "+(err.message||String(err)));
+    }finally{setRedownloadingId(null);}
+  };
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
   return<Modal open={true} onClose={onClose} title={`📋 הזמנה #${data.order_number} - ${data.company_name}`} maxWidth={640}>
     <div style={{direction:"rtl"}}>
@@ -10191,14 +10301,15 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
         <button type="button" onClick={saveCustomer} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור פרטי לקוח</button>
       </div>}
       <div style={{fontWeight:700,marginBottom:10,color:"#0d9488"}}>📦 פריטים</div>
-      {items.map(item=>{
+      {items.map((item,itemIndex)=>{
         const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
         const st=ALUT_STATUS_CONFIG[item.status]||ALUT_STATUS_CONFIG.new;
         const ds=alutGetDesignStatus(item);
         const dl=alutGetDeadlineInfo(item.delivery_deadline);
+        const itemDavachRecords=davachRecords.filter(r=>r.item_id===item.id);
         return<div key={item.id} style={{border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:10,background:"#fff"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontWeight:700,fontSize:15}}>{ct.icon} {item.quantity} {ct.label}</div>
+            <div style={{fontWeight:700,fontSize:15}}>{ct.icon} {item.quantity} {ct.label} <span style={{fontSize:12,color:"var(--text3)",fontWeight:600}}>({String.fromCharCode(65+itemIndex)})</span></div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               <button type="button" onClick={()=>setStatusItem(item)} style={{padding:"6px 10px",borderRadius:8,border:"none",background:st.bg,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>{st.label} · שנה</button>
               <button type="button" onClick={()=>setEditItem(item)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✏️</button>
@@ -10207,6 +10318,17 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
           </div>
           <div style={{fontSize:12,color:"var(--text3)",marginTop:8}}>סקיצה: {ds.icon} {ds.label} | דדליין: <span style={{color:dl.color,fontWeight:dl.bold?700:400}}>{dl.text}</span></div>
           <div style={{fontSize:14,fontWeight:700,color:"#0d9488",marginTop:6}}>{alutFmtMoney(item.subtotal)}</div>
+          {["duplex","wall"].includes(item.calendar_type)&&<button type="button" className="alut-btn-davach" onClick={()=>setShowDavachModal({item,itemIndex})}>📄 הזמנת עבודה לדבח</button>}
+          {itemDavachRecords.length>0&&<div className="alut-davach-history">
+            <div className="alut-davach-history-title">📄 היסטוריית הזמנות לדבח:</div>
+            {itemDavachRecords.map(record=><div key={record.id} className="alut-davach-history-item">
+              <span>{new Date(record.generated_at).toLocaleDateString("he-IL")}</span>
+              <span>{record.quantity} יח׳ × {Number(record.cost_per_unit).toFixed(2)} = {alutFmtMoney(record.total_cost)}</span>
+              <button type="button" className="alut-davach-download-btn" disabled={redownloadingId===record.id} onClick={()=>handleRedownloadDavach(record,item,itemIndex)}>
+                {redownloadingId===record.id?"...":"📥 הורד שוב"}
+              </button>
+            </div>)}
+          </div>}
         </div>;
       })}
       {addItemOpen?<div style={{marginBottom:12}}>
@@ -10228,6 +10350,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     </div>
     {statusItem&&<AlutItemStatusModal item={statusItem} orderNumber={data.order_number} onClose={()=>setStatusItem(null)} onSaved={reload}/>}
     {editItem&&<AlutItemEditModal item={editItem} order={data} pricingRows={pricingRows} onClose={()=>setEditItem(null)} onSaved={reload}/>}
+    {showDavachModal&&<AlutDavachModal item={showDavachModal.item} itemIndex={showDavachModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowDavachModal(null)} onSaved={reload}/>}
   </Modal>;
 }
 

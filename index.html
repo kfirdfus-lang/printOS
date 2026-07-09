@@ -9698,20 +9698,28 @@ function alutPricingRowsToMap(rows){
   (rows||[]).forEach(r=>{m[r.key]=Number(r.value);});
   return m;
 }
+function alutNormalizeCalendarType(t){
+  const s=String(t||"").trim().toLowerCase();
+  if(s==="duplex"||s==="soft"||s.includes("דופלקס")||s.includes("רך"))return"duplex";
+  if(s==="wall"||s.includes("קיר"))return"wall";
+  if(s==="hard"||s.includes("קשיח"))return"hard";
+  return s==="duplex"||s==="wall"||s==="hard"?s:"hard";
+}
 function calculateAlutOrderTotals(items,pricing,isPickup){
   const itemsWithCalc=(items||[]).map(item=>{
-    const unitPrice={hard:pricing.price_hard,duplex:pricing.price_duplex,wall:pricing.price_wall}[item.calendar_type]||0;
-    const cartonSize={hard:pricing.carton_hard,duplex:pricing.carton_duplex,wall:pricing.carton_wall}[item.calendar_type]||1;
+    const calType=alutNormalizeCalendarType(item.calendar_type);
+    const unitPrice={hard:pricing.price_hard,duplex:pricing.price_duplex,wall:pricing.price_wall}[calType]||0;
+    const cartonSize=Math.max(1,Number({hard:pricing.carton_hard,duplex:pricing.carton_duplex,wall:pricing.carton_wall}[calType])||1);
     const qty=Number(item.quantity)||0;
     const cartonsCount=Math.ceil(qty/cartonSize);
     const boardsTotal=qty*unitPrice;
     const needsDesign=item.needs_design!==false&&!item.is_template_only;
     const designPrice=needsDesign?(pricing.price_design||0):0;
     const subtotal=boardsTotal+designPrice;
-    const davachCost=["duplex","wall"].includes(item.calendar_type)?qty*(pricing.cost_davach_per_unit||0):0;
-    return{...item,needs_design:needsDesign,unit_price:unitPrice,design_price:designPrice,cartons_count:cartonsCount,subtotal,davach_cost:davachCost,boardsTotal};
+    const davachCost=["duplex","wall"].includes(calType)?qty*(pricing.cost_davach_per_unit||0):0;
+    return{...item,calendar_type:calType,needs_design:needsDesign,unit_price:unitPrice,design_price:designPrice,cartons_count:cartonsCount,subtotal,davach_cost:davachCost,boardsTotal};
   });
-  const totalCartons=itemsWithCalc.reduce((s,i)=>s+i.cartons_count,0);
+  const totalCartons=itemsWithCalc.reduce((s,i)=>s+Number(i.cartons_count||0),0);
   const itemsTotal=itemsWithCalc.reduce((s,i)=>s+i.subtotal,0);
   const shippingPrice=isPickup?0:(totalCartons*(pricing.price_shipping_carton||0));
   const subtotalBeforeVat=itemsTotal+shippingPrice;
@@ -9918,8 +9926,8 @@ function AlutItemFormCard({item,index,pricing,calcItem,onChange,onRemove,canRemo
 function alutItemsFromParsed(items){
   if(!items?.length)return[ALUT_EMPTY_ITEM()];
   return items.map(i=>({
-    calendar_type:i.calendar_type||"hard",
-    quantity:i.quantity||100,
+    calendar_type:alutNormalizeCalendarType(i.calendar_type),
+    quantity:Number(i.quantity)||1,
     needs_design:i.needs_design!==false,
     is_template_only:i.needs_design===false,
   }));
@@ -9964,7 +9972,21 @@ function AlutPasteEmailModal({onClose,onParsed,onManualFill}){
 
 function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
   const fromEmail=!!(initialData&&(initialData.company_name||initialData.items?.length));
-  const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
+  const [localPricingRows,setLocalPricingRows]=useState(pricingRows?.length?pricingRows:[]);
+  const [pricingLoading,setPricingLoading]=useState(!(pricingRows?.length));
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        const rows=await sb("alut_pricing?order=category.asc,key.asc");
+        if(!cancelled){setLocalPricingRows(rows||[]);setPricingLoading(false);}
+      }catch(e){console.warn("alut pricing load",e);if(!cancelled)setPricingLoading(false);}
+    })();
+    return()=>{cancelled=true;};
+  },[]);
+  const effectivePricingRows=localPricingRows.length?localPricingRows:(pricingRows||[]);
+  const pricing=useMemo(()=>alutPricingRowsToMap(effectivePricingRows),[effectivePricingRows]);
+  const pricingReady=!pricingLoading&&(pricing.price_hard!=null||pricing.price_duplex!=null||pricing.price_wall!=null);
   const [orderNumber,setOrderNumber]=useState(initialData?.order_number||"");
   const [companyName,setCompanyName]=useState(initialData?.company_name||"");
   const [contactName,setContactName]=useState(initialData?.contact_name||"");
@@ -9975,9 +9997,23 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
   const [notes,setNotes]=useState("");
   const [originalEmail,setOriginalEmail]=useState(initialData?.original_email||"");
   const [orderDupWarn,setOrderDupWarn]=useState(false);
-  const [items,setItems]=useState(alutItemsFromParsed(initialData?.items));
+  const [items,setItems]=useState(()=>alutItemsFromParsed(initialData?.items));
   const [saving,setSaving]=useState(false);
-  const calc=useMemo(()=>calculateAlutOrderTotals(items.map(i=>({...i,needs_design:!i.is_template_only})),pricing,isPickup),[items,isPickup,pricing]);
+  useEffect(()=>{
+    if(!initialData)return;
+    if(initialData.company_name!=null)setCompanyName(initialData.company_name||"");
+    if(initialData.contact_name!=null)setContactName(initialData.contact_name||"");
+    if(initialData.contact_phone!=null)setContactPhone(initialData.contact_phone||"");
+    if(initialData.contact_email!=null)setContactEmail(initialData.contact_email||"");
+    if(initialData.delivery_address!=null)setDeliveryAddress(initialData.delivery_address||"");
+    if(initialData.is_pickup!=null)setIsPickup(!!initialData.is_pickup);
+    if(initialData.original_email)setOriginalEmail(initialData.original_email);
+    if(initialData.items?.length)setItems(alutItemsFromParsed(initialData.items));
+  },[initialData]);
+  const calc=useMemo(()=>{
+    if(!pricingReady)return{items:[],totalCartons:0,itemsTotal:0,shippingPrice:0,subtotalBeforeVat:0,vat:0,total:0};
+    return calculateAlutOrderTotals(items.map(i=>({...i,needs_design:!i.is_template_only})),pricing,isPickup);
+  },[items,isPickup,pricing,pricingReady]);
   useEffect(()=>{
     if(initialData?.order_number){
       setOrderNumber(initialData.order_number);
@@ -10030,17 +10066,19 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
       </label>
       {!isPickup&&<input value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="כתובת" style={{...IS,marginBottom:12}}/>}
       <div style={{fontWeight:700,color:"#0d9488",margin:"12px 0 10px"}}>📦 פריטי הזמנה</div>
-      {items.map((it,i)=><AlutItemFormCard key={i} item={it} index={i} pricing={pricing} calcItem={calc.items[i]} onChange={updateItem} onRemove={removeItem} canRemove={items.length>1}/>)}
+      {pricingLoading?<div style={{padding:12,textAlign:"center",color:"var(--text3)",fontSize:13}}><Spinner sz={20} color="#0d9488"/> טוען מחירים...</div>:
+      items.map((it,i)=><AlutItemFormCard key={i} item={it} index={i} pricing={pricing} calcItem={calc.items[i]} onChange={updateItem} onRemove={removeItem} canRemove={items.length>1}/>)}
       <button type="button" onClick={addItem} style={{width:"100%",padding:12,borderRadius:10,border:"2px dashed #99f6e4",background:"#f0fdfa",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:16,minHeight:44}}>+ הוסף פריט נוסף</button>
       <div style={{background:"#f0fdfa",padding:14,borderRadius:10,marginBottom:16,fontSize:13,border:"1px solid #99f6e4"}}>
         <div style={{fontWeight:700,color:"#0d9488",marginBottom:8}}>💰 חישוב סופי</div>
-        <div>סה״כ פריטים: {alutFmtMoney(calc.itemsTotal)}</div>
+        {!pricingReady?<div style={{color:"var(--text3)",fontSize:12}}>ממתין לטעינת מחירים...</div>:
+        <><div>סה״כ פריטים: {alutFmtMoney(calc.itemsTotal)}</div>
         {!isPickup&&<div>משלוח ({calc.totalCartons} קרטונים × {pricing.price_shipping_carton||0}): {alutFmtMoney(calc.shippingPrice)}</div>}
         <div style={{borderTop:"1px solid #99f6e4",margin:"8px 0",paddingTop:8}}>
           <div>סה״כ ללא מע״מ: {alutFmtMoney(calc.subtotalBeforeVat)}</div>
           <div>מע״מ 18%: {alutFmtMoney(calc.vat)}</div>
           <div style={{fontWeight:800,color:"#0d9488",fontSize:15,marginTop:4}}>סה״כ כולל: {alutFmtMoney(calc.total)}</div>
-        </div>
+        </div></>}
       </div>
       <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="📝 הערות" style={{...IS,minHeight:60,marginBottom:16}}/>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
@@ -10223,6 +10261,7 @@ function AlutDashboard(){
   const [pasteEmailOpen,setPasteEmailOpen]=useState(false);
   const [newOrderOpen,setNewOrderOpen]=useState(false);
   const [newOrderInitial,setNewOrderInitial]=useState(null);
+  const [newOrderKey,setNewOrderKey]=useState(0);
   const [detailOrder,setDetailOrder]=useState(null);
   const loadData=async()=>{
     try{
@@ -10283,7 +10322,7 @@ function AlutDashboard(){
       <h1 style={{fontSize:22,fontWeight:800,margin:0,color:"var(--text)"}}>🗓️ {projectName}</h1>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button type="button" onClick={()=>setShowPricing(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>⚙️ הגדרות מחירים</button>
-        <button type="button" onClick={()=>setPasteEmailOpen(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📧 הדבק מייל של קארין</button>
+        <button type="button" onClick={()=>{setNewOrderOpen(false);setNewOrderInitial(null);setPasteEmailOpen(true);}} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📧 הדבק מייל של קארין</button>
         <button type="button" onClick={()=>{setNewOrderInitial(null);setNewOrderOpen(true);}} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>➕ הזמנה חדשה</button>
       </div>
     </div>
@@ -10358,8 +10397,8 @@ function AlutDashboard(){
       </div>
     </>}
     {showPricing&&<AlutPricingModal pricingRows={pricingRows} onClose={()=>setShowPricing(false)} onSaved={loadData}/>}
-    {pasteEmailOpen&&<AlutPasteEmailModal onClose={()=>setPasteEmailOpen(false)} onParsed={data=>{setPasteEmailOpen(false);setNewOrderInitial(data);setNewOrderOpen(true);}} onManualFill={text=>{setPasteEmailOpen(false);setNewOrderInitial({original_email:text});setNewOrderOpen(true);}}/>}
-    {newOrderOpen&&project&&<AlutNewOrderModal projectId={project.id} pricingRows={pricingRows} initialData={newOrderInitial} onClose={()=>{setNewOrderOpen(false);setNewOrderInitial(null);}} onSaved={loadData}/>}
+    {pasteEmailOpen&&<AlutPasteEmailModal onClose={()=>setPasteEmailOpen(false)} onParsed={data=>{setPasteEmailOpen(false);setNewOrderInitial(data);setNewOrderKey(k=>k+1);setNewOrderOpen(true);}} onManualFill={text=>{setPasteEmailOpen(false);setNewOrderInitial({original_email:text});setNewOrderKey(k=>k+1);setNewOrderOpen(true);}}/>}
+    {newOrderOpen&&project&&<AlutNewOrderModal key={newOrderKey} projectId={project.id} pricingRows={pricingRows} initialData={newOrderInitial} onClose={()=>{setNewOrderOpen(false);setNewOrderInitial(null);}} onSaved={loadData}/>}
     {detailOrder&&<AlutOrderDetailModal order={detailOrder} pricingRows={pricingRows} onClose={()=>setDetailOrder(null)} onSaved={loadData}/>}
   </div>;
 }

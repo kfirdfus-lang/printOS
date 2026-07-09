@@ -9671,19 +9671,17 @@ function buildVacationManagerEmail(name,idLast4,startDate,endDate,days,reasonLab
 }
 
 
-// INSERT BEFORE VacationFormPage
-
 const ALUT_STATUS_CONFIG={
-  new:{label:"חדשה",color:"gray",bg:"#f3f4f6"},
-  design_in_progress:{label:"סקיצה בהכנה",color:"yellow",bg:"#fef3c7"},
-  design_sent:{label:"סקיצה נשלחה",color:"blue",bg:"#dbeafe"},
-  design_approved:{label:"סקיצה מאושרת",color:"green",bg:"#d1fae5"},
-  in_print:{label:"בהדפסה",color:"orange",bg:"#fed7aa"},
-  at_davach:{label:"אצל דבח",color:"purple",bg:"#e9d5ff"},
-  ready_to_ship:{label:"מוכן למשלוח",color:"teal",bg:"#ccfbf1"},
-  shipped:{label:"יצא למשלוח",color:"indigo",bg:"#e0e7ff"},
-  delivered:{label:"נמסר",color:"green",bg:"#a7f3d0"},
-  cancelled:{label:"בוטל",color:"red",bg:"#fecaca"},
+  new:{label:"חדשה",color:"gray",bg:"#f3f4f6",dot:"⚪"},
+  design_in_progress:{label:"סקיצה בהכנה",color:"yellow",bg:"#fef3c7",dot:"🟡"},
+  design_sent:{label:"סקיצה נשלחה",color:"blue",bg:"#dbeafe",dot:"🔵"},
+  design_approved:{label:"סקיצה מאושרת",color:"green",bg:"#d1fae5",dot:"🟢"},
+  in_print:{label:"בהדפסה",color:"orange",bg:"#fed7aa",dot:"🟠"},
+  at_davach:{label:"אצל דבח",color:"purple",bg:"#e9d5ff",dot:"🟣"},
+  ready_to_ship:{label:"מוכן למשלוח",color:"teal",bg:"#ccfbf1",dot:"🔵"},
+  shipped:{label:"יצא למשלוח",color:"indigo",bg:"#e0e7ff",dot:"🟦"},
+  delivered:{label:"נמסר",color:"green",bg:"#a7f3d0",dot:"🟢"},
+  cancelled:{label:"בוטל",color:"red",bg:"#fecaca",dot:"🔴"},
 };
 const ALUT_CALENDAR_TYPES={
   hard:{label:"קשיח",icon:"🔷"},
@@ -9693,24 +9691,33 @@ const ALUT_CALENDAR_TYPES={
 const ALUT_STATUS_ORDER=["new","design_in_progress","design_sent","design_approved","in_print","at_davach","ready_to_ship","shipped","delivered","cancelled"];
 const ALUT_IN_PRINT_STATUSES=["new","design_in_progress","design_sent","design_approved","in_print"];
 const ALUT_IN_SHIPPING_STATUSES=["at_davach","ready_to_ship","shipped"];
+const ALUT_EMPTY_ITEM=()=>({calendar_type:"hard",quantity:100,needs_design:true,is_template_only:false});
 
 function alutPricingRowsToMap(rows){
   const m={};
   (rows||[]).forEach(r=>{m[r.key]=Number(r.value);});
   return m;
 }
-function calculateAlutPrice(orderData,pricing){
-  const unitPrice={hard:pricing.price_hard,duplex:pricing.price_duplex,wall:pricing.price_wall}[orderData.calendar_type]||0;
-  const cartonSize={hard:pricing.carton_hard,duplex:pricing.carton_duplex,wall:pricing.carton_wall}[orderData.calendar_type]||1;
-  const cartonsCount=Math.ceil((orderData.quantity||0)/cartonSize);
-  const boardsTotal=(orderData.quantity||0)*unitPrice;
-  const designPrice=orderData.needs_design?(pricing.price_design||0):0;
-  const shippingPrice=orderData.is_pickup?0:(cartonsCount*(pricing.price_shipping_carton||0));
-  const subtotal=boardsTotal+designPrice+shippingPrice;
-  const vat=subtotal*0.18;
-  const total=subtotal+vat;
-  const davachCost=["duplex","wall"].includes(orderData.calendar_type)?(orderData.quantity||0)*(pricing.cost_davach_per_unit||0):0;
-  return{unitPrice,boardsTotal,designPrice,shippingPrice,cartonsCount,subtotal,vat,total,davachCost};
+function calculateAlutOrderTotals(items,pricing,isPickup){
+  const itemsWithCalc=(items||[]).map(item=>{
+    const unitPrice={hard:pricing.price_hard,duplex:pricing.price_duplex,wall:pricing.price_wall}[item.calendar_type]||0;
+    const cartonSize={hard:pricing.carton_hard,duplex:pricing.carton_duplex,wall:pricing.carton_wall}[item.calendar_type]||1;
+    const qty=Number(item.quantity)||0;
+    const cartonsCount=Math.ceil(qty/cartonSize);
+    const boardsTotal=qty*unitPrice;
+    const needsDesign=item.needs_design!==false&&!item.is_template_only;
+    const designPrice=needsDesign?(pricing.price_design||0):0;
+    const subtotal=boardsTotal+designPrice;
+    const davachCost=["duplex","wall"].includes(item.calendar_type)?qty*(pricing.cost_davach_per_unit||0):0;
+    return{...item,needs_design:needsDesign,unit_price:unitPrice,design_price:designPrice,cartons_count:cartonsCount,subtotal,davach_cost:davachCost,boardsTotal};
+  });
+  const totalCartons=itemsWithCalc.reduce((s,i)=>s+i.cartons_count,0);
+  const itemsTotal=itemsWithCalc.reduce((s,i)=>s+i.subtotal,0);
+  const shippingPrice=isPickup?0:(totalCartons*(pricing.price_shipping_carton||0));
+  const subtotalBeforeVat=itemsTotal+shippingPrice;
+  const vat=subtotalBeforeVat*0.18;
+  const total=subtotalBeforeVat+vat;
+  return{items:itemsWithCalc,totalCartons,itemsTotal,shippingPrice,subtotalBeforeVat,vat,total};
 }
 function alutFmtMoney(n,withVat){
   const v=withVat?Number(n||0)*1.18:Number(n||0);
@@ -9727,20 +9734,55 @@ function alutGetDeadlineInfo(deadline){
   if(diff<=7)return{text:`${dateStr} · ${diff} ימים`,color:"#f97316"};
   return{text:`${dateStr} · ${diff} ימים`,color:"#10b981"};
 }
-function alutGetDesignStatus(order){
-  if(order.is_template_only)return{icon:"⚪",label:"טמפלייט בלבד"};
-  if(order.design_approved_at||["design_approved","in_print","at_davach","ready_to_ship","shipped","delivered"].includes(order.status)){
-    const d=order.design_approved_at?new Date(order.design_approved_at).toLocaleDateString("he-IL"):"";
-    return{icon:"🟢",label:d?`מאושרת · ${d}`:"מאושרת"};
-  }
-  if(order.status==="design_sent")return{icon:"🔵",label:"נשלחה ללקוח"};
-  return{icon:"🟡",label:"בהכנה"};
-}
 function alutDaysUntilDeadline(deadline){
   if(!deadline)return null;
   const today=new Date();today.setHours(0,0,0,0);
   const dl=new Date(deadline+"T00:00:00");
   return Math.ceil((dl-today)/(1000*60*60*24));
+}
+function alutGetOrderDeadlineInfo(items){
+  const list=(items||[]).filter(i=>i.delivery_deadline);
+  if(!list.length)return alutGetDeadlineInfo(null);
+  const anyOverdue=list.some(i=>(alutDaysUntilDeadline(i.delivery_deadline)??999)<=0);
+  const earliest=list.reduce((a,b)=>a.delivery_deadline<b.delivery_deadline?a:b);
+  const info=alutGetDeadlineInfo(earliest.delivery_deadline);
+  if(anyOverdue)return{...info,color:"#dc2626",bold:true};
+  return info;
+}
+function alutFormatItemsSummary(items){
+  if(!items?.length)return"—";
+  const parts=items.map(i=>{const ct=ALUT_CALENDAR_TYPES[i.calendar_type];return`${i.quantity} ${ct?.label||i.calendar_type}`;});
+  if(parts.length<=2)return parts.join(", ");
+  return`${parts[0]}, ${parts[1]} +${parts.length-2} נוסף`;
+}
+function alutTotalQuantity(items){
+  return(items||[]).reduce((s,i)=>s+Number(i.quantity||0),0);
+}
+function alutFormatStatusSummary(items){
+  if(!items?.length)return{type:"empty",label:"—",bg:"#f3f4f6"};
+  const statuses=items.map(i=>i.status);
+  const unique=[...new Set(statuses)];
+  if(unique.length===1){
+    const st=ALUT_STATUS_CONFIG[unique[0]]||ALUT_STATUS_CONFIG.new;
+    return{type:"single",label:st.label,bg:st.bg};
+  }
+  const counts={};
+  items.forEach(i=>{counts[i.status]=(counts[i.status]||0)+1;});
+  const badges=Object.entries(counts).map(([s,n])=>`${(ALUT_STATUS_CONFIG[s]||{}).dot||"•"}${n}`).join(" ");
+  return{type:"multi",badges};
+}
+function alutGetDesignStatus(item){
+  if(item.is_template_only)return{icon:"⚪",label:"טמפלייט בלבד"};
+  if(item.design_approved_at||["design_approved","in_print","at_davach","ready_to_ship","shipped","delivered"].includes(item.status)){
+    const d=item.design_approved_at?new Date(item.design_approved_at).toLocaleDateString("he-IL"):"";
+    return{icon:"🟢",label:d?`מאושרת · ${d}`:"מאושרת"};
+  }
+  if(item.status==="design_sent")return{icon:"🔵",label:"נשלחה ללקוח"};
+  return{icon:"🟡",label:"בהכנה"};
+}
+async function alutTouchOrderRecalc(orderId){
+  const items=await sb(`alut_order_items?order_id=eq.${orderId}&limit=1`);
+  if(items?.[0])await sb(`alut_order_items?id=eq.${items[0].id}`,{method:"PATCH",body:JSON.stringify({updated_at:new Date().toISOString()})});
 }
 
 function AlutPricingModal({pricingRows,onClose,onSaved}){
@@ -9792,41 +9834,43 @@ function AlutPricingModal({pricingRows,onClose,onSaved}){
   </Modal>;
 }
 
-function AlutStatusModal({order,onClose,onSaved}){
-  const [newStatus,setNewStatus]=useState(order.status);
+function AlutItemStatusModal({item,orderNumber,onClose,onSaved}){
+  const [newStatus,setNewStatus]=useState(item.status);
   const [notes,setNotes]=useState("");
   const [saving,setSaving]=useState(false);
-  const cur=ALUT_STATUS_CONFIG[order.status]||ALUT_STATUS_CONFIG.new;
+  const cur=ALUT_STATUS_CONFIG[item.status]||ALUT_STATUS_CONFIG.new;
+  const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
   const handleSave=async()=>{
-    if(newStatus===order.status){onClose();return;}
+    if(newStatus===item.status){onClose();return;}
     setSaving(true);
     try{
       const payload={status:newStatus};
       if(newStatus==="design_approved")payload.design_approved_at=new Date().toISOString();
       if(newStatus==="at_davach")payload.davach_sent_at=new Date().toISOString();
-      if(newStatus==="ready_to_ship"&&order.status==="at_davach")payload.davach_received_at=new Date().toISOString();
+      if(newStatus==="ready_to_ship"&&item.status==="at_davach")payload.davach_received_at=new Date().toISOString();
       if(newStatus==="shipped")payload.shipped_at=new Date().toISOString();
       if(newStatus==="delivered")payload.delivered_at=new Date().toISOString();
-      await sb(`alut_orders?id=eq.${order.id}`,{method:"PATCH",body:JSON.stringify(payload)});
+      await sb(`alut_order_items?id=eq.${item.id}`,{method:"PATCH",body:JSON.stringify(payload)});
       if(notes.trim()){
-        const hist=await sb(`alut_status_history?order_id=eq.${order.id}&order=created_at.desc&limit=1`);
+        const hist=await sb(`alut_status_history?item_id=eq.${item.id}&order=created_at.desc&limit=1`);
         if(hist?.[0])await sb(`alut_status_history?id=eq.${hist[0].id}`,{method:"PATCH",body:JSON.stringify({notes:notes.trim()})});
       }
       onSaved?.();onClose();
     }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
     finally{setSaving(false);}
   };
-  return<Modal open={true} onClose={onClose} title={`🔄 שינוי סטטוס - הזמנה #${order.order_number}`} maxWidth={480}>
+  return<Modal open={true} onClose={onClose} title={`🔄 שינוי סטטוס - הזמנה #${orderNumber}`} maxWidth={480}>
     <div style={{direction:"rtl"}}>
+      <div style={{fontSize:13,color:"var(--text3)",marginBottom:12}}>{ct.icon} {item.quantity} {ct.label}</div>
       <div style={{marginBottom:16,padding:12,background:cur.bg,borderRadius:10,fontSize:14}}>סטטוס נוכחי: <strong>{cur.label}</strong></div>
       <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>עבור ל:</div>
-      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
         {ALUT_STATUS_ORDER.map(s=>{
           const cfg=ALUT_STATUS_CONFIG[s];
           const active=newStatus===s;
           return<label key={s} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:`2px solid ${active?"#2dd4bf":"var(--border)"}`,background:active?"#f0fdfa":"#fff",cursor:"pointer",fontSize:13}}>
-            <input type="radio" name="alutStatus" checked={active} onChange={()=>setNewStatus(s)} style={{accentColor:"#0d9488"}}/>
-            <span style={{fontWeight:active?700:500}}>{cfg.label}{s===newStatus&&newStatus!==order.status?" ←":""}</span>
+            <input type="radio" name="alutItemStatus" checked={active} onChange={()=>setNewStatus(s)} style={{accentColor:"#0d9488"}}/>
+            <span style={{fontWeight:active?700:500}}>{cfg.label}</span>
           </label>;
         })}
       </div>
@@ -9834,145 +9878,261 @@ function AlutStatusModal({order,onClose,onSaved}){
       <label style={{display:"block",fontSize:12,fontWeight:600,marginBottom:6}}>📝 הערה (אופציונלי)</label>
       <textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",minHeight:60,padding:10,borderRadius:8,border:"1px solid var(--border)",fontFamily:"inherit",marginBottom:16}}/>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-        <button type="button" onClick={onClose} style={{padding:"10px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
-        <button type="button" onClick={handleSave} disabled={saving} style={{padding:"10px 20px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saving?"שומר...":"✅ אשר"}</button>
+        <button type="button" onClick={onClose} style={{padding:"10px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
+        <button type="button" onClick={handleSave} disabled={saving} style={{padding:"10px 20px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>{saving?"שומר...":"✅ אשר"}</button>
       </div>
     </div>
   </Modal>;
 }
 
-function AlutOrderModal({order,projectId,pricingRows,onClose,onSaved}){
+function AlutItemFormCard({item,index,pricing,calcItem,onChange,onRemove,canRemove}){
+  const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
+  const ci=calcItem||{};
+  const templateOnly=!!item.is_template_only;
+  const update=(patch)=>onChange(index,{...item,...patch,needs_design:patch.is_template_only!==undefined?!patch.is_template_only:item.needs_design});
+  return<div style={{border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:12,background:"#fafafa"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style={{fontWeight:700,fontSize:13,color:"#0d9488"}}>פריט {index+1}</div>
+      {canRemove&&<button type="button" onClick={()=>onRemove(index)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,minWidth:44,minHeight:44}} title="מחק פריט">🗑️</button>}
+    </div>
+    <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+      {Object.entries(ALUT_CALENDAR_TYPES).map(([k,v])=>
+        <label key={k} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13}}>
+          <input type="radio" name={`calType-${index}`} checked={item.calendar_type===k} onChange={()=>update({calendar_type:k})}/>{v.icon} {v.label}
+        </label>
+      )}
+    </div>
+    <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>כמות *</label>
+    <input type="number" min="1" value={item.quantity} onChange={e=>update({quantity:e.target.value})} style={{...IS,marginBottom:10,width:140,direction:"ltr"}}/>
+    <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:13,cursor:"pointer"}}>
+      <input type="checkbox" checked={templateOnly} onChange={e=>update({is_template_only:e.target.checked,needs_design:!e.target.checked})}/> טמפלייט בלבד (בלי סקיצה)
+    </label>
+    <div style={{fontSize:12,color:"var(--text2)",borderTop:"1px solid var(--border)",paddingTop:8}}>
+      <div>{item.quantity} × {ci.unit_price||0} = {alutFmtMoney(ci.boardsTotal||0)}</div>
+      {ci.design_price>0&&<div>סקיצה: {alutFmtMoney(ci.design_price)}</div>}
+      <div style={{fontWeight:600,marginTop:4}}>סה״כ פריט: {alutFmtMoney(ci.subtotal||0)} | {ci.cartons_count||0} קרטונים</div>
+    </div>
+  </div>;
+}
+
+function AlutNewOrderModal({projectId,pricingRows,onClose,onSaved}){
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
-  const isEdit=!!order;
-  const [orderNumber,setOrderNumber]=useState(order?.order_number||"");
-  const [companyName,setCompanyName]=useState(order?.company_name||"");
-  const [contactName,setContactName]=useState(order?.contact_name||"");
-  const [contactPhone,setContactPhone]=useState(order?.contact_phone||"");
-  const [contactEmail,setContactEmail]=useState(order?.contact_email||"");
-  const [isPickup,setIsPickup]=useState(!!order?.is_pickup);
-  const [deliveryAddress,setDeliveryAddress]=useState(order?.delivery_address||"");
-  const [calendarType,setCalendarType]=useState(order?.calendar_type||"hard");
-  const [quantity,setQuantity]=useState(order?.quantity||100);
-  const [templateOnly,setTemplateOnly]=useState(!!order?.is_template_only);
-  const [notes,setNotes]=useState(order?.notes||"");
-  const [history,setHistory]=useState([]);
+  const [orderNumber,setOrderNumber]=useState("");
+  const [companyName,setCompanyName]=useState("");
+  const [contactName,setContactName]=useState("");
+  const [contactPhone,setContactPhone]=useState("");
+  const [contactEmail,setContactEmail]=useState("");
+  const [isPickup,setIsPickup]=useState(false);
+  const [deliveryAddress,setDeliveryAddress]=useState("");
+  const [notes,setNotes]=useState("");
+  const [items,setItems]=useState([ALUT_EMPTY_ITEM()]);
   const [saving,setSaving]=useState(false);
-  const needsDesign=!templateOnly;
-  const calc=useMemo(()=>calculateAlutPrice({calendar_type:calendarType,quantity:Number(quantity)||0,needs_design:needsDesign,is_pickup:isPickup},pricing),[calendarType,quantity,needsDesign,isPickup,pricing]);
+  const calc=useMemo(()=>calculateAlutOrderTotals(items.map(i=>({...i,needs_design:!i.is_template_only})),pricing,isPickup),[items,isPickup,pricing]);
   useEffect(()=>{
-    if(isEdit)return;
-    sb(`alut_orders?select=order_number&project_id=eq.${projectId}&order=order_number.desc&limit=1`).then(r=>{
-      setOrderNumber((r?.[0]?.order_number||0)+1);
-    }).catch(()=>setOrderNumber(1));
-  },[isEdit,projectId]);
-  useEffect(()=>{
-    if(!isEdit||!order?.id)return;
-    sb(`alut_status_history?order_id=eq.${order.id}&order=created_at.desc`).then(r=>setHistory(r||[])).catch(()=>setHistory([]));
-  },[isEdit,order?.id]);
+    sb(`alut_orders?select=order_number&project_id=eq.${projectId}&order=order_number.desc&limit=1`).then(r=>setOrderNumber((r?.[0]?.order_number||0)+1)).catch(()=>setOrderNumber(1));
+  },[projectId]);
+  const updateItem=(idx,patch)=>setItems(prev=>prev.map((it,i)=>i===idx?patch:it));
+  const removeItem=(idx)=>setItems(prev=>prev.length<=1?prev:prev.filter((_,i)=>i!==idx));
+  const addItem=()=>setItems(prev=>[...prev,ALUT_EMPTY_ITEM()]);
   const handleSave=async()=>{
     if(!companyName.trim()){window.alert("יש למלא שם חברה");return;}
-    if(!quantity||Number(quantity)<1){window.alert("יש למלא כמות");return;}
+    if(items.some(i=>!i.quantity||Number(i.quantity)<1)){window.alert("יש למלא כמות בכל פריט");return;}
     setSaving(true);
     try{
-      const body={
-        project_id:projectId,
-        order_number:Number(orderNumber),
-        company_name:companyName.trim(),
-        contact_name:contactName.trim()||null,
-        contact_phone:contactPhone.trim()||null,
-        contact_email:contactEmail.trim()||null,
-        delivery_address:deliveryAddress.trim()||null,
-        is_pickup:isPickup,
-        calendar_type:calendarType,
-        quantity:Number(quantity),
-        needs_design:needsDesign,
-        is_template_only:templateOnly,
-        unit_price:calc.unitPrice,
-        design_price:calc.designPrice,
-        shipping_price:calc.shippingPrice,
-        cartons_count:calc.cartonsCount,
-        total_price:calc.subtotal,
-        davach_cost:calc.davachCost,
-        notes:notes.trim()||null,
-      };
-      if(isEdit){
-        await sb(`alut_orders?id=eq.${order.id}`,{method:"PATCH",body:JSON.stringify(body)});
-      }else{
-        body.status="new";
-        await sb("alut_orders",{method:"POST",body:JSON.stringify(body)});
+      const header={project_id:projectId,order_number:Number(orderNumber),company_name:companyName.trim(),contact_name:contactName.trim()||null,contact_phone:contactPhone.trim()||null,contact_email:contactEmail.trim()||null,delivery_address:deliveryAddress.trim()||null,is_pickup:isPickup,notes:notes.trim()||null};
+      const created=await sb("alut_orders",{method:"POST",body:JSON.stringify(header)});
+      const orderId=(Array.isArray(created)?created[0]:created)?.id;
+      if(!orderId)throw new Error("לא נוצרה הזמנה");
+      for(const item of calc.items){
+        await sb("alut_order_items",{method:"POST",body:JSON.stringify({
+          order_id:orderId,calendar_type:item.calendar_type,quantity:Number(item.quantity),
+          needs_design:item.needs_design,is_template_only:!!item.is_template_only,
+          unit_price:item.unit_price,design_price:item.design_price,cartons_count:item.cartons_count,
+          subtotal:item.subtotal,davach_cost:item.davach_cost,status:"new",
+        })});
       }
       onSaved?.();onClose();
     }catch(e){window.alert("שגיאה בשמירה: "+(e.message||String(e)));}
     finally{setSaving(false);}
   };
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
-  const ct=ALUT_CALENDAR_TYPES[calendarType];
-  return<Modal open={true} onClose={onClose} title={isEdit?`✏️ עריכת הזמנה #${order.order_number}`:"🗓️ הזמנה חדשה - אלוט"} maxWidth={560}>
+  return<Modal open={true} onClose={onClose} title="🗓️ הזמנה חדשה - אלוט" maxWidth={600}>
     <div style={{direction:"rtl"}}>
-      <div style={{marginBottom:12}}>
-        <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>מספר הזמנה</label>
-        <input value={orderNumber} readOnly={isEdit} onChange={e=>setOrderNumber(e.target.value)} style={{...IS,direction:"ltr",width:120,opacity:isEdit?0.7:1}}/>
-      </div>
-      <div style={{fontWeight:700,color:"#0d9488",margin:"16px 0 10px"}}>🏢 פרטי לקוח</div>
-      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>שם חברה *</label>
-      <input value={companyName} onChange={e=>setCompanyName(e.target.value)} style={{...IS,marginBottom:10}}/>
-      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>איש קשר</label>
-      <input value={contactName} onChange={e=>setContactName(e.target.value)} style={{...IS,marginBottom:10}}/>
-      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>טלפון</label>
-      <input value={contactPhone} onChange={e=>setContactPhone(e.target.value)} style={{...IS,marginBottom:10,direction:"ltr",textAlign:"right"}}/>
-      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>מייל</label>
-      <input value={contactEmail} onChange={e=>setContactEmail(e.target.value)} style={{...IS,marginBottom:10,direction:"ltr",textAlign:"right"}}/>
-      <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:13,cursor:"pointer"}}>
+      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>מספר הזמנה</label>
+      <input value={orderNumber} readOnly style={{...IS,direction:"ltr",width:120,marginBottom:12}}/>
+      <div style={{fontWeight:700,color:"#0d9488",margin:"8px 0 10px"}}>🏢 פרטי לקוח</div>
+      <input value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="שם חברה *" style={{...IS,marginBottom:8}}/>
+      <input value={contactName} onChange={e=>setContactName(e.target.value)} placeholder="איש קשר" style={{...IS,marginBottom:8}}/>
+      <input value={contactPhone} onChange={e=>setContactPhone(e.target.value)} placeholder="טלפון" style={{...IS,marginBottom:8,direction:"ltr",textAlign:"right"}}/>
+      <input value={contactEmail} onChange={e=>setContactEmail(e.target.value)} placeholder="מייל" style={{...IS,marginBottom:8,direction:"ltr",textAlign:"right"}}/>
+      <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:13,cursor:"pointer"}}>
         <input type="checkbox" checked={isPickup} onChange={e=>setIsPickup(e.target.checked)}/> איסוף עצמי
       </label>
-      {!isPickup&&<>
-        <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>כתובת</label>
-        <input value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} style={{...IS,marginBottom:10}}/>
-      </>}
-      <div style={{fontWeight:700,color:"#0d9488",margin:"16px 0 10px"}}>📅 פרטי הזמנה</div>
-      <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-        {Object.entries(ALUT_CALENDAR_TYPES).map(([k,v])=>
-          <label key={k} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13}}>
-            <input type="radio" name="calType" checked={calendarType===k} onChange={()=>setCalendarType(k)}/>{v.icon} {v.label}
-          </label>
-        )}
-      </div>
-      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>כמות *</label>
-      <input type="number" min="1" value={quantity} onChange={e=>setQuantity(e.target.value)} style={{...IS,marginBottom:10,width:140,direction:"ltr"}}/>
-      <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,fontSize:13,cursor:"pointer"}}>
-        <input type="checkbox" checked={templateOnly} onChange={e=>setTemplateOnly(e.target.checked)}/> טמפלייט בלבד (בלי סקיצה)
-      </label>
+      {!isPickup&&<input value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="כתובת" style={{...IS,marginBottom:12}}/>}
+      <div style={{fontWeight:700,color:"#0d9488",margin:"12px 0 10px"}}>📦 פריטי הזמנה</div>
+      {items.map((it,i)=><AlutItemFormCard key={i} item={it} index={i} pricing={pricing} calcItem={calc.items[i]} onChange={updateItem} onRemove={removeItem} canRemove={items.length>1}/>)}
+      <button type="button" onClick={addItem} style={{width:"100%",padding:12,borderRadius:10,border:"2px dashed #99f6e4",background:"#f0fdfa",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:16,minHeight:44}}>+ הוסף פריט נוסף</button>
       <div style={{background:"#f0fdfa",padding:14,borderRadius:10,marginBottom:16,fontSize:13,border:"1px solid #99f6e4"}}>
-        <div style={{fontWeight:700,color:"#0d9488",marginBottom:8}}>💰 חישוב אוטומטי</div>
-        <div>לוחות: {quantity} × {calc.unitPrice} = {alutFmtMoney(calc.boardsTotal)}</div>
-        {needsDesign&&<div>סקיצה: {alutFmtMoney(calc.designPrice)}</div>}
-        {!isPickup&&<div>משלוח: {calc.cartonsCount} קרטונים × {pricing.price_shipping_carton||0} = {alutFmtMoney(calc.shippingPrice)}</div>}
+        <div style={{fontWeight:700,color:"#0d9488",marginBottom:8}}>💰 חישוב סופי</div>
+        <div>סה״כ פריטים: {alutFmtMoney(calc.itemsTotal)}</div>
+        {!isPickup&&<div>משלוח ({calc.totalCartons} קרטונים × {pricing.price_shipping_carton||0}): {alutFmtMoney(calc.shippingPrice)}</div>}
         <div style={{borderTop:"1px solid #99f6e4",margin:"8px 0",paddingTop:8}}>
-          <div>סה״כ ללא מע״מ: {alutFmtMoney(calc.subtotal)}</div>
+          <div>סה״כ ללא מע״מ: {alutFmtMoney(calc.subtotalBeforeVat)}</div>
           <div>מע״מ 18%: {alutFmtMoney(calc.vat)}</div>
           <div style={{fontWeight:800,color:"#0d9488",fontSize:15,marginTop:4}}>סה״כ כולל: {alutFmtMoney(calc.total)}</div>
         </div>
       </div>
-      <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>📝 הערות</label>
-      <textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{...IS,minHeight:60,marginBottom:16}}/>
-      {isEdit&&history.length>0&&<div style={{marginBottom:16}}>
-        <div style={{fontWeight:700,marginBottom:8,fontSize:13}}>🕓 היסטוריית סטטוסים</div>
-        <div style={{maxHeight:160,overflowY:"auto",border:"1px solid var(--border)",borderRadius:8,padding:10,fontSize:12}}>
-          {history.map(h=><div key={h.id} style={{marginBottom:8,paddingBottom:8,borderBottom:"1px solid var(--border)"}}>
-            <div style={{fontWeight:600}}>{(ALUT_STATUS_CONFIG[h.from_status]||{}).label||h.from_status||"—"} → {(ALUT_STATUS_CONFIG[h.to_status]||{}).label||h.to_status}</div>
-            <div style={{color:"var(--text3)",fontSize:11}}>{h.created_at?new Date(h.created_at).toLocaleString("he-IL"):""}{h.notes?` · ${h.notes}`:""}</div>
-          </div>)}
-        </div>
-      </div>}
+      <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="📝 הערות" style={{...IS,minHeight:60,marginBottom:16}}/>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
         <button type="button" onClick={onClose} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
-        <button type="button" onClick={handleSave} disabled={saving} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>{saving?"שומר...":isEdit?"💾 עדכן":"💾 שמור הזמנה"}</button>
+        <button type="button" onClick={handleSave} disabled={saving} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>{saving?"שומר...":"💾 שמור הזמנה"}</button>
       </div>
     </div>
   </Modal>;
 }
 
-function AlutOrderRowActions({order,onEdit,onStatus,onDelete}){
+function AlutItemEditModal({item,order,pricingRows,onClose,onSaved}){
+  const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
+  const [form,setForm]=useState({calendar_type:item.calendar_type,quantity:item.quantity,is_template_only:!!item.is_template_only,needs_design:!item.is_template_only});
+  const [saving,setSaving]=useState(false);
+  const calc=useMemo(()=>calculateAlutOrderTotals([{...form,needs_design:!form.is_template_only}],pricing,order.is_pickup),[form,pricing,order.is_pickup]);
+  const ci=calc.items[0];
+  const handleSave=async()=>{
+    if(!form.quantity||Number(form.quantity)<1){window.alert("יש למלא כמות");return;}
+    setSaving(true);
+    try{
+      await sb(`alut_order_items?id=eq.${item.id}`,{method:"PATCH",body:JSON.stringify({
+        calendar_type:form.calendar_type,quantity:Number(form.quantity),
+        needs_design:!form.is_template_only,is_template_only:!!form.is_template_only,
+        unit_price:ci.unit_price,design_price:ci.design_price,cartons_count:ci.cartons_count,
+        subtotal:ci.subtotal,davach_cost:ci.davach_cost,
+      })});
+      onSaved?.();onClose();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+    finally{setSaving(false);}
+  };
+  return<Modal open={true} onClose={onClose} title="✏️ עריכת פריט" maxWidth={520}>
+    <div style={{direction:"rtl"}}>
+      <AlutItemFormCard item={form} index={0} pricing={pricing} calcItem={ci} onChange={(_,p)=>setForm(p)} onRemove={()=>{}} canRemove={false}/>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <button type="button" onClick={onClose} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
+        <button type="button" onClick={handleSave} disabled={saving} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>{saving?"שומר...":"💾 עדכן"}</button>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
+  const [data,setData]=useState(order);
+  const [editingCustomer,setEditingCustomer]=useState(false);
+  const [customerForm,setCustomerForm]=useState({company_name:order.company_name,contact_name:order.contact_name||"",contact_phone:order.contact_phone||"",contact_email:order.contact_email||"",is_pickup:!!order.is_pickup,delivery_address:order.delivery_address||"",notes:order.notes||""});
+  const [statusItem,setStatusItem]=useState(null);
+  const [editItem,setEditItem]=useState(null);
+  const [addItemOpen,setAddItemOpen]=useState(false);
+  const [newItem,setNewItem]=useState(ALUT_EMPTY_ITEM());
+  const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
+  const reload=async()=>{
+    const [o,items]=await Promise.all([
+      sb(`alut_orders?id=eq.${order.id}&limit=1`),
+      sb(`alut_order_items?order_id=eq.${order.id}&order=id.asc`),
+    ]);
+    const ord=o?.[0];
+    if(ord)setData({...ord,items:items||[]});
+    onSaved?.();
+  };
+  useEffect(()=>{reload();},[]);
+  const items=data.items||[];
+  const calc=useMemo(()=>calculateAlutOrderTotals(items.map(i=>({...i,needs_design:!i.is_template_only})),pricing,data.is_pickup),[items,data.is_pickup,pricing]);
+  const saveCustomer=async()=>{
+    await sb(`alut_orders?id=eq.${order.id}`,{method:"PATCH",body:JSON.stringify({
+      company_name:customerForm.company_name.trim(),contact_name:customerForm.contact_name.trim()||null,
+      contact_phone:customerForm.contact_phone.trim()||null,contact_email:customerForm.contact_email.trim()||null,
+      is_pickup:customerForm.is_pickup,delivery_address:customerForm.delivery_address.trim()||null,notes:customerForm.notes.trim()||null,
+    })});
+    await alutTouchOrderRecalc(order.id);
+    setEditingCustomer(false);reload();
+  };
+  const deleteOrder=async()=>{
+    if(!confirm(`למחוק הזמנה #${data.order_number} — ${data.company_name}?`))return;
+    await sb(`alut_orders?id=eq.${order.id}`,{method:"DELETE"});
+    onSaved?.();onClose();
+  };
+  const deleteItem=async(item)=>{
+    if(items.length<=1){window.alert("לא ניתן למחוק את הפריט האחרון — מחק את כל ההזמנה");return;}
+    if(!confirm("למחוק פריט זה?"))return;
+    await sb(`alut_order_items?id=eq.${item.id}`,{method:"DELETE"});
+    reload();
+  };
+  const saveNewItem=async()=>{
+    if(!newItem.quantity||Number(newItem.quantity)<1){window.alert("יש למלא כמות");return;}
+    const c=calculateAlutOrderTotals([{...newItem,needs_design:!newItem.is_template_only}],pricing,data.is_pickup).items[0];
+    await sb("alut_order_items",{method:"POST",body:JSON.stringify({
+      order_id:order.id,calendar_type:newItem.calendar_type,quantity:Number(newItem.quantity),
+      needs_design:!newItem.is_template_only,is_template_only:!!newItem.is_template_only,
+      unit_price:c.unit_price,design_price:c.design_price,cartons_count:c.cartons_count,
+      subtotal:c.subtotal,davach_cost:c.davach_cost,status:"new",
+    })});
+    setAddItemOpen(false);setNewItem(ALUT_EMPTY_ITEM());reload();
+  };
+  const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
+  return<Modal open={true} onClose={onClose} title={`📋 הזמנה #${data.order_number} - ${data.company_name}`} maxWidth={640}>
+    <div style={{direction:"rtl"}}>
+      {!editingCustomer?<div style={{marginBottom:16,fontSize:13,lineHeight:1.7}}>
+        <div><strong>פרטי לקוח:</strong> {data.contact_name||"—"} {data.contact_phone?`| ${data.contact_phone}`:""}</div>
+        {data.contact_email&&<div><strong>מייל:</strong> {data.contact_email}</div>}
+        <div>{data.is_pickup?"✅ איסוף עצמי":`📍 ${data.delivery_address||"—"}`}</div>
+      </div>:<div style={{marginBottom:16}}>
+        <input value={customerForm.company_name} onChange={e=>setCustomerForm(f=>({...f,company_name:e.target.value}))} placeholder="שם חברה" style={{...IS,marginBottom:6}}/>
+        <input value={customerForm.contact_name} onChange={e=>setCustomerForm(f=>({...f,contact_name:e.target.value}))} placeholder="איש קשר" style={{...IS,marginBottom:6}}/>
+        <input value={customerForm.contact_phone} onChange={e=>setCustomerForm(f=>({...f,contact_phone:e.target.value}))} placeholder="טלפון" style={{...IS,marginBottom:6,direction:"ltr",textAlign:"right"}}/>
+        <input value={customerForm.contact_email} onChange={e=>setCustomerForm(f=>({...f,contact_email:e.target.value}))} placeholder="מייל" style={{...IS,marginBottom:6,direction:"ltr",textAlign:"right"}}/>
+        <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,fontSize:13}}><input type="checkbox" checked={customerForm.is_pickup} onChange={e=>setCustomerForm(f=>({...f,is_pickup:e.target.checked}))}/> איסוף עצמי</label>
+        {!customerForm.is_pickup&&<input value={customerForm.delivery_address} onChange={e=>setCustomerForm(f=>({...f,delivery_address:e.target.value}))} placeholder="כתובת" style={{...IS,marginBottom:6}}/>}
+        <textarea value={customerForm.notes} onChange={e=>setCustomerForm(f=>({...f,notes:e.target.value}))} placeholder="הערות" style={{...IS,minHeight:50,marginBottom:8}}/>
+        <button type="button" onClick={saveCustomer} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור פרטי לקוח</button>
+      </div>}
+      <div style={{fontWeight:700,marginBottom:10,color:"#0d9488"}}>📦 פריטים</div>
+      {items.map(item=>{
+        const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
+        const st=ALUT_STATUS_CONFIG[item.status]||ALUT_STATUS_CONFIG.new;
+        const ds=alutGetDesignStatus(item);
+        const dl=alutGetDeadlineInfo(item.delivery_deadline);
+        return<div key={item.id} style={{border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:10,background:"#fff"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontWeight:700,fontSize:15}}>{ct.icon} {item.quantity} {ct.label}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button type="button" onClick={()=>setStatusItem(item)} style={{padding:"6px 10px",borderRadius:8,border:"none",background:st.bg,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>{st.label} · שנה</button>
+              <button type="button" onClick={()=>setEditItem(item)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✏️</button>
+              <button type="button" onClick={()=>deleteItem(item)} style={{padding:"6px 10px",borderRadius:8,border:"none",background:"#fee2e2",color:"#dc2626",fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>🗑️</button>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:"var(--text3)",marginTop:8}}>סקיצה: {ds.icon} {ds.label} | דדליין: <span style={{color:dl.color,fontWeight:dl.bold?700:400}}>{dl.text}</span></div>
+          <div style={{fontSize:14,fontWeight:700,color:"#0d9488",marginTop:6}}>{alutFmtMoney(item.subtotal)}</div>
+        </div>;
+      })}
+      {addItemOpen?<div style={{marginBottom:12}}>
+        <AlutItemFormCard item={newItem} index={0} pricing={pricing} calcItem={calculateAlutOrderTotals([{...newItem,needs_design:!newItem.is_template_only}],pricing,data.is_pickup).items[0]} onChange={(_,p)=>setNewItem(p)} onRemove={()=>{}} canRemove={false}/>
+        <div style={{display:"flex",gap:8}}>
+          <button type="button" onClick={saveNewItem} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 הוסף</button>
+          <button type="button" onClick={()=>setAddItemOpen(false)} style={{padding:"10px 16px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        </div>
+      </div>:null}
+      <div style={{background:"#f0fdfa",padding:12,borderRadius:10,marginBottom:16,fontSize:14,fontWeight:700,color:"#0d9488"}}>
+        💰 סה״כ: {alutFmtMoney(data.total_price||calc.subtotalBeforeVat,true)} (כולל מע״מ)
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {!editingCustomer&&<button type="button" onClick={()=>setEditingCustomer(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>✏️ ערוך פרטי לקוח</button>}
+        {!addItemOpen&&<button type="button" onClick={()=>setAddItemOpen(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#f0fdfa",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>+ הוסף פריט</button>}
+        <button type="button" onClick={deleteOrder} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#fee2e2",color:"#dc2626",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>🗑️ מחק הזמנה</button>
+        <button type="button" onClick={onClose} style={{padding:"10px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44,marginRight:"auto"}}>סגור</button>
+      </div>
+    </div>
+    {statusItem&&<AlutItemStatusModal item={statusItem} orderNumber={data.order_number} onClose={()=>setStatusItem(null)} onSaved={reload}/>}
+    {editItem&&<AlutItemEditModal item={editItem} order={data} pricingRows={pricingRows} onClose={()=>setEditItem(null)} onSaved={reload}/>}
+  </Modal>;
+}
+
+function AlutOrderRowActions({order,onDelete}){
   const [open,setOpen]=useState(false);
   const ref=useRef(null);
   useEffect(()=>{
@@ -9981,11 +10141,9 @@ function AlutOrderRowActions({order,onEdit,onStatus,onDelete}){
     document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[open]);
-  return<div ref={ref} style={{position:"relative"}}>
+  return<div ref={ref} style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
     <button type="button" onClick={()=>setOpen(!open)} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,padding:"4px 8px",minWidth:44,minHeight:44}}>⋮</button>
-    {open&&<div style={{position:"absolute",left:0,top:"100%",background:"#fff",border:"1px solid var(--border)",borderRadius:10,boxShadow:"var(--shadow-lg)",zIndex:50,minWidth:140,overflow:"hidden"}}>
-      <button type="button" onClick={()=>{setOpen(false);onEdit(order);}} style={{display:"block",width:"100%",padding:"12px 16px",border:"none",background:"#fff",textAlign:"right",cursor:"pointer",fontFamily:"inherit",fontSize:13,minHeight:44}}>✏️ ערוך</button>
-      <button type="button" onClick={()=>{setOpen(false);onStatus(order);}} style={{display:"block",width:"100%",padding:"12px 16px",border:"none",background:"#fff",textAlign:"right",cursor:"pointer",fontFamily:"inherit",fontSize:13,minHeight:44}}>🔄 שנה סטטוס</button>
+    {open&&<div style={{position:"absolute",left:0,top:"100%",background:"#fff",border:"1px solid var(--border)",borderRadius:10,boxShadow:"var(--shadow-lg)",zIndex:50,minWidth:120,overflow:"hidden"}}>
       <button type="button" onClick={()=>{setOpen(false);onDelete(order);}} style={{display:"block",width:"100%",padding:"12px 16px",border:"none",background:"#fff",textAlign:"right",cursor:"pointer",fontFamily:"inherit",fontSize:13,color:"#dc2626",minHeight:44}}>🗑️ מחק</button>
     </div>}
   </div>;
@@ -9995,44 +10153,40 @@ function AlutDashboard(){
   const [project,setProject]=useState(null);
   const [pricingRows,setPricingRows]=useState([]);
   const [orders,setOrders]=useState([]);
+  const [allItems,setAllItems]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
   const [filterStatus,setFilterStatus]=useState("all");
   const [filterType,setFilterType]=useState("all");
   const [urgentOnly,setUrgentOnly]=useState(false);
   const [showPricing,setShowPricing]=useState(false);
-  const [orderModal,setOrderModal]=useState(null);
-  const [statusModal,setStatusModal]=useState(null);
+  const [newOrderOpen,setNewOrderOpen]=useState(false);
+  const [detailOrder,setDetailOrder]=useState(null);
   const loadData=async()=>{
     try{
-      const [proj,pricing,ords]=await Promise.all([
+      const [proj,pricing]=await Promise.all([
         sb("alut_projects?is_active=eq.true&order=year.desc&limit=1"),
         sb("alut_pricing?order=category.asc,key.asc"),
-        project?sb(`alut_orders?project_id=eq.${project.id}&order=order_number.desc`):Promise.resolve([]),
       ]);
       const p=proj?.[0]||null;
       setProject(p);
       setPricingRows(pricing||[]);
       if(p){
-        const o=await sb(`alut_orders?project_id=eq.${p.id}&order=order_number.desc`);
-        setOrders(o||[]);
-      }else setOrders([]);
-    }catch(e){console.warn("alut load",e);setOrders([]);}
+        const o=await sb(`alut_orders?project_id=eq.${p.id}&order=order_number.desc&select=*,alut_order_items(*)`);
+        const list=(o||[]).map(ord=>({...ord,items:(ord.alut_order_items||[]).sort((a,b)=>a.id-b.id)}));
+        setOrders(list);
+        setAllItems(list.flatMap(ord=>ord.items||[]));
+      }else{setOrders([]);setAllItems([]);}
+    }catch(e){console.warn("alut load",e);setOrders([]);setAllItems([]);}
     setLoading(false);
   };
   useEffect(()=>{setLoading(true);loadData();const t=setInterval(loadData,30000);return()=>clearInterval(t);},[]);
-  useEffect(()=>{
-    if(!project?.id)return;
-    sb(`alut_orders?project_id=eq.${project.id}&order=order_number.desc`).then(o=>setOrders(o||[])).catch(()=>{});
-  },[project?.id]);
   const filtered=useMemo(()=>{
     return orders.filter(o=>{
-      if(filterStatus!=="all"&&o.status!==filterStatus)return false;
-      if(filterType!=="all"&&o.calendar_type!==filterType)return false;
-      if(urgentOnly){
-        const d=alutDaysUntilDeadline(o.delivery_deadline);
-        if(d===null||d>3)return false;
-      }
+      const items=o.items||[];
+      if(filterType!=="all"&&!items.some(i=>i.calendar_type===filterType))return false;
+      if(filterStatus!=="all"&&!items.some(i=>i.status===filterStatus))return false;
+      if(urgentOnly&&!items.some(i=>{const d=alutDaysUntilDeadline(i.delivery_deadline);return d!==null&&d<=3;}))return false;
       if(search.trim()){
         const s=search.trim().toLowerCase();
         if(!String(o.order_number).includes(s)&&!(o.company_name||"").toLowerCase().includes(s)&&!(o.contact_name||"").toLowerCase().includes(s))return false;
@@ -10041,48 +10195,40 @@ function AlutDashboard(){
     });
   },[orders,filterStatus,filterType,urgentOnly,search]);
   const kpis=useMemo(()=>{
-    const sum=o=>o.reduce((a,x)=>a+Number(x.total_price||0),0);
-    const all=orders;
-    const inPrint=orders.filter(o=>ALUT_IN_PRINT_STATUSES.includes(o.status));
-    const inShip=orders.filter(o=>ALUT_IN_SHIPPING_STATUSES.includes(o.status));
-    const done=orders.filter(o=>o.status==="delivered");
+    const sumItems=arr=>arr.reduce((a,x)=>a+Number(x.subtotal||0),0);
+    const sumOrders=arr=>arr.reduce((a,x)=>a+Number(x.total_price||0),0);
+    const inPrint=allItems.filter(i=>ALUT_IN_PRINT_STATUSES.includes(i.status));
+    const inShip=allItems.filter(i=>ALUT_IN_SHIPPING_STATUSES.includes(i.status));
+    const done=allItems.filter(i=>i.status==="delivered");
     return[
-      {label:"סה״כ הזמנות",count:all.length,sum:sum(all),color:"#0d9488",bg:"#f0fdfa"},
-      {label:"בהדפסה",count:inPrint.length,sum:sum(inPrint),color:"#f97316",bg:"#fff7ed"},
-      {label:"במשלוח",count:inShip.length,sum:sum(inShip),color:"#6366f1",bg:"#eef2ff"},
-      {label:"הושלמו",count:done.length,sum:sum(done),color:"#10b981",bg:"#ecfdf5"},
+      {label:"סה״כ הזמנות",count:orders.length,sum:sumOrders(orders),color:"#0d9488",bg:"#f0fdfa",isOrders:true},
+      {label:"בהדפסה",count:inPrint.length,sum:sumItems(inPrint),color:"#f97316",bg:"#fff7ed",isOrders:false},
+      {label:"במשלוח",count:inShip.length,sum:sumItems(inShip),color:"#6366f1",bg:"#eef2ff",isOrders:false},
+      {label:"הושלמו",count:done.length,sum:sumItems(done),color:"#10b981",bg:"#ecfdf5",isOrders:false},
     ];
-  },[orders]);
+  },[orders,allItems]);
   const handleDelete=async(o)=>{
     if(!confirm(`למחוק הזמנה #${o.order_number} — ${o.company_name}?`))return;
-    try{
-      await sb(`alut_orders?id=eq.${o.id}`,{method:"DELETE"});
-      loadData();
-    }catch(e){window.alert("שגיאה במחיקה");}
+    try{await sb(`alut_orders?id=eq.${o.id}`,{method:"DELETE"});loadData();}
+    catch(e){window.alert("שגיאה במחיקה");}
   };
   const projectName=project?.name||"אלוט 2026";
   const thStyle={padding:"12px 10px",textAlign:"right",borderBottom:"2px solid #e5e7eb",fontSize:12,fontWeight:700,color:"var(--text3)",whiteSpace:"nowrap"};
   const tdStyle={padding:"12px 10px",borderBottom:"1px solid var(--border)",fontSize:13};
-  const renderOrderCells=(o)=>{
-    const st=ALUT_STATUS_CONFIG[o.status]||ALUT_STATUS_CONFIG.new;
-    const ct=ALUT_CALENDAR_TYPES[o.calendar_type]||{icon:"",label:o.calendar_type};
-    const ds=alutGetDesignStatus(o);
-    const dl=alutGetDeadlineInfo(o.delivery_deadline);
-    return{st,ct,ds,dl};
-  };
+  const openDetail=(o)=>setDetailOrder(o);
   return<div style={{direction:"rtl"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h1 style={{fontSize:22,fontWeight:800,margin:0,color:"var(--text)"}}>🗓️ {projectName}</h1>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button type="button" onClick={()=>setShowPricing(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>⚙️ הגדרות מחירים</button>
-        <button type="button" onClick={()=>setOrderModal({})} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>➕ הזמנה חדשה</button>
+        <button type="button" onClick={()=>setNewOrderOpen(true)} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>➕ הזמנה חדשה</button>
       </div>
     </div>
     <div className="kg4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
       {kpis.map((k,i)=><Card key={i} style={{padding:16,background:k.bg,border:`1px solid ${k.color}30`}}>
         <div style={{fontSize:12,color:"var(--text3)",fontWeight:600,marginBottom:4}}>{k.label}</div>
         <div style={{fontSize:28,fontWeight:800,color:k.color,lineHeight:1.1}}>{k.count}</div>
-        <div style={{fontSize:12,color:"var(--text2)",marginTop:6}}>{alutFmtMoney(k.sum)} ללא מע״מ</div>
+        <div style={{fontSize:12,color:"var(--text2)",marginTop:6}}>{alutFmtMoney(k.sum)} ללא מע״מ{k.isOrders?"":" · פריטים"}</div>
       </Card>)}
     </div>
     <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
@@ -10093,7 +10239,7 @@ function AlutDashboard(){
         <option value="duplex">📗 דופלקס</option>
         <option value="wall">🖼️ קיר</option>
       </select>
-      <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}>
+      <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}>
         <option value="all">סטטוס: הכל</option>
         {ALUT_STATUS_ORDER.map(s=><option key={s} value={s}>{ALUT_STATUS_CONFIG[s].label}</option>)}
       </select>
@@ -10105,23 +10251,24 @@ function AlutDashboard(){
     filtered.length===0?<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין הזמנות להצגה</div>:
     <>
       <div className="alut-table-wrap" style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,overflow:"auto",boxShadow:"var(--shadow)"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+        <table style={{width:"100%",borderCollapse:"collapse",minWidth:960}}>
           <thead><tr style={{background:"#f8fafa"}}>
-            <th style={thStyle}>#</th><th style={thStyle}>חברה</th><th style={thStyle}>סוג</th><th style={thStyle}>כמות</th><th style={thStyle}>סקיצה</th><th style={thStyle}>סטטוס</th><th style={thStyle}>דדליין</th><th style={thStyle}>סה״כ ₪</th><th style={thStyle}>פעולות</th>
+            <th style={thStyle}>#</th><th style={thStyle}>חברה</th><th style={thStyle}>פריטים</th><th style={thStyle}>סה״כ יחידות</th><th style={thStyle}>סטטוסים</th><th style={thStyle}>דדליין קרוב</th><th style={thStyle}>₪</th><th style={thStyle}>פעולות</th>
           </tr></thead>
           <tbody>
             {filtered.map(o=>{
-              const{st,ct,ds,dl}=renderOrderCells(o);
-              return<tr key={o.id} style={{background:"#fff"}}>
+              const items=o.items||[];
+              const stSum=alutFormatStatusSummary(items);
+              const dl=alutGetOrderDeadlineInfo(items);
+              return<tr key={o.id} onClick={()=>openDetail(o)} style={{background:"#fff",cursor:"pointer"}}>
                 <td style={{...tdStyle,fontWeight:700}}>#{o.order_number}</td>
                 <td style={tdStyle}>{o.company_name}</td>
-                <td style={tdStyle}>{ct.icon} {ct.label}</td>
-                <td style={tdStyle}>{o.quantity}</td>
-                <td style={tdStyle}>{ds.icon} {ds.label}</td>
-                <td style={tdStyle}><span style={{padding:"4px 10px",borderRadius:20,fontSize:12,fontWeight:600,background:st.bg}}>{st.label}</span></td>
+                <td style={tdStyle}>{alutFormatItemsSummary(items)}</td>
+                <td style={tdStyle}>{alutTotalQuantity(items)}</td>
+                <td style={tdStyle}>{stSum.type==="single"?<span style={{padding:"4px 10px",borderRadius:20,fontSize:12,fontWeight:600,background:stSum.bg}}>{stSum.label}</span>:<span style={{fontSize:12}}>{stSum.badges}</span>}</td>
                 <td style={{...tdStyle,color:dl.color,fontWeight:dl.bold?800:500}}>{dl.text}</td>
                 <td style={{...tdStyle,fontWeight:700}}>{alutFmtMoney(o.total_price,true)}</td>
-                <td style={tdStyle}><AlutOrderRowActions order={o} onEdit={setOrderModal} onStatus={setStatusModal} onDelete={handleDelete}/></td>
+                <td style={tdStyle}><AlutOrderRowActions order={o} onDelete={handleDelete}/></td>
               </tr>;
             })}
           </tbody>
@@ -10129,19 +10276,18 @@ function AlutDashboard(){
       </div>
       <div className="alut-cards-wrap">
         {filtered.map(o=>{
-          const{st,ct,ds,dl}=renderOrderCells(o);
-          return<Card key={o.id} style={{padding:16}}>
+          const items=o.items||[];
+          const stSum=alutFormatStatusSummary(items);
+          const dl=alutGetOrderDeadlineInfo(items);
+          return<Card key={o.id} style={{padding:16,cursor:"pointer"}} onClick={()=>openDetail(o)}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div>
                 <div style={{fontWeight:800,fontSize:16}}>#{o.order_number} — {o.company_name}</div>
-                <div style={{fontSize:13,color:"var(--text3)",marginTop:4}}>{ct.icon} {ct.label} · {o.quantity} יח׳</div>
+                <div style={{fontSize:13,color:"var(--text3)",marginTop:4}}>{alutFormatItemsSummary(items)} · {alutTotalQuantity(items)} יח׳</div>
               </div>
-              <AlutOrderRowActions order={o} onEdit={setOrderModal} onStatus={setStatusModal} onDelete={handleDelete}/>
+              <AlutOrderRowActions order={o} onDelete={handleDelete}/>
             </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:10}}>
-              <span style={{padding:"4px 10px",borderRadius:20,fontSize:12,background:st.bg,fontWeight:600}}>{st.label}</span>
-              <span style={{fontSize:12}}>{ds.icon} {ds.label}</span>
-            </div>
+            <div style={{marginBottom:8}}>{stSum.type==="single"?<span style={{padding:"4px 10px",borderRadius:20,fontSize:12,background:stSum.bg,fontWeight:600}}>{stSum.label}</span>:<span style={{fontSize:12}}>{stSum.badges}</span>}</div>
             <div style={{fontSize:13,color:dl.color,fontWeight:dl.bold?800:500,marginBottom:8}}>📅 {dl.text}</div>
             <div style={{fontSize:16,fontWeight:800,color:"#0d9488"}}>{alutFmtMoney(o.total_price,true)} כולל מע״מ</div>
           </Card>;
@@ -10149,8 +10295,8 @@ function AlutDashboard(){
       </div>
     </>}
     {showPricing&&<AlutPricingModal pricingRows={pricingRows} onClose={()=>setShowPricing(false)} onSaved={loadData}/>}
-    {orderModal&&project&&<AlutOrderModal order={orderModal.id?orderModal:null} projectId={project.id} pricingRows={pricingRows} onClose={()=>setOrderModal(null)} onSaved={loadData}/>}
-    {statusModal&&<AlutStatusModal order={statusModal} onClose={()=>setStatusModal(null)} onSaved={loadData}/>}
+    {newOrderOpen&&project&&<AlutNewOrderModal projectId={project.id} pricingRows={pricingRows} onClose={()=>setNewOrderOpen(false)} onSaved={loadData}/>}
+    {detailOrder&&<AlutOrderDetailModal order={detailOrder} pricingRows={pricingRows} onClose={()=>setDetailOrder(null)} onSaved={loadData}/>}
   </div>;
 }
 

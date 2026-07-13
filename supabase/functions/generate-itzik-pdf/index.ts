@@ -26,7 +26,7 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function generateDavachHtml(data: Record<string, unknown>): string {
+function generateItzikHtml(data: Record<string, unknown>): string {
   const orderNumber = escapeHtml(String(data.order_number ?? ""));
   const itemLetter = escapeHtml(String(data.item_letter ?? ""));
   const generationDate = escapeHtml(String(data.generation_date ?? ""));
@@ -42,7 +42,7 @@ function generateDavachHtml(data: Record<string, unknown>): string {
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>הזמנת עבודה לכריכה - ${orderNumber}${itemLetter}</title>
+  <title>הזמנת עבודה לכריכה - איציק - ${orderNumber}${itemLetter}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -57,21 +57,21 @@ function generateDavachHtml(data: Record<string, unknown>): string {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 3px solid #2dd4bf;
+      border-bottom: 3px solid #ec4899;
       padding-bottom: 20px;
       margin-bottom: 40px;
     }
-    .logo { font-size: 28px; font-weight: 900; color: #0d9488; }
+    .logo { font-size: 28px; font-weight: 900; color: #be185d; }
     .doc-title { font-size: 22px; font-weight: 700; color: #1a1a1a; }
     .meta {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 20px;
       margin-bottom: 40px;
-      background: #f0fdfa;
+      background: #fdf2f8;
       padding: 20px;
       border-radius: 12px;
-      border-right: 4px solid #2dd4bf;
+      border-right: 4px solid #ec4899;
     }
     .meta-item { font-size: 14px; }
     .meta-label { color: #6b7280; margin-bottom: 4px; }
@@ -80,7 +80,7 @@ function generateDavachHtml(data: Record<string, unknown>): string {
     .section-title {
       font-size: 18px;
       font-weight: 700;
-      color: #0d9488;
+      color: #be185d;
       border-bottom: 2px solid #e5e7eb;
       padding-bottom: 8px;
       margin-bottom: 15px;
@@ -94,6 +94,16 @@ function generateDavachHtml(data: Record<string, unknown>): string {
     }
     .detail-label { color: #6b7280; font-size: 14px; }
     .detail-value { font-weight: 600; font-size: 15px; color: #1a1a1a; }
+    .info-box {
+      background: linear-gradient(135deg, #be185d 0%, #ec4899 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      margin: 30px 0;
+    }
+    .info-title { font-size: 14px; opacity: 0.9; margin-bottom: 8px; }
+    .info-value { font-size: 28px; font-weight: 900; }
     .notes-box {
       background: #fef3c7;
       border-right: 4px solid #f59e0b;
@@ -124,7 +134,7 @@ function generateDavachHtml(data: Record<string, unknown>): string {
 <body>
   <div class="header">
     <div class="logo">נטלי פרינט 🖨️</div>
-    <div class="doc-title">📋 הזמנת עבודה לכריכה</div>
+    <div class="doc-title">📋 הזמנת עבודה לכריכה - איציק</div>
   </div>
   <div class="meta">
     <div class="meta-item">
@@ -170,6 +180,10 @@ function generateDavachHtml(data: Record<string, unknown>): string {
       </div>
     </div>
   </div>
+  <div class="info-box">
+    <div class="info-title">📦 סה״כ לכריכה</div>
+    <div class="info-value">${quantity.toLocaleString("he-IL")} יחידות</div>
+  </div>
   ${notes ? `
   <div class="notes-box">
     <div class="notes-title">📝 הערות</div>
@@ -178,11 +192,11 @@ function generateDavachHtml(data: Record<string, unknown>): string {
   <div class="footer">
     <div class="footer-signature">
       <div class="footer-signature-line"></div>
-      <div>חתימת דבח (קבלה)</div>
+      <div>חתימת איציק (קבלה)</div>
     </div>
     <div class="footer-signature">
       <div class="footer-signature-line"></div>
-      <div>חתימת נטלי פרינט</div>
+      <div>חתימת מנהל</div>
     </div>
   </div>
 </body>
@@ -204,8 +218,6 @@ serve(async (req) => {
       "quantity",
       "cartons_count",
       "cartons_size",
-      "cost_per_unit",
-      "total_cost",
     ];
 
     for (const field of required) {
@@ -225,7 +237,7 @@ serve(async (req) => {
       });
     }
 
-    const html = generateDavachHtml(requestData);
+    const html = generateItzikHtml(requestData);
 
     const pdfshiftKey = Deno.env.get("PDFSHIFT_API_KEY");
     if (!pdfshiftKey) {
@@ -266,7 +278,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         pdf_base64: pdfBase64,
-        filename: `davach_order_${requestData.order_number}${itemLetter}.pdf`,
+        filename: `itzik_order_${requestData.order_number}${itemLetter}.pdf`,
       }),
       { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );

@@ -96,39 +96,36 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .alut-season-units{font-size:24px;font-weight:900;color:#1a1a1a}
 .alut-season-orders{font-size:12px;color:#6b7280;margin-top:4px}
 @media(max-width:640px){.alut-season-grid{grid-template-columns:repeat(2,1fr)}}
-.alut-quote-screen{position:fixed;inset:0;background:#fff;z-index:100;overflow-y:auto;padding:30px;direction:rtl}
-.alut-quote-header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #2dd4bf;padding-bottom:20px;margin-bottom:30px;gap:12px;flex-wrap:wrap}
-.alut-quote-title{font-size:28px;font-weight:900;color:#0d9488;margin:0}
+.alut-quote-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.alut-quote-modal{background:#fff;border-radius:16px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;direction:rtl;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.alut-quote-modal-header{padding:20px 30px;border-bottom:2px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:10;gap:12px}
+.alut-quote-modal-title{font-size:22px;font-weight:900;color:#0d9488;margin:0}
 .alut-quote-close-btn{background:#f3f4f6;border:none;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:20px;font-family:inherit;flex-shrink:0}
-.alut-quote-toolbar{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
-.alut-quote-tab{padding:10px 20px;border-radius:8px;border:2px solid #e5e7eb;background:#fff;cursor:pointer;font-weight:600;font-family:inherit;font-size:14px}
-.alut-quote-tab.active{border-color:#0d9488;background:#f0fdfa;color:#0d9488}
-.alut-quote-summary-block,.alut-quote-detail-block{background:#f9fafb;border-radius:12px;padding:20px;margin-bottom:30px}
-.alut-quote-block-title{font-size:18px;font-weight:700;color:#0d9488;margin-bottom:16px}
-.alut-quote-tip{background:#fef3c7;border-right:4px solid #f59e0b;padding:10px 14px;border-radius:8px;font-size:13px;color:#78350f;margin-bottom:16px}
-.alut-quote-summary-table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-.alut-quote-summary-table th{background:#0d9488;color:#fff;padding:12px;text-align:right;font-weight:700}
-.alut-quote-summary-table td{padding:14px 12px;border-bottom:1px solid #f3f4f6;font-size:15px}
-.alut-quote-summary-table tr:last-child td{border-bottom:none}
-.alut-quote-summary-table tr:hover td{background:#f0fdfa}
-.alut-quote-quantity{font-weight:700;font-size:17px;color:#0d9488}
-.alut-quote-copy-cell-btn{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;border:none;width:40px;height:40px;border-radius:8px;cursor:pointer;font-size:18px;transition:transform .15s;font-family:inherit}
-.alut-quote-copy-cell-btn:hover{transform:scale(1.1);box-shadow:0 2px 8px rgba(13,148,136,.3)}
-.alut-quote-detail-lines{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;font-family:inherit;font-size:14px;line-height:2;white-space:pre-wrap;max-height:400px;overflow-y:auto;margin-bottom:12px}
-.alut-quote-copy-all-btn{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-family:inherit;min-height:44px}
+.alut-quote-modal-body{padding:20px 30px}
+.alut-quote-block{background:#f9fafb;border-radius:12px;margin-bottom:20px;overflow:hidden;border:1px solid #e5e7eb}
+.alut-quote-block-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;gap:10px;flex-wrap:wrap}
+.alut-quote-block-title{font-size:16px;font-weight:700}
+.alut-quote-block-copy{background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.3);padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;transition:all .2s;font-family:inherit;min-height:36px}
+.alut-quote-block-copy:hover{background:rgba(255,255,255,.3)}
+.alut-quote-block-copy.copied{background:#22c55e;border-color:#16a34a}
+.alut-quote-block-lines{padding:12px 18px;max-height:200px;overflow-y:auto;background:#fff}
+.alut-quote-block-line{padding:6px 0;font-size:14px;color:#1f2937;border-bottom:1px solid #f3f4f6}
+.alut-quote-block-line:last-child{border-bottom:none}
 .alut-quote-totals{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;border-radius:12px;padding:24px;margin-top:10px}
 .alut-quote-total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:15px}
 .alut-quote-total-row.divider{border-top:1px solid rgba(255,255,255,.3);margin-top:8px;padding-top:12px}
 .alut-quote-total-row.final{font-size:22px;font-weight:900;margin-top:8px}
 .alut-toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#0d9488;color:#fff;padding:14px 28px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:9999;font-weight:600;animation:alutToastIn .3s ease}
+.alut-item-deadline-edit{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text3)}
+.alut-deadline-input{padding:6px 10px;border-radius:8px;border:1px solid var(--border);font-family:inherit;font-size:13px;direction:ltr}
+.alut-btn-save-deadline{padding:6px 12px;border-radius:8px;border:none;background:#0d9488;color:#fff;font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;min-height:36px}
 @keyframes alutToastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
 @media(max-width:640px){
-  .alut-quote-screen{padding:15px}
-  .alut-quote-title{font-size:20px}
-  .alut-quote-summary-table{font-size:13px}
-  .alut-quote-summary-table th,.alut-quote-summary-table td{padding:8px 6px}
-  .alut-quote-copy-cell-btn{width:34px;height:34px;font-size:16px}
-  .alut-quote-detail-lines{font-size:12px}
+  .alut-quote-modal-backdrop{padding:0;align-items:stretch}
+  .alut-quote-modal{max-height:100vh;border-radius:0;height:100%}
+  .alut-quote-block-header{flex-direction:column;gap:10px;align-items:stretch}
+  .alut-quote-block-title{font-size:14px}
+  .alut-quote-modal-title{font-size:18px}
 }
 @media(max-width:768px){
   .alut-table-wrap{display:none!important}
@@ -10462,7 +10459,6 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
         const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
         const st=ALUT_STATUS_CONFIG[item.status]||ALUT_STATUS_CONFIG.new;
         const ds=alutGetDesignStatus(item);
-        const dl=alutGetDeadlineInfo(item.delivery_deadline);
         const itemDavachRecords=davachRecords.filter(r=>r.item_id===item.id);
         const itemItzikRecords=itzikRecords.filter(r=>r.item_id===item.id);
         return<div key={item.id} style={{border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:10,background:"#fff"}}>
@@ -10474,7 +10470,8 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
               <button type="button" onClick={()=>deleteItem(item)} style={{padding:"6px 10px",borderRadius:8,border:"none",background:"#fee2e2",color:"#dc2626",fontSize:12,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>🗑️</button>
             </div>
           </div>
-          <div style={{fontSize:12,color:"var(--text3)",marginTop:8}}>סקיצה: {ds.icon} {ds.label} | דדליין: <span style={{color:dl.color,fontWeight:dl.bold?700:400}}>{dl.text}</span></div>
+          <div style={{fontSize:12,color:"var(--text3)",marginTop:8}}>סקיצה: {ds.icon} {ds.label}</div>
+          <AlutItemDeadlineEdit item={item} onSaved={reload}/>
           <div style={{fontSize:14,fontWeight:700,color:"#0d9488",marginTop:6}}>{alutFmtMoney(item.subtotal)}</div>
           <div className="alut-item-work-btns">
             {["duplex","wall"].includes(item.calendar_type)&&<button type="button" className="alut-btn-davach" onClick={()=>setShowDavachModal({item,itemIndex})}>📄 הזמנת עבודה לדבח</button>}
@@ -10593,22 +10590,22 @@ function AlutSeasonSummary({items,projectName}){
 }
 
 function alutCopyToClipboard(text,label,setToast){
-  const show=()=>{
+  const show=msg=>{
     if(setToast){
-      setToast(`✅ הועתק: ${text}${label?` (${label})`:""}`);
+      setToast(msg||`✅ הועתק${label?`: ${label}`:""}`);
       setTimeout(()=>setToast(null),2500);
     }
   };
   if(navigator.clipboard&&navigator.clipboard.writeText){
-    return navigator.clipboard.writeText(String(text)).then(show).catch(()=>{
+    return navigator.clipboard.writeText(String(text)).then(()=>show(`✅ הועתק${label?`: ${label}`:""}`)).catch(()=>{
       const ta=document.createElement("textarea");
       ta.value=String(text);ta.style.position="fixed";ta.style.opacity="0";
-      document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);show();
+      document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);show(`✅ הועתק${label?`: ${label}`:""}`);
     });
   }
   const ta=document.createElement("textarea");
   ta.value=String(text);ta.style.position="fixed";ta.style.opacity="0";
-  document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);show();
+  document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);show(`✅ הועתק${label?`: ${label}`:""}`);
   return Promise.resolve();
 }
 function alutCalculateSeasonalSummary(orders,items,pricing){
@@ -10638,33 +10635,87 @@ function alutCalculateSeasonalSummary(orders,items,pricing){
   const subtotal=boardsTotal+designsTotal+shippingTotal;
   const vat=subtotal*0.18;
   const total=subtotal+vat;
-  return{
-    lines:[
-      {label:"לוח שולחני קשיח",quantity:summary.hard.quantity,unitPrice:summary.hard.unitPrice,revenue:summary.hard.revenue,show:summary.hard.quantity>0},
-      {label:"לוח שולחני דופלקס",quantity:summary.duplex.quantity,unitPrice:summary.duplex.unitPrice,revenue:summary.duplex.revenue,show:summary.duplex.quantity>0},
-      {label:"לוח קיר",quantity:summary.wall.quantity,unitPrice:summary.wall.unitPrice,revenue:summary.wall.revenue,show:summary.wall.quantity>0},
-      {label:"סקיצות (הזמנות)",quantity:designsCount,unitPrice:designsUnitPrice,revenue:designsTotal,show:designsCount>0},
-      {label:"משלוחים (קרטונים)",quantity:cartonsTotal,unitPrice:shippingUnitPrice,revenue:shippingTotal,show:cartonsTotal>0},
-    ],
-    boardsTotal,designsTotal,shippingTotal,subtotal,vat,total,
-  };
+  return{boardsTotal,designsTotal,shippingTotal,subtotal,vat,total};
 }
-function alutBuildDetailedSeasonalText(orders,items){
+function alutBuildSeasonalGroups(orders,items){
   const orderMap=Object.fromEntries((orders||[]).map(o=>[o.id,o]));
-  const typeLabels={hard:"קשיח",duplex:"דופלקס",wall:"קיר"};
-  return(items||[]).map(item=>{
-    const order=orderMap[item.order_id]||{};
-    const boardsPrice=(Number(item.quantity)||0)*(Number(item.unit_price)||0);
+  const groups={
+    hard:{title:"📄 לוח שולחני קשיח",totalUnits:0,lines:[],unitLabel:"יח׳"},
+    duplex:{title:"📄 לוח שולחני דופלקס",totalUnits:0,lines:[],unitLabel:"יח׳"},
+    wall:{title:"📄 לוח קיר",totalUnits:0,lines:[],unitLabel:"יח׳"},
+  };
+  const designs={title:"🎨 סקיצות",totalUnits:0,lines:[],unitLabel:"הזמנות"};
+  const shipping={title:"📦 משלוחים",totalUnits:0,lines:[],unitLabel:"קרטונים"};
+  const cartonsByOrder={};
+  (items||[]).forEach(item=>{
+    const order=orderMap[item.order_id];
+    if(!order)return;
     const t=alutNormalizeCalendarType(item.calendar_type);
-    return`הזמנה ${order.order_number||"?"} - ${order.company_name||"—"} - ${typeLabels[t]||t} - ${(Number(item.quantity)||0).toLocaleString("he-IL")} יח' - ${boardsPrice.toLocaleString("he-IL",{minimumFractionDigits:2,maximumFractionDigits:2})} ₪`;
-  }).join("\n");
+    if(!groups[t])return;
+    const qty=Number(item.quantity)||0;
+    groups[t].lines.push(`${order.company_name} - ${qty.toLocaleString("he-IL")}`);
+    groups[t].totalUnits+=qty;
+    if(item.needs_design!==false&&!item.is_template_only&&Number(item.design_price)>0){
+      designs.lines.push(`${order.company_name} - סקיצה`);
+      designs.totalUnits+=1;
+    }
+    if(!order.is_pickup)cartonsByOrder[order.id]=(cartonsByOrder[order.id]||0)+(Number(item.cartons_count)||0);
+  });
+  (orders||[]).forEach(order=>{
+    if(order.is_pickup)return;
+    const c=cartonsByOrder[order.id]||0;
+    if(c<=0)return;
+    shipping.lines.push(`${order.company_name} - ${c} קרטונים`);
+    shipping.totalUnits+=c;
+  });
+  return{hard:groups.hard,duplex:groups.duplex,wall:groups.wall,designs,shipping};
 }
 function alutFmtNum(n){
   return Number(n||0).toLocaleString("he-IL",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
+function AlutQuoteBlock({title,totalUnits,lines,unitLabel,setToast}){
+  const [copied,setCopied]=useState(false);
+  if(!lines?.length)return null;
+  const handleCopy=async()=>{
+    await alutCopyToClipboard(lines.join("\n"),`${lines.length} שורות`,setToast);
+    setCopied(true);
+    setTimeout(()=>setCopied(false),2000);
+  };
+  return<div className="alut-quote-block">
+    <div className="alut-quote-block-header">
+      <div className="alut-quote-block-title">{title} ({totalUnits.toLocaleString("he-IL")} {unitLabel})</div>
+      <button type="button" onClick={handleCopy} className={`alut-quote-block-copy${copied?" copied":""}`}>{copied?"✅ הועתק!":"📋 העתק הכל"}</button>
+    </div>
+    <div className="alut-quote-block-lines">
+      {lines.map((line,idx)=><div key={idx} className="alut-quote-block-line">{line}</div>)}
+    </div>
+  </div>;
+}
+
+function AlutItemDeadlineEdit({item,onSaved}){
+  const [customDeadline,setCustomDeadline]=useState(item.delivery_deadline||"");
+  const [savingDeadline,setSavingDeadline]=useState(false);
+  useEffect(()=>{setCustomDeadline(item.delivery_deadline||"");},[item.id,item.delivery_deadline]);
+  const isDeadlineChanged=(customDeadline||"")!==(item.delivery_deadline||"");
+  const saveDeadline=async()=>{
+    setSavingDeadline(true);
+    try{
+      const {error}=await supabaseClient.from("alut_order_items").update({delivery_deadline:customDeadline||null}).eq("id",item.id);
+      if(error)throw error;
+      onSaved?.();
+    }catch(err){
+      window.alert("שגיאה בעדכון: "+(err.message||String(err)));
+    }finally{setSavingDeadline(false);}
+  };
+  return<div className="alut-item-deadline-edit">
+    <label>דדליין:</label>
+    <input type="date" value={customDeadline||""} onChange={e=>setCustomDeadline(e.target.value)} className="alut-deadline-input"/>
+    {isDeadlineChanged&&<button type="button" onClick={saveDeadline} disabled={savingDeadline} className="alut-btn-save-deadline">{savingDeadline?"⏳":"💾 שמור"}</button>}
+  </div>;
+}
+
 function AlutSeasonalQuoteScreen({project,pricingRows,onClose}){
-  const [view,setView]=useState("summary");
   const [excludeCancelled,setExcludeCancelled]=useState(true);
   const [loading,setLoading]=useState(true);
   const [orders,setOrders]=useState([]);
@@ -10690,60 +10741,43 @@ function AlutSeasonalQuoteScreen({project,pricingRows,onClose}){
     setLoading(false);
   };
   useEffect(()=>{load();},[project?.id,excludeCancelled]);
+  useEffect(()=>{
+    const onKey=e=>{if(e.key==="Escape")onClose?.();};
+    document.addEventListener("keydown",onKey);
+    return()=>document.removeEventListener("keydown",onKey);
+  },[onClose]);
   const calc=useMemo(()=>alutCalculateSeasonalSummary(orders,items,pricing),[orders,items,pricing]);
-  const detailText=useMemo(()=>alutBuildDetailedSeasonalText(orders,items),[orders,items]);
+  const groups=useMemo(()=>alutBuildSeasonalGroups(orders,items),[orders,items]);
   const year=(project?.name||"").match(/\d{4}/)?.[0]||project?.year||"2026";
-  const showSummary=view==="summary"||view==="both";
-  const showDetail=view==="detail"||view==="both";
-  return<div className="alut-quote-screen">
-    <div className="alut-quote-header">
-      <h1 className="alut-quote-title">💰 הצעה עונתית - אלוט {year}</h1>
-      <button type="button" className="alut-quote-close-btn" onClick={onClose} title="סגור">×</button>
-    </div>
-    <div className="alut-quote-toolbar">
-      <button type="button" className={`alut-quote-tab${view==="summary"?" active":""}`} onClick={()=>setView("summary")}>סיכום עונתי (טבלה)</button>
-      <button type="button" className={`alut-quote-tab${view==="detail"?" active":""}`} onClick={()=>setView("detail")}>פירוט מלא</button>
-      <button type="button" className={`alut-quote-tab${view==="both"?" active":""}`} onClick={()=>setView("both")}>שתיהן</button>
-      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",marginRight:"auto"}}>
-        <input type="checkbox" checked={excludeCancelled} onChange={e=>setExcludeCancelled(e.target.checked)}/> לא כולל בוטלות
-      </label>
-    </div>
-    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28} color="#0d9488"/> טוען...</div>:<>
-      {showSummary&&<div className="alut-quote-summary-block">
-        <div className="alut-quote-block-title">📊 סיכום עונתי - להעתקה לבינה</div>
-        <div className="alut-quote-tip">💡 טיפ: לחץ 📋 ליד כל שורה כדי להעתיק רק את הכמות (להדבקה בעמודת "כמות" בבינה)</div>
-        <div style={{overflowX:"auto"}}>
-          <table className="alut-quote-summary-table">
-            <thead><tr><th>פריט</th><th>כמות</th><th>מחיר יחידה</th><th>סה״כ</th><th>פעולה</th></tr></thead>
-            <tbody>
-              {calc.lines.filter(l=>l.show).map((line,idx)=><tr key={idx}>
-                <td>{line.label}</td>
-                <td className="alut-quote-quantity">{line.quantity.toLocaleString("he-IL")}</td>
-                <td>{alutFmtNum(line.unitPrice)} ₪</td>
-                <td>{alutFmtNum(line.revenue)} ₪</td>
-                <td>
-                  <button type="button" className="alut-quote-copy-cell-btn" title={`העתק כמות: ${line.quantity}`} onClick={()=>alutCopyToClipboard(String(line.quantity),`כמות ${line.label}`,setToast)}>📋</button>
-                </td>
-              </tr>)}
-              {!calc.lines.some(l=>l.show)&&<tr><td colSpan={5} style={{textAlign:"center",color:"#9ca3af"}}>אין נתונים להצגה</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>}
-      {showDetail&&<div className="alut-quote-detail-block">
-        <div className="alut-quote-block-title">📋 פירוט מלא - לתיעוד פנימי</div>
-        <div className="alut-quote-detail-lines">{detailText||"אין פריטים"}</div>
-        <button type="button" className="alut-quote-copy-all-btn" disabled={!detailText} onClick={()=>alutCopyToClipboard(detailText,"פירוט מלא",setToast)}>📋 העתק פירוט מלא</button>
-      </div>}
-      <div className="alut-quote-totals">
-        <div className="alut-quote-total-row"><span>לוחות:</span><span>{alutFmtNum(calc.boardsTotal)} ₪</span></div>
-        <div className="alut-quote-total-row"><span>סקיצות:</span><span>{alutFmtNum(calc.designsTotal)} ₪</span></div>
-        <div className="alut-quote-total-row"><span>משלוחים:</span><span>{alutFmtNum(calc.shippingTotal)} ₪</span></div>
-        <div className="alut-quote-total-row divider"><span>סה״כ לפני מע״מ:</span><span>{alutFmtNum(calc.subtotal)} ₪</span></div>
-        <div className="alut-quote-total-row"><span>מע״מ 18%:</span><span>{alutFmtNum(calc.vat)} ₪</span></div>
-        <div className="alut-quote-total-row final"><span>סה״כ כולל:</span><span>{alutFmtNum(calc.total)} ₪</span></div>
+  return<div className="alut-quote-modal-backdrop" onClick={onClose}>
+    <div className="alut-quote-modal" onClick={e=>e.stopPropagation()}>
+      <div className="alut-quote-modal-header">
+        <h1 className="alut-quote-modal-title">💰 הצעה עונתית - אלוט {year}</h1>
+        <button type="button" className="alut-quote-close-btn" onClick={onClose} title="סגור">×</button>
       </div>
-    </>}
+      <div className="alut-quote-modal-body">
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",marginBottom:16}}>
+          <input type="checkbox" checked={excludeCancelled} onChange={e=>setExcludeCancelled(e.target.checked)}/> לא כולל בוטלות
+        </label>
+        {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28} color="#0d9488"/> טוען...</div>:<>
+          <AlutQuoteBlock {...groups.hard} setToast={setToast}/>
+          <AlutQuoteBlock {...groups.duplex} setToast={setToast}/>
+          <AlutQuoteBlock {...groups.wall} setToast={setToast}/>
+          <AlutQuoteBlock {...groups.designs} setToast={setToast}/>
+          <AlutQuoteBlock {...groups.shipping} setToast={setToast}/>
+          {!groups.hard.lines.length&&!groups.duplex.lines.length&&!groups.wall.lines.length&&!groups.designs.lines.length&&!groups.shipping.lines.length&&
+            <div style={{textAlign:"center",color:"#9ca3af",padding:24}}>אין נתונים להצגה</div>}
+          <div className="alut-quote-totals">
+            <div className="alut-quote-total-row"><span>לוחות:</span><span>{alutFmtNum(calc.boardsTotal)} ₪</span></div>
+            <div className="alut-quote-total-row"><span>סקיצות:</span><span>{alutFmtNum(calc.designsTotal)} ₪</span></div>
+            <div className="alut-quote-total-row"><span>משלוחים:</span><span>{alutFmtNum(calc.shippingTotal)} ₪</span></div>
+            <div className="alut-quote-total-row divider"><span>סה״כ לפני מע״מ:</span><span>{alutFmtNum(calc.subtotal)} ₪</span></div>
+            <div className="alut-quote-total-row"><span>מע״מ 18%:</span><span>{alutFmtNum(calc.vat)} ₪</span></div>
+            <div className="alut-quote-total-row final"><span>סה״כ כולל:</span><span>{alutFmtNum(calc.total)} ₪</span></div>
+          </div>
+        </>}
+      </div>
+    </div>
     {toast&&<div className="alut-toast">{toast}</div>}
   </div>;
 }
@@ -11169,6 +11203,7 @@ function App(){
 
   const [showReportModal,setShowReportModal]=useState(false);
   const [emailTestBusy,setEmailTestBusy]=useState(false);
+  const [deadlineAlertBusy,setDeadlineAlertBusy]=useState(false);
   const [reportRecipients,setReportRecipients]=useState([]);
 
   const notify=(m,c="#16A34A")=>{setNotif({m,c});setTimeout(()=>setNotif(null),3000);};
@@ -11817,6 +11852,21 @@ function App(){
               }finally{setEmailTestBusy(false);}
             }} disabled={emailTestBusy} style={{padding:"9px 18px",borderRadius:10,border:"2px solid #f59e0b",background:emailTestBusy?"#fef3c7":"linear-gradient(135deg,#f59e0b,#d97706)",color:emailTestBusy?"#92400e":"#fff",fontWeight:700,fontSize:13,cursor:emailTestBusy?"wait":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(245,158,11,0.35)",display:"flex",alignItems:"center",gap:6}}>
               {emailTestBusy?"⏳ בודק...":"🔬 בדיקת מיילים"}
+            </button>
+            <button type="button" onClick={async()=>{
+              if(deadlineAlertBusy)return;
+              setDeadlineAlertBusy(true);
+              try{
+                const {data,error}=await supabaseClient.functions.invoke("alut-deadline-alert");
+                const result=data||error;
+                console.log("Deadline alert results:",result);
+                window.alert(JSON.stringify(result,null,2));
+              }catch(e){
+                console.error("Deadline alert failed:",e);
+                window.alert("שגיאה בבדיקת דדליין: "+(e.message||String(e)));
+              }finally{setDeadlineAlertBusy(false);}
+            }} disabled={deadlineAlertBusy} style={{padding:"9px 18px",borderRadius:10,border:"2px solid #f97316",background:deadlineAlertBusy?"#ffedd5":"linear-gradient(135deg,#f97316,#ef4444)",color:deadlineAlertBusy?"#9a3412":"#fff",fontWeight:700,fontSize:13,cursor:deadlineAlertBusy?"wait":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(249,115,22,0.35)",display:"flex",alignItems:"center",gap:6}}>
+              {deadlineAlertBusy?"⏳ בודק...":"⏰ בדיקת התראת דדליין"}
             </button>
             <button onClick={()=>setShowReportModal(true)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>
           </div>}

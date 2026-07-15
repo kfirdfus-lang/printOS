@@ -121,6 +121,36 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .global-search-trigger:hover{background:#e5e7eb}
 .global-search-hint{background:#d1d5db;padding:2px 6px;border-radius:3px;font-size:11px;font-family:monospace;color:#4b5563}
 @media (max-width:640px){.global-search-backdrop{padding-top:20px}.global-search-modal{width:95%;max-height:85vh}.global-search-hint{display:none}}
+.debt-date-filters{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+.debt-date-filter{display:flex;flex-direction:column;gap:4px;position:relative}
+.debt-date-filter label{font-size:13px;color:#6b7280;font-weight:600}
+.debt-date-filter input[type="date"]{padding:8px 12px;border:1px solid #d8b4fe;border-radius:6px;font-family:inherit;font-size:14px;direction:ltr}
+.debt-clear-date{position:absolute;left:4px;top:26px;background:#f3f4f6;border:none;width:24px;height:24px;border-radius:4px;cursor:pointer;font-size:12px}
+.debt-report-summary-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}
+.debt-summary-card{padding:20px;border-radius:12px;color:#fff}
+.debt-overdue-card{background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%)}
+.debt-future-card{background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%)}
+.debt-total-card{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)}
+.debt-summary-label{font-size:14px;opacity:.9;margin-bottom:8px}
+.debt-summary-value{font-size:26px;font-weight:900}
+.debt-aging-block{background:#f9fafb;border-radius:12px;padding:20px;margin-bottom:20px}
+.debt-aging-title{font-size:16px;font-weight:700;color:#0d9488;margin-bottom:16px}
+.debt-aging-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.debt-aging-card{background:#fff;padding:16px;border-radius:8px;border-right:4px solid;text-align:center}
+.debt-aging-fresh{border-color:#22c55e}
+.debt-aging-mid{border-color:#f59e0b}
+.debt-aging-old{border-color:#f97316}
+.debt-aging-critical{border-color:#dc2626}
+.debt-aging-label{font-size:13px;color:#6b7280;margin-bottom:8px;font-weight:600}
+.debt-aging-value{font-size:20px;font-weight:700;color:#1f2937}
+.debt-summary-table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px}
+.debt-summary-table th{background:#f3f4f6;padding:8px 10px;text-align:right;font-weight:700;color:#374151;border-bottom:2px solid #e5e7eb;white-space:nowrap}
+.debt-summary-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9}
+.debt-cell-overdue{color:#dc2626;font-weight:600;text-align:left;direction:ltr}
+.debt-cell-future{color:#f59e0b;font-weight:600;text-align:left;direction:ltr}
+.debt-cell-total{background:#f0fdfa;font-weight:700;color:#0d9488;text-align:left;direction:ltr}
+.debt-grand-total-row td{background:#f9fafb;border-top:2px solid #0d9488;font-weight:700}
+@media (max-width:640px){.debt-report-summary-cards{grid-template-columns:1fr}.debt-aging-grid{grid-template-columns:repeat(2,1fr)}.debt-date-filters{flex-direction:column;align-items:stretch}}
 .alut-season-summary{background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%);border:2px solid #14b8a6;border-radius:12px;padding:20px;margin-bottom:20px}
 .alut-season-title{font-size:18px;font-weight:900;color:#0d9488;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .alut-season-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -7078,6 +7108,21 @@ function calculateDueDate(invoiceDate, paymentTerms) {
   }
 }
 
+// גיול קלאסי לפי ימי איחור מתאריך פירעון (0-30 / 31-60 / 61-90 / 90+)
+function categorizeInvoiceByAging(inv, referenceDate) {
+  const due = inv.calculated_due_date || (inv.doc_payment_date ? new Date(inv.doc_payment_date) : null);
+  if (!due) return null;
+  const dueDate = due instanceof Date ? due : new Date(due);
+  if (isNaN(dueDate.getTime())) return null;
+  const ref = referenceDate instanceof Date ? referenceDate : new Date();
+  const daysOverdue = Math.floor((ref.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysOverdue < 0) return { bucket: 'future', daysUntil: -daysOverdue };
+  if (daysOverdue <= 30) return { bucket: 'aging_0_30', daysOverdue };
+  if (daysOverdue <= 60) return { bucket: 'aging_31_60', daysOverdue };
+  if (daysOverdue <= 90) return { bucket: 'aging_61_90', daysOverdue };
+  return { bucket: 'aging_90plus', daysOverdue };
+}
+
 // ============================================================
 // ייצוא Excel מעוצב (SheetJS — טעינה דינמית אם אין XLSX בדף)
 // ============================================================
@@ -7111,14 +7156,54 @@ async function exportToExcel(data, filename, reportTitle) {
 
     const wb = XLSX.utils.book_new();
 
+    // חישוב הפרדת עבר/עתידי + גיול קלאסי לכל לקוח (מתוך החשבוניות עצמן)
+    const excelNow = new Date();
+    excelNow.setHours(0, 0, 0, 0);
+    const excelNowMs = excelNow.getTime();
+    const invDueMs = (inv) => {
+      const d = inv.calculated_due_date || inv.doc_payment_date;
+      if (!d) return null;
+      const dd = d instanceof Date ? d : new Date(d);
+      return isNaN(dd.getTime()) ? null : dd.getTime();
+    };
+    const splitClient = (c) => {
+      let overdue = 0, future = 0;
+      const aging = { aging_0_30: 0, aging_31_60: 0, aging_61_90: 0, aging_90plus: 0 };
+      (c.invoices || []).forEach((inv) => {
+        const bal = Number(inv.doc_balance) || 0;
+        const due = invDueMs(inv);
+        if (due !== null && due < excelNowMs) {
+          overdue += bal;
+          const days = Math.floor((excelNowMs - due) / 86400000);
+          if (days <= 30) aging.aging_0_30 += bal;
+          else if (days <= 60) aging.aging_31_60 += bal;
+          else if (days <= 90) aging.aging_61_90 += bal;
+          else aging.aging_90plus += bal;
+        } else {
+          future += bal;
+        }
+      });
+      return { overdue, future, aging };
+    };
+    const clientSplits = data.clients.map(splitClient);
+    const grandOverdue = clientSplits.reduce((s, x) => s + x.overdue, 0);
+    const grandFuture = clientSplits.reduce((s, x) => s + x.future, 0);
+    const grandAging = clientSplits.reduce((s, x) => ({
+      aging_0_30: s.aging_0_30 + x.aging.aging_0_30,
+      aging_31_60: s.aging_31_60 + x.aging.aging_31_60,
+      aging_61_90: s.aging_61_90 + x.aging.aging_61_90,
+      aging_90plus: s.aging_90plus + x.aging.aging_90plus,
+    }), { aging_0_30: 0, aging_31_60: 0, aging_61_90: 0, aging_90plus: 0 });
+
     const summaryData = [
       [reportTitle || 'דוח גבייה'],
       [`הופק: ${new Date().toLocaleDateString('he-IL')} ${new Date().toLocaleTimeString('he-IL').slice(0, 5)}`],
       [],
-      ['#', 'שם לקוח', 'תנאי תשלום', 'איש קשר', 'טלפון', 'מס\' חשבוניות', 'סה"כ חוב'],
+      ['#', 'שם לקוח', 'תנאי תשלום', 'איש קשר', 'טלפון', 'מס\' חשבוניות', 'חוב עבר', 'חוב עתידי', 'סה"כ חוב'],
     ];
 
     data.clients.forEach((c, idx) => {
+      const sp = clientSplits[idx];
       summaryData.push([
         idx + 1,
         c.name,
@@ -7126,12 +7211,14 @@ async function exportToExcel(data, filename, reportTitle) {
         c.contact_name || '',
         c.phone || '',
         c.invoices.length,
+        sp.overdue,
+        sp.future,
         Number(c.total),
       ]);
     });
 
     summaryData.push([]);
-    summaryData.push(['', '', '', '', '', 'סה"כ:', Number(data.grandTotal || data.total || 0)]);
+    summaryData.push(['', '', '', '', '', 'סה"כ:', grandOverdue, grandFuture, Number(data.grandTotal || data.total || 0)]);
 
     const ws1 = XLSX.utils.aoa_to_sheet(summaryData);
 
@@ -7143,13 +7230,15 @@ async function exportToExcel(data, filename, reportTitle) {
       { width: 16 },
       { width: 14 },
       { width: 16 },
+      { width: 16 },
+      { width: 16 },
     ];
 
     ws1['!views'] = [{ RTL: true }];
 
     ws1['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
     ];
 
     if (ws1['A1']) {
@@ -7167,7 +7256,7 @@ async function exportToExcel(data, filename, reportTitle) {
       };
     }
 
-    ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4'].forEach((cell) => {
+    ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4'].forEach((cell) => {
       if (ws1[cell]) {
         ws1[cell].s = {
           font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
@@ -7187,7 +7276,7 @@ async function exportToExcel(data, filename, reportTitle) {
       const row = idx + 5;
       const isAlt = idx % 2 === 0;
       const bgColor = isAlt ? 'F8FAFA' : 'FFFFFF';
-      const hasOverdue = c.invoices.some((inv) => inv.daysOverdue > 0 || inv.days_overdue > 0);
+      const hasOverdue = clientSplits[idx].overdue > 0;
 
       if (ws1[`A${row}`]) ws1[`A${row}`].s = {
         font: { sz: 11, color: { rgb: '6B7280' } },
@@ -7231,8 +7320,24 @@ async function exportToExcel(data, filename, reportTitle) {
         border: thinBorder(),
       };
 
-      if (ws1[`G${row}`]) {
-        ws1[`G${row}`].s = {
+      if (ws1[`G${row}`]) ws1[`G${row}`].s = {
+        font: { sz: 12, bold: true, color: { rgb: 'DC2626' } },
+        fill: { fgColor: { rgb: bgColor } },
+        alignment: { horizontal: 'left' },
+        numFmt: '₪#,##0',
+        border: thinBorder(),
+      };
+
+      if (ws1[`H${row}`]) ws1[`H${row}`].s = {
+        font: { sz: 12, bold: true, color: { rgb: 'D97706' } },
+        fill: { fgColor: { rgb: bgColor } },
+        alignment: { horizontal: 'left' },
+        numFmt: '₪#,##0',
+        border: thinBorder(),
+      };
+
+      if (ws1[`I${row}`]) {
+        ws1[`I${row}`].s = {
           font: { sz: 13, bold: true, color: { rgb: hasOverdue ? 'DC2626' : '1E3A52' } },
           fill: { fgColor: { rgb: bgColor } },
           alignment: { horizontal: 'left' },
@@ -7243,14 +7348,15 @@ async function exportToExcel(data, filename, reportTitle) {
     });
 
     const totalRow = data.clients.length + 6;
-    ['A', 'B', 'C', 'D', 'E', 'F', 'G'].forEach((col) => {
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].forEach((col) => {
       const cell = `${col}${totalRow}`;
+      const isMoney = col === 'G' || col === 'H' || col === 'I';
       if (ws1[cell]) {
         ws1[cell].s = {
           font: { sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
           fill: { fgColor: { rgb: '1E3A52' } },
-          alignment: { horizontal: col === 'G' ? 'left' : 'right' },
-          numFmt: col === 'G' ? '₪#,##0' : undefined,
+          alignment: { horizontal: isMoney ? 'left' : 'right' },
+          numFmt: isMoney ? '₪#,##0' : undefined,
         };
       }
     });
@@ -7261,11 +7367,13 @@ async function exportToExcel(data, filename, reportTitle) {
       [reportTitle || 'דוח גבייה'],
       ['פירוט חשבוניות לפי לקוח'],
       [],
-      ['לקוח', 'תנאי תשלום', 'מס\' חשבונית', 'תאריך הוצאה', 'תאריך פירעון', 'ימי איחור', 'סכום'],
+      ['לקוח', 'תנאי תשלום', 'מס\' חשבונית', 'תאריך הוצאה', 'תאריך פירעון', 'ימי איחור', 'סכום', 'סטטוס'],
     ];
 
     data.clients.forEach((c) => {
       c.invoices.forEach((inv, invIdx) => {
+        const due = invDueMs(inv);
+        const status = (due !== null && due < excelNowMs) ? 'עבר' : 'עתידי';
         detailData.push([
           invIdx === 0 ? c.name : '',
           invIdx === 0 ? (c.payment_terms || '') : '',
@@ -7274,13 +7382,14 @@ async function exportToExcel(data, filename, reportTitle) {
           formatDate(inv.calculated_due_date || inv.doc_payment_date),
           (inv.daysOverdue || inv.days_overdue || 0),
           Number(inv.doc_balance),
+          status,
         ]);
       });
-      detailData.push(['', '', '', '', '', `סה"כ ${c.name}:`, Number(c.total)]);
+      detailData.push(['', '', '', '', '', `סה"כ ${c.name}:`, Number(c.total), '']);
       detailData.push([]);
     });
 
-    detailData.push(['', '', '', '', '', 'סה"כ דוח:', Number(data.grandTotal || data.total || 0)]);
+    detailData.push(['', '', '', '', '', 'סה"כ דוח:', Number(data.grandTotal || data.total || 0), '']);
 
     const ws2 = XLSX.utils.aoa_to_sheet(detailData);
     ws2['!cols'] = [
@@ -7291,11 +7400,12 @@ async function exportToExcel(data, filename, reportTitle) {
       { width: 14 },
       { width: 12 },
       { width: 16 },
+      { width: 12 },
     ];
     ws2['!views'] = [{ RTL: true }];
     ws2['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
     ];
 
     if (ws2['A1']) {
@@ -7312,7 +7422,7 @@ async function exportToExcel(data, filename, reportTitle) {
       };
     }
 
-    ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4'].forEach((cell) => {
+    ['A4', 'B4', 'C4', 'D4', 'E4', 'F4', 'G4', 'H4'].forEach((cell) => {
       if (ws2[cell]) {
         ws2[cell].s = {
           font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
@@ -7324,6 +7434,91 @@ async function exportToExcel(data, filename, reportTitle) {
     });
 
     XLSX.utils.book_append_sheet(wb, ws2, 'פירוט חשבוניות');
+
+    // גיליון גיול חובות קלאסי (0-30 / 31-60 / 61-90 / 90+)
+    const agingData = [
+      [reportTitle || 'דוח גבייה'],
+      ['גיול חובות באיחור'],
+      [],
+      ['שם לקוח', '0-30 יום', '31-60 יום', '61-90 יום', '90+ יום', 'סה"כ באיחור'],
+    ];
+
+    data.clients.forEach((c, idx) => {
+      const ag = clientSplits[idx].aging;
+      const totalAging = ag.aging_0_30 + ag.aging_31_60 + ag.aging_61_90 + ag.aging_90plus;
+      if (totalAging <= 0) return;
+      agingData.push([
+        c.name,
+        ag.aging_0_30,
+        ag.aging_31_60,
+        ag.aging_61_90,
+        ag.aging_90plus,
+        totalAging,
+      ]);
+    });
+
+    agingData.push([]);
+    agingData.push([
+      'סה"כ',
+      grandAging.aging_0_30,
+      grandAging.aging_31_60,
+      grandAging.aging_61_90,
+      grandAging.aging_90plus,
+      grandAging.aging_0_30 + grandAging.aging_31_60 + grandAging.aging_61_90 + grandAging.aging_90plus,
+    ]);
+
+    const ws3 = XLSX.utils.aoa_to_sheet(agingData);
+    ws3['!cols'] = [
+      { width: 34 },
+      { width: 15 },
+      { width: 15 },
+      { width: 15 },
+      { width: 15 },
+      { width: 17 },
+    ];
+    ws3['!views'] = [{ RTL: true }];
+    ws3['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
+    ];
+
+    if (ws3['A1']) {
+      ws3['A1'].s = {
+        font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '1E3A52' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      };
+    }
+    if (ws3['A2']) {
+      ws3['A2'].s = {
+        font: { sz: 11, italic: true, color: { rgb: '6B7280' } },
+        alignment: { horizontal: 'center' },
+      };
+    }
+
+    ['A4', 'B4', 'C4', 'D4', 'E4', 'F4'].forEach((cell) => {
+      if (ws3[cell]) {
+        ws3[cell].s = {
+          font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: '3DB5B1' } },
+          alignment: { horizontal: 'center' },
+          border: thinBorder(),
+        };
+      }
+    });
+
+    const agingBodyRows = agingData.length - 4;
+    for (let r = 0; r < agingBodyRows; r++) {
+      const rowNum = r + 5;
+      ['B', 'C', 'D', 'E', 'F'].forEach((col) => {
+        const cell = `${col}${rowNum}`;
+        if (ws3[cell] && typeof ws3[cell].v === 'number') {
+          ws3[cell].s = { numFmt: '₪#,##0', alignment: { horizontal: 'left' } };
+        }
+      });
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws3, 'גיול חובות');
 
     XLSX.writeFile(wb, filename, {
       bookType: 'xlsx',
@@ -7907,6 +8102,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
   
   // 🆕 בורר תאריך לדוח גלובלי
   const [globalReportDate, setGlobalReportDate] = useState('');
+  const [globalReportDateFrom, setGlobalReportDateFrom] = useState(''); // אופציונלי - ריק = ללא סינון תחתון
   const [showGlobalReport, setShowGlobalReport] = useState(false);
 
   if (!isA) return null;
@@ -8122,46 +8318,82 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
     return groupInvoicesByClient(items);
   }, [clientsWithInvoices]);
 
-  // 🆕 דוח גלובלי "עד תאריך X"
+  // 🆕 דוח גלובלי "מתאריך - עד תאריך X" + הפרדת עבר/עתידי + גיול קלאסי
   const globalReport = useMemo(() => {
     if (!globalReportDate) return null;
     const targetDate = new Date(globalReportDate);
     targetDate.setHours(23, 59, 59, 999);
     const targetMs = targetDate.getTime();
-    
+    let fromMs = null;
+    if (globalReportDateFrom) {
+      const fromDate = new Date(globalReportDateFrom);
+      fromDate.setHours(0, 0, 0, 0);
+      fromMs = fromDate.getTime();
+    }
+    const nowRef = new Date(todayMs);
+
     const clientMap = new Map();
     let grandTotal = 0;
     let totalInvoices = 0;
-    
+    let grandOverdue = 0;
+    let grandFuture = 0;
+    const grandAging = { aging_0_30: 0, aging_31_60: 0, aging_61_90: 0, aging_90plus: 0 };
+
     for (const client of clientsWithInvoices) {
       const relevantInvoices = client.invoices.filter(inv => {
         if (!inv.calculated_due_date) return false;
-        return inv.calculated_due_date.getTime() <= targetMs;
+        const dueTime = inv.calculated_due_date.getTime();
+        if (dueTime > targetMs) return false;
+        if (fromMs !== null && dueTime < fromMs) return false;
+        return true;
       });
-      
+
       if (relevantInvoices.length === 0) continue;
-      
-      const clientTotal = relevantInvoices.reduce((s, i) => s + Number(i.doc_balance), 0);
+
+      let overdueSum = 0;
+      let futureSum = 0;
+      const aging = { aging_0_30: 0, aging_31_60: 0, aging_61_90: 0, aging_90plus: 0 };
+      const mappedInvoices = relevantInvoices.map(inv => {
+        const dueMs = inv.calculated_due_date.getTime();
+        const days = Math.floor((todayMs - dueMs) / 86400000);
+        const bal = Number(inv.doc_balance) || 0;
+        if (dueMs < todayMs) overdueSum += bal; else futureSum += bal;
+        const cat = categorizeInvoiceByAging(inv, nowRef);
+        if (cat && aging[cat.bucket] !== undefined) aging[cat.bucket] += bal;
+        return { ...inv, daysOverdue: Math.max(0, days) };
+      });
+
+      const clientTotal = overdueSum + futureSum;
       clientMap.set(client.bina_customer_id, {
         ...client,
-        invoices: relevantInvoices.map(inv => {
-          const days = Math.floor((todayMs - inv.calculated_due_date.getTime()) / 86400000);
-          return { ...inv, daysOverdue: Math.max(0, days) };
-        }),
+        invoices: mappedInvoices,
         total: clientTotal,
+        overdueSum,
+        futureSum,
+        aging,
       });
       grandTotal += clientTotal;
       totalInvoices += relevantInvoices.length;
+      grandOverdue += overdueSum;
+      grandFuture += futureSum;
+      grandAging.aging_0_30 += aging.aging_0_30;
+      grandAging.aging_31_60 += aging.aging_31_60;
+      grandAging.aging_61_90 += aging.aging_61_90;
+      grandAging.aging_90plus += aging.aging_90plus;
     }
-    
+
     return {
       targetDate: globalReportDate,
+      fromDate: globalReportDateFrom || null,
       clients: Array.from(clientMap.values()).sort((a, b) => b.total - a.total),
       grandTotal,
       totalInvoices,
       clientsCount: clientMap.size,
+      grandOverdue,
+      grandFuture,
+      grandAging,
     };
-  }, [clientsWithInvoices, globalReportDate]);
+  }, [clientsWithInvoices, globalReportDate, globalReportDateFrom, todayMs]);
 
   const totalOverdue = overdueByMonth.reduce((s, m) => s + m.total, 0);
   const totalThisWeek = thisWeekClients.reduce((s, c) => s + c.total, 0);
@@ -8463,20 +8695,34 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
         background: 'linear-gradient(135deg, #faf5ff, #fff)',
         padding: 16, borderRadius: 12, marginBottom: 20,
         border: '2px solid #9333ea30',
-        display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+        display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap',
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 6 }}>
-          📊 דוח גבייה כולל עד תאריך:
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1E3A52', display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'center' }}>
+          📊 דוח גבייה כולל:
         </div>
-        <input
-          type="date"
-          value={globalReportDate}
-          onChange={e => setGlobalReportDate(e.target.value)}
-          style={{
-            padding: '8px 12px', fontSize: 14, border: '1px solid #d8b4fe',
-            borderRadius: 6, fontFamily: 'inherit', direction: 'ltr',
-          }}
-        />
+        <div className="debt-date-filters" style={{ marginBottom: 0 }}>
+          <div className="debt-date-filter">
+            <label>מתאריך (אופציונלי):</label>
+            <input
+              type="date"
+              value={globalReportDateFrom}
+              max={globalReportDate || undefined}
+              onChange={e => setGlobalReportDateFrom(e.target.value)}
+            />
+            {globalReportDateFrom && (
+              <button onClick={() => setGlobalReportDateFrom('')} className="debt-clear-date" title="נקה">✕</button>
+            )}
+          </div>
+          <div className="debt-date-filter">
+            <label>עד תאריך:</label>
+            <input
+              type="date"
+              value={globalReportDate}
+              min={globalReportDateFrom || undefined}
+              onChange={e => setGlobalReportDate(e.target.value)}
+            />
+          </div>
+        </div>
         {globalReport && (
           <>
             <span style={{ color: '#6b7280', fontSize: 13 }}>
@@ -8491,7 +8737,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
             </button>
             <button onClick={() => setPrintData({ 
               type: 'global', 
-              title: `דוח גבייה עד ${formatDate(globalReportDate)}`,
+              title: `דוח גבייה ${globalReportDateFrom ? `מ-${formatDate(globalReportDateFrom)} ` : ''}עד ${formatDate(globalReportDate)}`,
               data: globalReport,
             })} style={{
               padding: '6px 14px', background: '#fff', color: '#9333ea',
@@ -8500,7 +8746,7 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
             }}>
               🖨️ הדפס
             </button>
-            <button onClick={() => { void exportToExcel(globalReport, `דוח_גביה_עד_${globalReportDate}.xlsx`, `דוח גבייה עד ${formatDate(globalReportDate)}`); }} style={{
+            <button onClick={() => { void exportToExcel(globalReport, `דוח_גביה_${globalReportDateFrom ? globalReportDateFrom + '_עד_' : 'עד_'}${globalReportDate}.xlsx`, `דוח גבייה ${globalReportDateFrom ? `מ-${formatDate(globalReportDateFrom)} ` : ''}עד ${formatDate(globalReportDate)}`); }} style={{
               padding: '6px 14px', background: '#fff', color: '#10b981',
               border: '1px solid #10b981', borderRadius: 6, fontWeight: 700, fontSize: 13,
               cursor: 'pointer', fontFamily: 'inherit',
@@ -8515,9 +8761,87 @@ function DebtCollectionDashboard({ allClients, debtSnapshots, isA, sb, onDebtRel
       {showGlobalReport && globalReport && (
         <div style={{ ...sectionCard, border: '2px solid #9333ea' }}>
           <div style={{ ...sectionHeaderStyle('linear-gradient(135deg, #faf5ff, #fff)') }}>
-            <span style={{ fontSize: 16 }}>📊 דוח גבייה עד {formatDate(globalReportDate)}</span>
+            <span style={{ fontSize: 16 }}>
+              📊 דוח גבייה {globalReport.fromDate ? `מ-${formatDate(globalReport.fromDate)} ` : ''}עד {formatDate(globalReportDate)}
+            </span>
             <span style={{ color: '#9333ea', fontWeight: 700 }}>{fmtCurrency(globalReport.grandTotal)}</span>
           </div>
+
+          <div style={{ padding: 16 }}>
+            {/* כרטיסי סיכום: חוב עבר / חוב עתידי / סה"כ */}
+            <div className="debt-report-summary-cards">
+              <div className="debt-summary-card debt-overdue-card">
+                <div className="debt-summary-label">⚠️ חוב עבר</div>
+                <div className="debt-summary-value">{globalReport.grandOverdue.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+              </div>
+              <div className="debt-summary-card debt-future-card">
+                <div className="debt-summary-label">📅 חוב עתידי</div>
+                <div className="debt-summary-value">{globalReport.grandFuture.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+              </div>
+              <div className="debt-summary-card debt-total-card">
+                <div className="debt-summary-label">💰 סה"כ</div>
+                <div className="debt-summary-value">{globalReport.grandTotal.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+              </div>
+            </div>
+
+            {/* גיול חובות קלאסי (רק חובות שעברו) */}
+            <div className="debt-aging-block">
+              <div className="debt-aging-title">📊 גיול חובות באיחור</div>
+              <div className="debt-aging-grid">
+                <div className="debt-aging-card debt-aging-fresh">
+                  <div className="debt-aging-label">0-30 יום</div>
+                  <div className="debt-aging-value">{globalReport.grandAging.aging_0_30.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+                </div>
+                <div className="debt-aging-card debt-aging-mid">
+                  <div className="debt-aging-label">31-60 יום</div>
+                  <div className="debt-aging-value">{globalReport.grandAging.aging_31_60.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+                </div>
+                <div className="debt-aging-card debt-aging-old">
+                  <div className="debt-aging-label">61-90 יום</div>
+                  <div className="debt-aging-value">{globalReport.grandAging.aging_61_90.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+                </div>
+                <div className="debt-aging-card debt-aging-critical">
+                  <div className="debt-aging-label">90+ יום</div>
+                  <div className="debt-aging-value">{globalReport.grandAging.aging_90plus.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</div>
+                </div>
+              </div>
+            </div>
+
+            {/* טבלת סיכום לקוחות: חוב עבר / עתידי / סה"כ */}
+            <div style={{ overflowX: 'auto' }}>
+              <table className="debt-summary-table">
+                <thead>
+                  <tr>
+                    <th>לקוח</th>
+                    <th style={{ textAlign: 'left' }}>חוב עבר</th>
+                    <th style={{ textAlign: 'left' }}>חוב עתידי</th>
+                    <th style={{ textAlign: 'left' }}>סה"כ</th>
+                    <th style={{ textAlign: 'center' }}>חשבוניות</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {globalReport.clients.map(c => (
+                    <tr key={c.bina_customer_id}>
+                      <td>{c.name}</td>
+                      <td className="debt-cell-overdue">{c.overdueSum > 0 ? c.overdueSum.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₪' : '—'}</td>
+                      <td className="debt-cell-future">{c.futureSum > 0 ? c.futureSum.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₪' : '—'}</td>
+                      <td className="debt-cell-total">{c.total.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</td>
+                      <td style={{ textAlign: 'center' }}>{c.invoices.length}</td>
+                    </tr>
+                  ))}
+                  <tr className="debt-grand-total-row">
+                    <td>סה"כ</td>
+                    <td style={{ textAlign: 'left', color: '#dc2626' }}>{globalReport.grandOverdue.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</td>
+                    <td style={{ textAlign: 'left', color: '#f59e0b' }}>{globalReport.grandFuture.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</td>
+                    <td style={{ textAlign: 'left', color: '#0d9488' }}>{globalReport.grandTotal.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₪</td>
+                    <td style={{ textAlign: 'center' }}>{globalReport.totalInvoices}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* פירוט לפי לקוח (כרטיסים עם רשימת חשבוניות ופעולות) */}
           {globalReport.clients.map(c => renderClientCard(c, 'overdue'))}
         </div>
       )}

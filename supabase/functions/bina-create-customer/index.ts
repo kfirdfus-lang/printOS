@@ -116,6 +116,26 @@ Deno.serve(async (req) => {
       );
     }
 
+    // 🔍 DEBUG - מטרה: לגלות איזה שדה מכיל את מספר הלקוח
+    console.log("====== BINA CREATE CUSTOMER RESPONSE ======");
+    console.log("Full raw response:", JSON.stringify(parsed, null, 2));
+
+    if (parsed && typeof parsed === "object") {
+      const binaResponse = parsed as Record<string, unknown>;
+      const possibleArrayFields = ["Rows", "rows", "Data", "data", "Results", "results"];
+      for (const field of possibleArrayFields) {
+        const val = binaResponse[field];
+        if (Array.isArray(val) && val.length > 0) {
+          console.log(`Found array in field "${field}", first item keys:`, Object.keys(val[0] as object));
+          console.log("Full first item:", JSON.stringify(val[0], null, 2));
+        }
+      }
+
+      const topLevel = Array.isArray(parsed) ? (parsed[0] ?? {}) : binaResponse;
+      console.log("Top-level keys:", Object.keys(topLevel as object));
+    }
+    console.log("==========================================");
+
     return new Response(JSON.stringify(parsed), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

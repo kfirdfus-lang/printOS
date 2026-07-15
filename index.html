@@ -102,6 +102,25 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .alut-emails-history{background:#f0fdfa;border-right:3px solid #0d9488;padding:12px;border-radius:8px;margin-top:12px}
 .alut-emails-history-title{font-weight:700;color:#0d9488;margin-bottom:8px;font-size:13px}
 .alut-emails-history-item{display:flex;gap:12px;padding:4px 0;font-size:12px;color:#4b5563;align-items:center}
+.global-search-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding-top:100px}
+.global-search-modal{background:#fff;border-radius:12px;width:90%;max-width:600px;max-height:70vh;overflow:hidden;display:flex;flex-direction:column;direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.global-search-input-wrap{padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:12px}
+.global-search-input{flex:1;border:none;outline:none;font-size:16px;font-family:inherit;direction:rtl;background:transparent;color:#1f2937}
+.global-search-esc{background:#f3f4f6;padding:4px 10px;border-radius:4px;font-size:12px;color:#6b7280;cursor:pointer}
+.global-search-results{flex:1;overflow-y:auto;padding:8px 0}
+.gs-empty{padding:40px 20px;text-align:center;color:#9ca3af}
+.gs-loading{padding:40px 20px;text-align:center;color:#6b7280}
+.gs-group{margin-bottom:8px}
+.gs-group-title{padding:8px 20px;font-size:12px;font-weight:700;color:#6b7280;background:#f9fafb;letter-spacing:.5px}
+.gs-result{padding:10px 20px;cursor:pointer;border-right:3px solid transparent;transition:background .1s}
+.gs-result:hover,.gs-result.selected{background:#f0fdfa;border-right-color:#0d9488}
+.gs-result-main{font-weight:600;font-size:14px;color:#1f2937;margin-bottom:2px}
+.gs-result-sub{font-size:12px;color:#6b7280}
+.global-search-footer{padding:10px 20px;border-top:1px solid #e5e7eb;background:#f9fafb;font-size:12px;color:#6b7280;text-align:center}
+.global-search-trigger{background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:background .15s;font-family:inherit;color:#4b5563}
+.global-search-trigger:hover{background:#e5e7eb}
+.global-search-hint{background:#d1d5db;padding:2px 6px;border-radius:3px;font-size:11px;font-family:monospace;color:#4b5563}
+@media (max-width:640px){.global-search-backdrop{padding-top:20px}.global-search-modal{width:95%;max-height:85vh}.global-search-hint{display:none}}
 .alut-season-summary{background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%);border:2px solid #14b8a6;border-radius:12px;padding:20px;margin-bottom:20px}
 .alut-season-title{font-size:18px;font-weight:900;color:#0d9488;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .alut-season-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -11052,6 +11071,24 @@ function AlutDashboard(){
     setLoading(false);
   };
   useEffect(()=>{setLoading(true);loadData();const t=setInterval(loadData,30000);return()=>clearInterval(t);},[]);
+  const ordersRef=useRef([]);
+  useEffect(()=>{
+    ordersRef.current=orders;
+    if(window.__alutPendingOpenId!=null){
+      const o=orders.find(x=>String(x.id)===String(window.__alutPendingOpenId));
+      if(o){setDetailOrder(o);window.__alutPendingOpenId=null;}
+    }
+  },[orders]);
+  useEffect(()=>{
+    const h=(e)=>{
+      const id=e.detail&&e.detail.id;
+      if(id==null)return;
+      const o=ordersRef.current.find(x=>String(x.id)===String(id));
+      if(o)setDetailOrder(o);else window.__alutPendingOpenId=id;
+    };
+    window.addEventListener("printos-open-alut",h);
+    return()=>window.removeEventListener("printos-open-alut",h);
+  },[]);
   const filtered=useMemo(()=>{
     return orders.filter(o=>{
       const items=o.items||[];
@@ -11391,6 +11428,125 @@ function VacationFormManager({user}){
   </div>;
 }
 
+// ── GLOBAL SEARCH (Ctrl+K) ──
+const GS_GROUPS_META=[
+  {key:"clients",icon:"👥",title:"לקוחות",type:"client"},
+  {key:"tasks",icon:"✅",title:"משימות",type:"task"},
+  {key:"orders",icon:"📦",title:"הזמנות בינה",type:"order"},
+  {key:"quotes",icon:"💰",title:"הצעות מחיר",type:"quote"},
+  {key:"deliveryNotes",icon:"🚚",title:"תעודות משלוח",type:"deliveryNote"},
+  {key:"alutOrders",icon:"🗓️",title:"אלוט",type:"alut"},
+];
+function gsMatch(value,q){
+  if(value===null||value===undefined)return false;
+  return String(value).toLowerCase().includes(q);
+}
+function gsSearch(query,data){
+  if(!query||query.trim().length<2)return{total:0,groups:[]};
+  const q=query.trim().toLowerCase();
+  const clientMatches=(data.clients||[]).filter(c=>gsMatch(c.name,q)||gsMatch(c.contact_name,q)||gsMatch(c.phone,q)||gsMatch(c.email,q)||gsMatch(c.bina_customer_id,q)).slice(0,5);
+  const taskMatches=(data.tasks||[]).filter(t=>gsMatch(t.title,q)||gsMatch(t.client_name,q)||gsMatch(t.assignee,q)).slice(0,5);
+  const orderMatches=(data.orders||[]).filter(o=>gsMatch(o.bina_doc_id,q)||gsMatch(o.title,q)||gsMatch(o.bina_cust_name,q)).slice(0,5);
+  const quoteMatches=(data.quotes||[]).filter(o=>gsMatch(o.bina_doc_id,q)||gsMatch(o.title,q)||gsMatch(o.bina_cust_name,q)).slice(0,5);
+  const dnMatches=(data.deliveryNotes||[]).filter(s=>gsMatch(s.delivery_number,q)||gsMatch(s.customer_name,q)||gsMatch(s.customer_address,q)||gsMatch(s.customer_phone,q)).slice(0,5);
+  const alutMatches=(data.alutOrders||[]).filter(a=>gsMatch(a.order_number,q)||gsMatch(a.company_name,q)||gsMatch(a.contact_name,q)).slice(0,5);
+  const byKey={clients:clientMatches,tasks:taskMatches,orders:orderMatches,quotes:quoteMatches,deliveryNotes:dnMatches,alutOrders:alutMatches};
+  const groups=GS_GROUPS_META.map(g=>({...g,items:byKey[g.key]||[]})).filter(g=>g.items.length>0);
+  const total=groups.reduce((s,g)=>s+g.items.length,0);
+  return{total,groups};
+}
+function gsResultText(item,type){
+  let mainText="",subText="";
+  if(type==="client"){mainText=item.name||"לקוח ללא שם";subText=[item.contact_name,item.phone,item.email].filter(Boolean).join(" • ");}
+  else if(type==="task"){mainText=item.title||"משימה";subText=[item.client_name,item.dept,item.assignee].filter(Boolean).join(" • ");}
+  else if(type==="order"){mainText=`${item.bina_doc_id?`#${item.bina_doc_id} · `:""}${item.title||"הזמנה"}`;subText=item.bina_cust_name||"";}
+  else if(type==="quote"){mainText=`${item.bina_doc_id?`#${item.bina_doc_id} · `:""}${item.title||"הצעה"}`;subText=item.bina_cust_name||"";}
+  else if(type==="deliveryNote"){mainText=`תעודה #${item.delivery_number}`;subText=[item.customer_name,item.customer_address].filter(Boolean).join(" • ");}
+  else if(type==="alut"){mainText=`הזמנה #${item.order_number}`;subText=item.company_name||"";}
+  return{mainText,subText};
+}
+function GlobalSearch({onClose,onNavigate}){
+  const [query,setQuery]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [data,setData]=useState({clients:[],tasks:[],orders:[],quotes:[],deliveryNotes:[],alutOrders:[]});
+  const [selectedIndex,setSelectedIndex]=useState(0);
+  const inputRef=useRef(null);
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      setLoading(true);
+      try{
+        const [c,t,o,q,dn,al]=await Promise.all([
+          supabaseClient.from("clients").select("id,name,contact_name,phone,email,bina_customer_id").limit(2000),
+          supabaseClient.from("tasks").select("id,title,client_name,assignee,dept,status").is("archived_at",null).limit(2000),
+          supabaseClient.from("orders").select("id,bina_doc_id,title,bina_cust_name,task_id").limit(1000),
+          supabaseClient.from("quotes").select("id,bina_doc_id,title,bina_cust_name").limit(1000),
+          supabaseClient.from("delivery_notes").select("id,delivery_number,customer_name,customer_address,customer_phone,task_id").limit(1000),
+          supabaseClient.from("alut_orders").select("id,order_number,company_name,contact_name").limit(1000),
+        ]);
+        if(!alive)return;
+        setData({
+          clients:c.data||[],tasks:t.data||[],orders:o.data||[],
+          quotes:q.data||[],deliveryNotes:dn.data||[],alutOrders:al.data||[],
+        });
+      }catch(err){console.error("Global search load error:",err);}
+      finally{if(alive)setLoading(false);}
+    })();
+    setTimeout(()=>inputRef.current?.focus(),50);
+    return()=>{alive=false;};
+  },[]);
+  const {total,groups}=useMemo(()=>gsSearch(query,data),[query,data]);
+  const flatResults=useMemo(()=>groups.flatMap(g=>g.items.map(item=>({item,type:g.type}))),[groups]);
+  useEffect(()=>{setSelectedIndex(0);},[query]);
+  useEffect(()=>{
+    const h=(e)=>{
+      if(e.key==="Escape"){e.preventDefault();onClose();return;}
+      if(e.key==="ArrowDown"){e.preventDefault();setSelectedIndex(p=>Math.min(p+1,Math.max(flatResults.length-1,0)));}
+      else if(e.key==="ArrowUp"){e.preventDefault();setSelectedIndex(p=>Math.max(p-1,0));}
+      else if(e.key==="Enter"){e.preventDefault();const r=flatResults[selectedIndex];if(r){onNavigate(r.type,r.item);onClose();}}
+    };
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[flatResults,selectedIndex,onClose,onNavigate]);
+  let flatIdx=-1;
+  return<div className="global-search-backdrop" onClick={onClose}>
+    <div className="global-search-modal" onClick={e=>e.stopPropagation()}>
+      <div className="global-search-input-wrap">
+        <span style={{fontSize:18}}>🔍</span>
+        <input ref={inputRef} className="global-search-input" value={query} onChange={e=>setQuery(e.target.value)} placeholder="הקלד לחיפוש לקוחות, משימות, הזמנות, תעודות, הצעות, אלוט..."/>
+        <span className="global-search-esc" onClick={onClose}>ESC</span>
+      </div>
+      <div className="global-search-results">
+        {loading&&<div className="gs-loading">🔄 טוען נתונים...</div>}
+        {!loading&&query.trim().length<2&&<div className="gs-empty">
+          <div style={{fontSize:32,marginBottom:8}}>🔍</div>
+          <div>הקלד לפחות 2 תווים לחיפוש</div>
+          <div style={{fontSize:12,marginTop:12,color:"#9ca3af"}}>מחפש בלקוחות, משימות, הזמנות, תעודות, הצעות ואלוט</div>
+        </div>}
+        {!loading&&query.trim().length>=2&&total===0&&<div className="gs-empty">
+          <div style={{fontSize:32,marginBottom:8}}>😔</div>
+          <div>לא נמצאו תוצאות עבור "{query}"</div>
+        </div>}
+        {!loading&&groups.map(group=><div key={group.key} className="gs-group">
+          <div className="gs-group-title">{group.icon} {group.title} ({group.items.length})</div>
+          {group.items.map(item=>{
+            flatIdx++;
+            const idx=flatIdx;
+            const {mainText,subText}=gsResultText(item,group.type);
+            return<div key={group.type+"-"+item.id} className={"gs-result"+(idx===selectedIndex?" selected":"")}
+              onClick={()=>{onNavigate(group.type,item);onClose();}}
+              onMouseEnter={()=>setSelectedIndex(idx)}>
+              <div className="gs-result-main">{mainText}</div>
+              {subText&&<div className="gs-result-sub">{subText}</div>}
+            </div>;
+          })}
+        </div>)}
+      </div>
+      <div className="global-search-footer">💡 חצים ↑↓ לניווט · Enter לפתיחה · ESC לסגירה</div>
+    </div>
+  </div>;
+}
+
 // ── MAIN APP ──
 function App(){
   const [user,setUser]=useState(null);
@@ -11435,6 +11591,7 @@ function App(){
   const [editClientDelivery,setEditClientDelivery]=useState(null);
   const [showSignupGenerator,setShowSignupGenerator]=useState(false);
 
+  const [showGlobalSearch,setShowGlobalSearch]=useState(false);
   const [showReportModal,setShowReportModal]=useState(false);
   const [emailTestBusy,setEmailTestBusy]=useState(false);
   const [deadlineAlertBusy,setDeadlineAlertBusy]=useState(false);
@@ -11442,6 +11599,37 @@ function App(){
   const [reportRecipients,setReportRecipients]=useState([]);
 
   const notify=(m,c="#16A34A")=>{setNotif({m,c});setTimeout(()=>setNotif(null),3000);};
+
+  useEffect(()=>{
+    const h=(e)=>{
+      if((e.ctrlKey||e.metaKey)&&(e.key==="k"||e.key==="K")){e.preventDefault();setShowGlobalSearch(v=>!v);}
+    };
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[]);
+  const handleGlobalSearchNavigate=(type,item)=>{
+    setShowSales(false);setShowQuotes(false);setShowDebt(false);
+    if(type==="client"){
+      setTab("clients");
+      const full=clients.find(c=>String(c.id)===String(item.id));
+      if(full)setEditClientDelivery(full);
+    }else if(type==="task"){
+      setTab("tasks");
+      const full=[...tasks,...archivedTasks].find(t=>String(t.id)===String(item.id));
+      setDet(full||item);
+    }else if(type==="order"){
+      const full=item.task_id?[...tasks,...archivedTasks].find(t=>String(t.id)===String(item.task_id)):null;
+      if(full){setTab("tasks");setDet(full);}else setTab("tasks");
+    }else if(type==="quote"){
+      setShowQuotes(true);setTab("sales");
+    }else if(type==="deliveryNote"){
+      setTab("delivery-notes");
+    }else if(type==="alut"){
+      window.__alutPendingOpenId=item.id;
+      setTab("alut-dashboard");
+      setTimeout(()=>window.dispatchEvent(new CustomEvent("printos-open-alut",{detail:{id:item.id}})),0);
+    }
+  };
 
   const bcfDigits=s=>String(s||"").replace(/\D/g,"");
   const openBinaClientModal=()=>{setBcf(BCF_DEFAULT());setBcfErr({});setBinaClientOpen(true);};
@@ -11963,6 +12151,10 @@ function App(){
 
     {/* Nav */}
     <nav style={{padding:"12px 10px",flex:1,overflowY:"auto"}}>
+      <button type="button" onClick={()=>{setShowGlobalSearch(true);setMob(false);}} className="global-search-trigger" title="חיפוש (Ctrl+K)" style={{width:"100%",justifyContent:"space-between",marginBottom:10}}>
+        <span style={{display:"flex",alignItems:"center",gap:8}}>🔍 חיפוש גלובלי</span>
+        <span className="global-search-hint">Ctrl+K</span>
+      </button>
       {navs.map(n=><button key={n.id} type="button" onClick={()=>{setTab(n.id);setMob(false);if(n.id==="sales"){setShowSales(true);setShowQuotes(false);setShowDebt(false);}else{setShowSales(false);setShowQuotes(false);setShowDebt(false);}}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:"none",cursor:"pointer",background:tab===n.id?"var(--blue-light)":"transparent",color:tab===n.id?"var(--blue)":"var(--text2)",fontWeight:tab===n.id?700:500,fontSize:13,marginBottom:2,fontFamily:"inherit",transition:"all 0.15s"}}>
         <span style={{fontSize:15}}>{n.ic}</span>{n.lb}
         {tab===n.id&&<div style={{marginRight:"auto",width:6,height:6,borderRadius:"50%",background:"var(--blue)"}}/>}
@@ -12024,6 +12216,7 @@ function App(){
         {tab!=="dashboard"&&<><span style={{color:"var(--text3)"}}>›</span><span style={{fontSize:13,color:"var(--text2)",fontWeight:600}}>{navs.find(n=>n.id===tab)?.lb}</span></>}
       </div>
       <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setShowGlobalSearch(true)} title="חיפוש (Ctrl+K)" style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text)",cursor:"pointer",padding:"5px 10px",fontSize:16}}>🔍</button>
         {tab!=="dashboard"&&<button type="button" onClick={()=>{setTab("dashboard");setShowSales(false);setShowQuotes(false);setShowDebt(false);}} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text2)",cursor:"pointer",padding:"5px 10px",fontSize:12,fontFamily:"inherit"}}>🏠</button>}
         <button onClick={()=>setMob(true)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,color:"var(--text)",cursor:"pointer",padding:"5px 10px",fontSize:16}}>☰</button>
       </div>
@@ -12396,6 +12589,8 @@ function App(){
     {editClientDelivery&&<ClientDeliveryEditModal client={editClientDelivery} user={user} onClose={()=>setEditClientDelivery(null)} onSaved={updated=>{setClients(p=>p.map(c=>c.id===updated.id?updated:c));setEditClientDelivery(null);}}/>}
 
     {showSignupGenerator&&<SignupLinkGeneratorModal user={user} onClose={()=>setShowSignupGenerator(false)} onCreated={()=>{}}/>}
+
+    {showGlobalSearch&&<GlobalSearch onClose={()=>setShowGlobalSearch(false)} onNavigate={handleGlobalSearchNavigate}/>}
 
     <Modal open={!!det} onClose={()=>setDet(null)} title={det?.title}>
       {det&&<div>

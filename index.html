@@ -84,6 +84,24 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .alut-itzik-history-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#831843;flex-wrap:wrap}
 .alut-itzik-download-btn{background:#fff;border:1px solid #f9a8d4;color:#be185d;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;min-height:32px}
 .alut-item-work-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.alut-auto-emails-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1050;display:flex;align-items:center;justify-content:center;padding:20px}
+.alut-auto-emails-modal{background:#fff;border-radius:16px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;direction:rtl;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.alut-auto-emails-header{padding:20px 30px;border-bottom:2px solid #f3f4f6;background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;border-radius:16px 16px 0 0}
+.alut-auto-emails-header h3{margin:0;font-size:18px;font-weight:900}
+.alut-auto-emails-body{padding:20px 30px}
+.alut-email-option{background:#f9fafb;border:2px solid #e5e7eb;border-radius:8px;padding:15px;margin-bottom:12px}
+.alut-email-option.checked{border-color:#0d9488;background:#f0fdfa}
+.alut-email-option-disabled{opacity:.6;background:#f3f4f6}
+.alut-email-checkbox-row{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
+.alut-email-preview-btn{background:transparent;border:1px solid #0d9488;color:#0d9488;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;margin-top:8px;font-family:inherit}
+.alut-email-preview-box{margin-top:10px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff}
+.alut-auto-emails-footer{padding:15px 30px;border-top:1px solid #f3f4f6;display:flex;gap:12px;justify-content:flex-end}
+.alut-btn-send-emails{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:10px 24px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px}
+.alut-btn-send-emails:disabled{opacity:.6;cursor:wait}
+.alut-btn-cancel{background:#f3f4f6;color:#374151;padding:10px 24px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px}
+.alut-emails-history{background:#f0fdfa;border-right:3px solid #0d9488;padding:12px;border-radius:8px;margin-top:12px}
+.alut-emails-history-title{font-weight:700;color:#0d9488;margin-bottom:8px;font-size:13px}
+.alut-emails-history-item{display:flex;gap:12px;padding:4px 0;font-size:12px;color:#4b5563;align-items:center}
 .alut-season-summary{background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%);border:2px solid #14b8a6;border-radius:12px;padding:20px;margin-bottom:20px}
 .alut-season-title{font-size:18px;font-weight:900;color:#0d9488;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .alut-season-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -9899,10 +9917,206 @@ function AlutPricingModal({pricingRows,onClose,onSaved}){
   </Modal>;
 }
 
-function AlutItemStatusModal({item,orderNumber,onClose,onSaved}){
+const ALUT_KARIN_EMAIL="karinha@alut.org.il";
+const ALUT_EMAIL_FROM="דפוס נטלי <orders@natalie-print.com>";
+const ALUT_EMAIL_TYPE_LABELS={hard:"לוח שולחני קשיח",duplex:"לוח שולחני דופלקס",wall:"לוח קיר"};
+
+const ALUT_STATUS_EMAIL_MAP={
+  in_print:{to_karin:{enabled:true},to_client:{enabled:false}},
+  shipped:{to_karin:{enabled:true},to_client:{enabled:false}},
+  delivered:{to_karin:{enabled:true},to_client:{enabled:true}},
+};
+
+function alutWrapEmailHtml(bodyContent){
+  return`<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head><meta charset="UTF-8">
+<style>
+body{font-family:'Heebo',Arial,sans-serif;direction:rtl;color:#1f2937;background:#f9fafb;padding:20px;margin:0}
+.email-container{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+.email-header{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:20px 30px;text-align:right}
+.email-header h1{margin:0;font-size:24px;font-weight:900}
+.email-body{padding:30px;font-size:15px;line-height:1.7;text-align:right}
+.email-body p{margin:10px 0}
+.email-body ul{padding-right:20px}
+.email-body strong{color:#0d9488}
+.email-footer{background:#f3f4f6;padding:20px 30px;text-align:right;font-size:13px;color:#6b7280;border-top:1px solid #e5e7eb}
+.email-footer strong{color:#0d9488;font-size:14px}
+</style></head>
+<body>
+<div class="email-container">
+<div class="email-header"><h1>🖨️ נטלי פרינט</h1></div>
+<div class="email-body">${bodyContent}</div>
+<div class="email-footer">
+<p style="margin:4px 0;"><strong>בברכה, נטלי פרינט - דפוס נטלי</strong></p>
+<p style="margin:4px 0;">📧 orders@natalie-print.com</p>
+<p style="margin:4px 0;">🌐 www.natalie-print.com</p>
+</div>
+</div>
+</body></html>`;
+}
+
+function alutBuildKarinEmail(item,order,newStatus){
+  const typeLabel=ALUT_EMAIL_TYPE_LABELS[item.calendar_type]||(ALUT_CALENDAR_TYPES[item.calendar_type]||{}).label||item.calendar_type;
+  const orderNum=order.order_number;
+  const companyName=order.company_name;
+  const qty=Number(item.quantity||0).toLocaleString("he-IL");
+  const templates={
+    in_print:{
+      subject:`הזמנה #${orderNum} (${companyName}) נכנסה להדפסה`,
+      body:`<p>שלום קארין,</p>
+        <p>אנחנו שמחים לעדכן שהזמנה מספר <strong>${orderNum}</strong> של <strong>${companyName}</strong> נכנסה לתהליך הדפסה.</p>
+        <p><strong>פרטים:</strong></p>
+        <ul><li>${qty} ${typeLabel}</li></ul>
+        <p>נעדכן ברגע שהיא יוצאת למשלוח.</p>`
+    },
+    shipped:{
+      subject:`הזמנה #${orderNum} (${companyName}) יצאה למשלוח`,
+      body:`<p>שלום קארין,</p>
+        <p>הזמנה מספר <strong>${orderNum}</strong> של <strong>${companyName}</strong> יצאה היום למשלוח.</p>
+        <p><strong>פרטים:</strong></p>
+        <ul><li>${qty} ${typeLabel}</li></ul>
+        ${order.contact_name?`<p>איש קשר בלקוח: ${order.contact_name}${order.contact_phone?` - ${order.contact_phone}`:""}</p>`:""}
+        <p>המשלוח אמור להגיע ללקוח בקרוב.</p>`
+    },
+    delivered:{
+      subject:`הזמנה #${orderNum} (${companyName}) נמסרה בהצלחה`,
+      body:`<p>שלום קארין,</p>
+        <p>הזמנה מספר <strong>${orderNum}</strong> של <strong>${companyName}</strong> נמסרה ללקוח בהצלחה!</p>
+        <p><strong>פרטים:</strong></p>
+        <ul><li>${qty} ${typeLabel}</li></ul>
+        <p>ההזמנה הושלמה. תודה!</p>`
+    },
+  };
+  const t=templates[newStatus];
+  if(!t)return null;
+  return{subject:t.subject,html:alutWrapEmailHtml(t.body)};
+}
+
+function alutBuildClientEmail(item,order,newStatus){
+  if(newStatus!=="delivered")return null;
+  const typeLabel=ALUT_EMAIL_TYPE_LABELS[item.calendar_type]||(ALUT_CALENDAR_TYPES[item.calendar_type]||{}).label||item.calendar_type;
+  const contactName=order.contact_name||"לקוח יקר";
+  const qty=Number(item.quantity||0).toLocaleString("he-IL");
+  const body=`<p>שלום ${contactName},</p>
+    <p>שמחים להודיע שההזמנה שלך מנטלי פרינט נמסרה בהצלחה!</p>
+    <p><strong>מה כללה ההזמנה:</strong></p>
+    <ul><li>${qty} ${typeLabel}</li></ul>
+    <p>אנחנו מקווים שאתם מרוצים מהמוצר. לכל שאלה או בעיה - אנחנו כאן.</p>
+    <p>תודה שבחרת בנטלי פרינט!</p>`;
+  return{subject:"ההזמנה שלך מנטלי פרינט נמסרה 📦",html:alutWrapEmailHtml(body)};
+}
+
+async function alutLogSentEmails(itemId,orderId,triggerStatus,results){
+  try{
+    const rows=results.map(r=>({
+      item_id:itemId,order_id:orderId,trigger_status:triggerStatus,
+      recipient_type:r.to,recipient_email:r.email||"",subject:r.subject||"",
+      success:!!r.ok,error_message:r.error?String(r.error.message||r.error):null,
+    }));
+    if(rows.length)await supabaseClient.from("alut_sent_emails").insert(rows);
+  }catch(e){console.warn("alut log sent emails",e);}
+}
+
+function AlutAutoEmailsModal({item,order,newStatus,onClose,onSent}){
+  const emailConfig=ALUT_STATUS_EMAIL_MAP[newStatus];
+  const karinEmail=useMemo(()=>alutBuildKarinEmail(item,order,newStatus),[item,order,newStatus]);
+  const clientEmail=useMemo(()=>alutBuildClientEmail(item,order,newStatus),[item,order,newStatus]);
+  const clientHasEmail=!!(order.contact_email&&order.contact_email.trim());
+  const [sendToKarin,setSendToKarin]=useState(!!(emailConfig?.to_karin?.enabled&&karinEmail));
+  const [sendToClient,setSendToClient]=useState(!!(emailConfig?.to_client?.enabled&&clientEmail&&clientHasEmail));
+  const [showKarinPreview,setShowKarinPreview]=useState(false);
+  const [showClientPreview,setShowClientPreview]=useState(false);
+  const [sending,setSending]=useState(false);
+  const [toast,setToast]=useState(null);
+  const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
+  const statusLabel=(ALUT_STATUS_CONFIG[newStatus]||{}).label||newStatus;
+  const karinAvailable=!!(emailConfig?.to_karin?.enabled&&karinEmail);
+  const clientAvailable=!!(emailConfig?.to_client?.enabled&&clientEmail);
+
+  const handleSend=async()=>{
+    setSending(true);
+    const results=[];
+    try{
+      if(sendToKarin&&karinAvailable){
+        const{error}=await supabaseClient.functions.invoke("send-email",{body:{
+          to:[ALUT_KARIN_EMAIL],subject:karinEmail.subject,html:karinEmail.html,from:ALUT_EMAIL_FROM,
+        }});
+        results.push({to:"karin",email:ALUT_KARIN_EMAIL,subject:karinEmail.subject,ok:!error,error});
+      }
+      if(sendToClient&&clientAvailable&&clientHasEmail){
+        const{error}=await supabaseClient.functions.invoke("send-email",{body:{
+          to:[order.contact_email.trim()],subject:clientEmail.subject,html:clientEmail.html,from:ALUT_EMAIL_FROM,
+        }});
+        results.push({to:"client",email:order.contact_email.trim(),subject:clientEmail.subject,ok:!error,error});
+      }
+      if(results.length)await alutLogSentEmails(item.id,order.id,newStatus,results);
+      const successCount=results.filter(r=>r.ok).length;
+      const failCount=results.filter(r=>!r.ok).length;
+      if(results.length===0){onSent?.();onClose();return;}
+      if(failCount===0){
+        setToast(`✅ ${successCount} מיילים נשלחו בהצלחה`);
+        setTimeout(()=>{onSent?.();onClose();},1700);
+      }else{
+        setToast(`⚠️ ${successCount} נשלחו, ${failCount} נכשלו`);
+        onSent?.();
+        setSending(false);
+      }
+    }catch(err){
+      window.alert("שגיאה: "+(err.message||String(err)));
+      setSending(false);
+    }
+  };
+
+  const skip=()=>{onSent?.();onClose();};
+  if(!emailConfig)return null;
+
+  return<div className="alut-auto-emails-modal-backdrop" onClick={skip}>
+    <div className="alut-auto-emails-modal" onClick={e=>e.stopPropagation()}>
+      <div className="alut-auto-emails-header"><h3>📧 מיילים אוטומטיים - סטטוס: {statusLabel}</h3></div>
+      <div className="alut-auto-emails-body">
+        <p style={{marginTop:0,fontSize:14}}>ההזמנה עודכנה לסטטוס <strong>"{statusLabel}"</strong> ({ct.icon} {item.quantity} {ct.label}).<br/>המערכת יכולה לשלוח את המיילים הבאים:</p>
+
+        <div className={"alut-email-option"+(sendToKarin?" checked":"")+(karinAvailable?"":" alut-email-option-disabled")}>
+          <label className="alut-email-checkbox-row" style={{cursor:karinAvailable?"pointer":"default"}}>
+            <input type="checkbox" checked={sendToKarin} disabled={!karinAvailable} onChange={e=>setSendToKarin(e.target.checked)} style={{accentColor:"#0d9488",width:18,height:18}}/>
+            <span>👤 שלח מייל לקארין ({ALUT_KARIN_EMAIL})</span>
+          </label>
+          {karinAvailable?<>
+            <div style={{fontSize:13,color:"#4b5563",marginTop:8}}>נושא: <strong>{karinEmail.subject}</strong></div>
+            <button type="button" className="alut-email-preview-btn" onClick={()=>setShowKarinPreview(v=>!v)}>{showKarinPreview?"🙈 הסתר תצוגה":"👁️ תצוגה מקדימה"}</button>
+            {showKarinPreview&&<div className="alut-email-preview-box"><iframe title="karin-preview" srcDoc={karinEmail.html} style={{width:"100%",height:320,border:"none"}}/></div>}
+          </>:<div style={{fontSize:12,color:"#9ca3af",marginTop:6}}>(אין מייל אוטומטי לקארין בסטטוס הזה)</div>}
+        </div>
+
+        <div className={"alut-email-option"+(sendToClient?" checked":"")+((clientAvailable&&clientHasEmail)?"":" alut-email-option-disabled")}>
+          <label className="alut-email-checkbox-row" style={{cursor:(clientAvailable&&clientHasEmail)?"pointer":"default"}}>
+            <input type="checkbox" checked={sendToClient} disabled={!clientAvailable||!clientHasEmail} onChange={e=>setSendToClient(e.target.checked)} style={{accentColor:"#0d9488",width:18,height:18}}/>
+            <span>📦 שלח מייל ללקוח {clientHasEmail?`(${order.contact_email.trim()})`:""}</span>
+          </label>
+          {!clientHasEmail?<div style={{fontSize:12,color:"#9ca3af",marginTop:6}}>(אין כתובת מייל ללקוח)</div>
+            :!clientAvailable?<div style={{fontSize:12,color:"#9ca3af",marginTop:6}}>(אין מייל אוטומטי ללקוח בסטטוס הזה)</div>
+            :<>
+              <div style={{fontSize:13,color:"#4b5563",marginTop:8}}>נושא: <strong>{clientEmail.subject}</strong></div>
+              <button type="button" className="alut-email-preview-btn" onClick={()=>setShowClientPreview(v=>!v)}>{showClientPreview?"🙈 הסתר תצוגה":"👁️ תצוגה מקדימה"}</button>
+              {showClientPreview&&<div className="alut-email-preview-box"><iframe title="client-preview" srcDoc={clientEmail.html} style={{width:"100%",height:320,border:"none"}}/></div>}
+            </>}
+        </div>
+      </div>
+      <div className="alut-auto-emails-footer">
+        <button type="button" className="alut-btn-cancel" onClick={skip} disabled={sending}>דלג</button>
+        <button type="button" className="alut-btn-send-emails" onClick={handleSend} disabled={sending||(!sendToKarin&&!sendToClient)}>{sending?"⏳ שולח...":"📤 שלח את המסומנים"}</button>
+      </div>
+    </div>
+    {toast&&<div className="alut-toast">{toast}</div>}
+  </div>;
+}
+
+function AlutItemStatusModal({item,order,orderNumber,onClose,onSaved}){
   const [newStatus,setNewStatus]=useState(item.status);
   const [notes,setNotes]=useState("");
   const [saving,setSaving]=useState(false);
+  const [autoEmails,setAutoEmails]=useState(null);
   const cur=ALUT_STATUS_CONFIG[item.status]||ALUT_STATUS_CONFIG.new;
   const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
   const handleSave=async()=>{
@@ -9922,10 +10136,17 @@ function AlutItemStatusModal({item,orderNumber,onClose,onSaved}){
         const hist=await sb(`alut_status_history?item_id=eq.${item.id}&order=created_at.desc&limit=1`);
         if(hist?.[0])await sb(`alut_status_history?id=eq.${hist[0].id}`,{method:"PATCH",body:JSON.stringify({notes:notes.trim()})});
       }
-      onSaved?.();onClose();
+      onSaved?.();
+      if(order&&ALUT_STATUS_EMAIL_MAP[newStatus]){
+        setAutoEmails({item:{...item,status:newStatus},order,newStatus});
+        setSaving(false);
+        return;
+      }
+      onClose();
     }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
     finally{setSaving(false);}
   };
+  if(autoEmails)return<AlutAutoEmailsModal item={autoEmails.item} order={autoEmails.order} newStatus={autoEmails.newStatus} onSent={()=>onSaved?.()} onClose={onClose}/>;
   return<Modal open={true} onClose={onClose} title={`🔄 שינוי סטטוס - הזמנה #${orderNumber}`} maxWidth={480}>
     <div style={{direction:"rtl"}}>
       <div style={{fontSize:13,color:"var(--text3)",marginBottom:12}}>{ct.icon} {item.quantity} {ct.label}</div>
@@ -10363,18 +10584,21 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [newItem,setNewItem]=useState(ALUT_EMPTY_ITEM());
   const [davachRecords,setDavachRecords]=useState([]);
   const [itzikRecords,setItzikRecords]=useState([]);
+  const [sentEmails,setSentEmails]=useState([]);
   const [showDavachModal,setShowDavachModal]=useState(null);
   const [showItzikModal,setShowItzikModal]=useState(null);
   const [redownloadingId,setRedownloadingId]=useState(null);
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
   const loadWorkOrderRecords=async()=>{
     try{
-      const [davach,itzik]=await Promise.all([
+      const [davach,itzik,emails]=await Promise.all([
         supabaseClient.from("alut_davach_orders").select("*").eq("order_id",order.id).order("generated_at",{ascending:false}),
         supabaseClient.from("alut_itzik_orders").select("*").eq("order_id",order.id).order("generated_at",{ascending:false}),
+        supabaseClient.from("alut_sent_emails").select("*").eq("order_id",order.id).order("sent_at",{ascending:false}),
       ]);
       if(!davach.error)setDavachRecords(davach.data||[]);
       if(!itzik.error)setItzikRecords(itzik.data||[]);
+      if(!emails.error)setSentEmails(emails.data||[]);
     }catch(e){console.warn("alut work orders load",e);}
   };
   const reload=async()=>{
@@ -10461,6 +10685,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
         const ds=alutGetDesignStatus(item);
         const itemDavachRecords=davachRecords.filter(r=>r.item_id===item.id);
         const itemItzikRecords=itzikRecords.filter(r=>r.item_id===item.id);
+        const itemSentEmails=sentEmails.filter(r=>r.item_id===item.id);
         return<div key={item.id} style={{border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:10,background:"#fff"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
             <div style={{fontWeight:700,fontSize:15}}>{ct.icon} {item.quantity} {ct.label} <span style={{fontSize:12,color:"var(--text3)",fontWeight:600}}>({String.fromCharCode(65+itemIndex)})</span></div>
@@ -10497,6 +10722,15 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
               </button>
             </div>)}
           </div>}
+          {itemSentEmails.length>0&&<div className="alut-emails-history">
+            <div className="alut-emails-history-title">📧 מיילים שנשלחו:</div>
+            {itemSentEmails.map(email=><div key={email.id} className="alut-emails-history-item">
+              <span>{new Date(email.sent_at).toLocaleDateString("he-IL")}</span>
+              <span>{email.recipient_type==="karin"?"👤 קארין":"📦 לקוח"}</span>
+              <span>{(ALUT_STATUS_CONFIG[email.trigger_status]||{}).label||email.trigger_status}</span>
+              <span title={email.error_message||""}>{email.success?"✅":"❌"}</span>
+            </div>)}
+          </div>}
         </div>;
       })}
       {addItemOpen?<div style={{marginBottom:12}}>
@@ -10516,7 +10750,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
         <button type="button" onClick={onClose} style={{padding:"10px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44,marginRight:"auto"}}>סגור</button>
       </div>
     </div>
-    {statusItem&&<AlutItemStatusModal item={statusItem} orderNumber={data.order_number} onClose={()=>setStatusItem(null)} onSaved={reload}/>}
+    {statusItem&&<AlutItemStatusModal item={statusItem} order={data} orderNumber={data.order_number} onClose={()=>setStatusItem(null)} onSaved={reload}/>}
     {editItem&&<AlutItemEditModal item={editItem} order={data} pricingRows={pricingRows} onClose={()=>setEditItem(null)} onSaved={reload}/>}
     {showDavachModal&&<AlutDavachModal item={showDavachModal.item} itemIndex={showDavachModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowDavachModal(null)} onSaved={reload}/>}
     {showItzikModal&&<AlutItzikModal item={showItzikModal.item} itemIndex={showItzikModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowItzikModal(null)} onSaved={reload}/>}
@@ -11204,6 +11438,7 @@ function App(){
   const [showReportModal,setShowReportModal]=useState(false);
   const [emailTestBusy,setEmailTestBusy]=useState(false);
   const [deadlineAlertBusy,setDeadlineAlertBusy]=useState(false);
+  const [weeklySummaryBusy,setWeeklySummaryBusy]=useState(false);
   const [reportRecipients,setReportRecipients]=useState([]);
 
   const notify=(m,c="#16A34A")=>{setNotif({m,c});setTimeout(()=>setNotif(null),3000);};
@@ -11867,6 +12102,21 @@ function App(){
               }finally{setDeadlineAlertBusy(false);}
             }} disabled={deadlineAlertBusy} style={{padding:"9px 18px",borderRadius:10,border:"2px solid #f97316",background:deadlineAlertBusy?"#ffedd5":"linear-gradient(135deg,#f97316,#ef4444)",color:deadlineAlertBusy?"#9a3412":"#fff",fontWeight:700,fontSize:13,cursor:deadlineAlertBusy?"wait":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(249,115,22,0.35)",display:"flex",alignItems:"center",gap:6}}>
               {deadlineAlertBusy?"⏳ בודק...":"⏰ בדיקת התראת דדליין"}
+            </button>
+            <button type="button" onClick={async()=>{
+              if(weeklySummaryBusy)return;
+              setWeeklySummaryBusy(true);
+              try{
+                const {data,error}=await supabaseClient.functions.invoke("alut-weekly-summary");
+                const result=data||error;
+                console.log("Weekly summary results:",result);
+                window.alert(JSON.stringify(result,null,2));
+              }catch(e){
+                console.error("Weekly summary failed:",e);
+                window.alert("שגיאה בסיכום שבועי: "+(e.message||String(e)));
+              }finally{setWeeklySummaryBusy(false);}
+            }} disabled={weeklySummaryBusy} style={{padding:"9px 18px",borderRadius:10,border:"2px solid #0d9488",background:weeklySummaryBusy?"#ccfbf1":"linear-gradient(135deg,#0d9488,#14b8a6)",color:weeklySummaryBusy?"#115e59":"#fff",fontWeight:700,fontSize:13,cursor:weeklySummaryBusy?"wait":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(13,148,136,0.35)",display:"flex",alignItems:"center",gap:6}}>
+              {weeklySummaryBusy?"⏳ שולח...":"📊 בדיקת סיכום שבועי"}
             </button>
             <button onClick={()=>setShowReportModal(true)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>
           </div>}

@@ -263,6 +263,65 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
   .alut-table-wrap{display:none!important}
   .alut-cards-wrap{display:flex!important;flex-direction:column;gap:12px}
   .alut-modal-full>div{max-width:100%!important;max-height:100vh!important;border-radius:0!important;height:100vh;padding:20px!important}
+  .alut-kpi-grid{grid-template-columns:repeat(2,1fr)!important}
+}
+.alut-print-title{display:none}
+.alut-btn-print{padding:10px 16px;border-radius:10px;border:1px solid #99f6e4;background:#fff;color:#0d9488;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px}
+.alut-btn-cartons{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 16px;border-radius:8px;font-weight:600;font-size:14px;border:none;cursor:pointer;font-family:inherit;min-height:44px}
+.alut-btn-transfer{background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;font-size:14px;border:none;cursor:pointer;font-family:inherit;min-height:44px}
+.alut-transferred-badge{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;background:#ecfdf5;color:#059669;font-weight:700;font-size:13px;border:1px solid #a7f3d0}
+.alut-deadline-cell{font-size:12px;line-height:1.6}
+.alut-deadline-warning{color:#f59e0b;font-weight:600}
+.alut-deadline-main{color:#1f2937;font-weight:700}
+.alut-deadline-alert{background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;margin-top:4px;display:inline-block;animation:alutPulse 2s infinite}
+@keyframes alutPulse{0%,100%{opacity:1}50%{opacity:.7}}
+tr.alut-item-urgent,tr.alut-item-urgent td{background:#fef3c7!important}
+tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!important}
+.carton-labels-modal{position:fixed;inset:0;background:#f3f4f6;z-index:1000;overflow-y:auto;padding:20px;direction:rtl}
+.carton-labels-header{background:#fff;padding:16px 20px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.05);gap:12px;flex-wrap:wrap}
+.carton-labels-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;max-width:1000px;margin:0 auto}
+.carton-label{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08);border:2px solid #0d9488;page-break-inside:avoid}
+.carton-label-header{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+.carton-label-logo{font-size:16px;font-weight:900}
+.carton-label-num{background:rgba(255,255,255,.25);padding:6px 14px;border-radius:20px;font-weight:900;font-size:15px}
+.carton-label-body{padding:20px}
+.carton-label-small{font-size:11px;color:#9ca3af;letter-spacing:.5px;margin-bottom:4px}
+.carton-label-to{padding-bottom:16px;border-bottom:2px dashed #e5e7eb;margin-bottom:16px}
+.carton-label-company{font-size:20px;font-weight:900;color:#1f2937;margin-bottom:6px}
+.carton-label-contact{font-size:14px;color:#4b5563;margin-bottom:4px}
+.carton-label-address{font-size:13px;color:#6b7280;line-height:1.4}
+.carton-label-type{font-size:18px;font-weight:700;color:#0d9488;margin-bottom:4px}
+.carton-label-units{font-size:32px;font-weight:900;color:#1f2937}
+.carton-label-footer{background:#f9fafb;padding:8px 16px;text-align:center;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb}
+.carton-print-btn{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 20px;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-left:8px;font-family:inherit}
+.carton-close-btn{background:#f3f4f6;border:none;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:18px;font-family:inherit}
+@media print{
+  body.printing-alut-dashboard{background:#fff!important;padding:0!important;margin:0!important}
+  body.printing-alut-dashboard .sd,
+  body.printing-alut-dashboard .sm,
+  body.printing-alut-dashboard .tm,
+  body.printing-alut-dashboard .bn,
+  body.printing-alut-dashboard .alut-actions-bar,
+  body.printing-alut-dashboard button,
+  body.printing-alut-dashboard .alut-cards-wrap,
+  body.printing-alut-dashboard .alut-kpi-grid,
+  body.printing-alut-dashboard .alut-season-summary{display:none!important}
+  body.printing-alut-dashboard .alut-print-title{display:block!important;text-align:center;font-size:24px;font-weight:900;padding:20px;color:#0d9488}
+  body.printing-alut-dashboard .alut-table-wrap{display:block!important;box-shadow:none!important;border:none!important}
+  body.printing-alut-dashboard table{width:100%;border-collapse:collapse;font-size:11px}
+  body.printing-alut-dashboard th,body.printing-alut-dashboard td{border:1px solid #d1d5db;padding:6px 8px;text-align:right}
+  body.printing-alut-dashboard thead{background:#f0fdfa}
+  body.printing-alut-dashboard tbody tr{page-break-inside:avoid}
+  body.printing-alut-quote .alut-quote-modal-backdrop{position:static;background:#fff;padding:0}
+  body.printing-alut-quote .alut-quote-modal{box-shadow:none;max-height:none;overflow:visible}
+  body.printing-alut-quote .alut-quote-modal-header button,
+  body.printing-alut-quote .alut-quote-block-copy,
+  body.printing-alut-quote label{display:none!important}
+  body.printing-carton-labels .carton-labels-header{display:none!important}
+  body.printing-carton-labels .carton-labels-modal{padding:0;background:#fff}
+  body.printing-carton-labels .carton-labels-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  body.printing-carton-labels .carton-label{box-shadow:none;page-break-inside:avoid}
+  @page{margin:15mm}
 }
 </style>
 </head>
@@ -10500,8 +10559,26 @@ const ALUT_CALENDAR_TYPES={
 };
 const ALUT_STATUS_ORDER=["new","design_in_progress","design_sent","design_approved","in_print","at_davach","at_itzik","ready_to_ship","shipped","delivered","cancelled"];
 const ALUT_IN_PRINT_STATUSES=["new","design_in_progress","design_sent","design_approved","in_print"];
-const ALUT_IN_SHIPPING_STATUSES=["at_davach","at_itzik","ready_to_ship","shipped"];
+const ALUT_IN_BINDING_STATUSES=["at_davach","at_itzik"];
+const ALUT_IN_SHIPPING_STATUSES=["ready_to_ship","shipped"];
 const ALUT_EMPTY_ITEM=()=>({calendar_type:"hard",quantity:100,needs_design:true,is_template_only:false});
+
+function alutSubtractBusinessDays(date,days){
+  const result=new Date(date);
+  let subtracted=0;
+  while(subtracted<days){
+    result.setDate(result.getDate()-1);
+    const day=result.getDay();
+    if(day!==5&&day!==6)subtracted++;
+  }
+  return result;
+}
+function alutFormatDateHe(d){
+  if(!d)return"—";
+  const x=d instanceof Date?d:new Date(String(d).includes("T")?d:d+"T00:00:00");
+  if(isNaN(x.getTime()))return"—";
+  return x.toLocaleDateString("he-IL");
+}
 
 function alutPricingRowsToMap(rows){
   const m={};
@@ -10542,15 +10619,24 @@ function alutFmtMoney(n,withVat){
   return`₪${v.toLocaleString("he-IL",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 }
 function alutGetDeadlineInfo(deadline){
-  if(!deadline)return{text:"טרם אושרה סקיצה",color:"#9ca3af"};
+  if(!deadline)return{text:"טרם אושרה סקיצה",color:"#9ca3af",urgent:false};
   const today=new Date();today.setHours(0,0,0,0);
   const dl=new Date(deadline+"T00:00:00");
   const diff=Math.ceil((dl-today)/(1000*60*60*24));
   const dateStr=dl.toLocaleDateString("he-IL");
-  if(diff<=0)return{text:`${dateStr} · עבר!`,color:"#dc2626",bold:true};
-  if(diff<=3)return{text:`${dateStr} · ${diff} ימים`,color:"#dc2626"};
-  if(diff<=7)return{text:`${dateStr} · ${diff} ימים`,color:"#f97316"};
-  return{text:`${dateStr} · ${diff} ימים`,color:"#10b981"};
+  const warningDate=alutSubtractBusinessDays(dl,4);
+  const warningStr=alutFormatDateHe(warningDate);
+  const urgent=diff<=4;
+  let color="#10b981";
+  let bold=false;
+  if(diff<=0){color="#dc2626";bold=true;}
+  else if(diff<=3)color="#dc2626";
+  else if(diff<=7)color="#f97316";
+  return{
+    text:dateStr+(diff<=0?" · עבר!":` · ${diff} ימים`),
+    color,bold,urgent,diff,dateStr,warningStr,
+    deadline:String(deadline),
+  };
 }
 function alutDaysUntilDeadline(deadline){
   if(!deadline)return null;
@@ -10559,13 +10645,44 @@ function alutDaysUntilDeadline(deadline){
   return Math.ceil((dl-today)/(1000*60*60*24));
 }
 function alutGetOrderDeadlineInfo(items){
-  const list=(items||[]).filter(i=>i.delivery_deadline);
-  if(!list.length)return alutGetDeadlineInfo(null);
+  const list=(items||[]).filter(i=>i.delivery_deadline&&!["delivered","cancelled"].includes(i.status));
+  if(!list.length){
+    const anyDeadline=(items||[]).filter(i=>i.delivery_deadline);
+    if(!anyDeadline.length)return alutGetDeadlineInfo(null);
+    const earliest=anyDeadline.reduce((a,b)=>a.delivery_deadline<b.delivery_deadline?a:b);
+    return alutGetDeadlineInfo(earliest.delivery_deadline);
+  }
   const anyOverdue=list.some(i=>(alutDaysUntilDeadline(i.delivery_deadline)??999)<=0);
   const earliest=list.reduce((a,b)=>a.delivery_deadline<b.delivery_deadline?a:b);
   const info=alutGetDeadlineInfo(earliest.delivery_deadline);
-  if(anyOverdue)return{...info,color:"#dc2626",bold:true};
-  return info;
+  const urgent=list.some(i=>{
+    const d=alutDaysUntilDeadline(i.delivery_deadline);
+    return d!==null&&d<=4;
+  });
+  if(anyOverdue)return{...info,color:"#dc2626",bold:true,urgent:true};
+  return{...info,urgent};
+}
+function alutOrderIsUrgent(order){
+  return(order?.items||[]).some(i=>{
+    if(!i.delivery_deadline||["delivered","cancelled"].includes(i.status))return false;
+    const d=alutDaysUntilDeadline(i.delivery_deadline);
+    return d!==null&&d<=4;
+  });
+}
+function alutRenderDeadlineCell(dl){
+  if(!dl||!dl.deadline)return<span style={{color:"#9ca3af"}}>טרם אושרה סקיצה</span>;
+  return<div className="alut-deadline-cell">
+    <div className="alut-deadline-warning">⚠️ יציאה: {dl.warningStr}</div>
+    <div className="alut-deadline-main" style={{color:dl.color}}>🎯 דדליין: {dl.dateStr}{dl.diff!=null?(dl.diff<=0?" · עבר!":` · ${dl.diff} ימים`):""}</div>
+    {dl.urgent&&dl.diff>0&&<div className="alut-deadline-alert">🔥 פחות מ-4 ימים!</div>}
+  </div>;
+}
+function alutPrintWithClass(className){
+  document.body.classList.add(className);
+  setTimeout(()=>{
+    window.print();
+    setTimeout(()=>document.body.classList.remove(className),500);
+  },100);
 }
 function alutFormatItemsSummary(items){
   if(!items?.length)return"—";
@@ -11310,6 +11427,156 @@ function AlutItzikModal({item,itemIndex,order,pricing,onClose,onSaved}){
   </Modal>;
 }
 
+function AlutCartonLabel({order,label}){
+  return<div className="carton-label">
+    <div className="carton-label-header">
+      <div className="carton-label-logo">🖨️ נטלי פרינט</div>
+      <div className="carton-label-num">{label.cartonNum}/{label.totalCartons}</div>
+    </div>
+    <div className="carton-label-body">
+      <div className="carton-label-to">
+        <div className="carton-label-small">📍 אל:</div>
+        <div className="carton-label-company">{order.company_name}</div>
+        {order.contact_name&&<div className="carton-label-contact">{order.contact_name}{order.contact_phone?` • ${order.contact_phone}`:""}</div>}
+        {order.is_pickup?<div className="carton-label-address">איסוף עצמי</div>:order.delivery_address?<div className="carton-label-address">{order.delivery_address}</div>:null}
+      </div>
+      <div className="carton-label-content">
+        <div className="carton-label-small">📦 תוכן:</div>
+        <div className="carton-label-type">{label.type}</div>
+        <div className="carton-label-units">{Number(label.units).toLocaleString("he-IL")} יחידות</div>
+      </div>
+    </div>
+    <div className="carton-label-footer">
+      <div className="carton-label-order">הזמנה #{order.order_number}</div>
+    </div>
+  </div>;
+}
+
+function AlutCartonLabelsModal({order,onClose}){
+  const labels=[];
+  let globalCartonNum=0;
+  const totalCartons=Number(order.total_cartons)||0;
+  (order.items||[]).forEach(item=>{
+    const typeLabel={hard:"לוח שולחני קשיח",duplex:"לוח שולחני דופלקס",wall:"לוח קיר"}[alutNormalizeCalendarType(item.calendar_type)]||"לוח";
+    const cartonSize={hard:70,duplex:100,wall:100}[alutNormalizeCalendarType(item.calendar_type)]||100;
+    const cartonsCount=Number(item.cartons_count)||Math.ceil((Number(item.quantity)||0)/cartonSize)||0;
+    for(let i=0;i<cartonsCount;i++){
+      globalCartonNum++;
+      const isLast=i===cartonsCount-1;
+      const unitsInThisCarton=isLast?(Number(item.quantity)||0)-(i*cartonSize):cartonSize;
+      labels.push({cartonNum:globalCartonNum,totalCartons:totalCartons||globalCartonNum,type:typeLabel,units:Math.max(0,unitsInThisCarton)});
+    }
+  });
+  if(totalCartons>0&&labels.length){
+    labels.forEach(l=>{l.totalCartons=totalCartons;});
+  }
+  useEffect(()=>{
+    const onKey=e=>{if(e.key==="Escape")onClose?.();};
+    document.addEventListener("keydown",onKey);
+    return()=>document.removeEventListener("keydown",onKey);
+  },[onClose]);
+  return<div className="carton-labels-modal">
+    <div className="carton-labels-header">
+      <h2 style={{margin:0,fontSize:18}}>🏷️ מדבקות לקרטונים - הזמנה #{order.order_number}</h2>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <button type="button" className="carton-print-btn" onClick={()=>alutPrintWithClass("printing-carton-labels")}>🖨️ הדפס</button>
+        <button type="button" className="carton-close-btn" onClick={onClose}>✕</button>
+      </div>
+    </div>
+    <div className="carton-labels-grid">
+      {labels.map(label=><AlutCartonLabel key={label.cartonNum} order={order} label={label}/>)}
+    </div>
+    {!labels.length&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>אין קרטונים להדפסה</div>}
+  </div>;
+}
+
+function AlutTransferToShipmentsModal({order,onClose,onTransferred}){
+  const [driver,setDriver]=useState("");
+  const [scheduledDate,setScheduledDate]=useState("");
+  const [notes,setNotes]=useState("");
+  const [transferring,setTransferring]=useState(false);
+  const items=order.items||[];
+  const itemsSummary=items.map(item=>{
+    const typeLabel={hard:"קשיח",duplex:"דופלקס",wall:"קיר"}[alutNormalizeCalendarType(item.calendar_type)]||item.calendar_type;
+    return`${item.quantity} ${typeLabel}`;
+  }).join(" + ");
+  const totalCartons=Number(order.total_cartons)||items.reduce((s,i)=>s+(Number(i.cartons_count)||0),0);
+  const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
+  const handleTransfer=async()=>{
+    setTransferring(true);
+    try{
+      const deliveryNotes=[itemsSummary,`${totalCartons} קרטונים`,notes.trim()].filter(Boolean).join("\n");
+      const taskPayload={
+        title:`אלוט #${order.order_number} - ${order.company_name}`,
+        client_name:order.company_name||"",
+        dept:"משלוחים",
+        priority:"בינונית",
+        status:"ממתין",
+        contact:order.contact_name||null,
+        notes:deliveryNotes,
+        created_by:"אלוט",
+        delivery_status:"ready",
+        scheduled_delivery_date:scheduledDate||null,
+        delivery_type:order.is_pickup?"pickup":"local",
+        delivery_address_snapshot:order.is_pickup?null:(order.delivery_address||null),
+        delivery_contact_snapshot:order.contact_name||null,
+        delivery_phone_snapshot:order.contact_phone||null,
+        delivery_special_notes:deliveryNotes||null,
+        delivery_marked_at:new Date().toISOString(),
+        delivery_marked_by:"אלוט",
+      };
+      if(driver.trim())taskPayload.driver=driver.trim();
+      const created=await sb("tasks",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(taskPayload)});
+      const newTask=Array.isArray(created)?created[0]:created;
+      if(!newTask?.id)throw new Error("לא נוצרה משימת משלוח");
+      await sb(`alut_orders?id=eq.${order.id}`,{method:"PATCH",body:JSON.stringify({
+        transferred_to_shipments:true,
+        transferred_at:new Date().toISOString(),
+        shipment_task_id:newTask.id,
+      })});
+      const activeIds=items.filter(i=>!["delivered","cancelled"].includes(i.status)).map(i=>i.id);
+      if(activeIds.length){
+        await sb(`alut_order_items?id=in.(${activeIds.join(",")})`,{method:"PATCH",body:JSON.stringify({
+          status:"shipped",
+          shipped_at:new Date().toISOString(),
+        })});
+      }
+      window.alert("✅ ההזמנה הועברה למשלוחים");
+      onTransferred?.();
+      onClose?.();
+    }catch(err){
+      window.alert("שגיאה: "+(err.message||String(err)));
+    }finally{setTransferring(false);}
+  };
+  return<Modal open={true} onClose={onClose} title={`🚚 העברה למשלוחים - הזמנה #${order.order_number}`} maxWidth={520}>
+    <div style={{direction:"rtl"}}>
+      <div style={{background:"#f0fdfa",border:"1px solid #99f6e4",borderRadius:12,padding:14,marginBottom:16,fontSize:13,lineHeight:1.8}}>
+        <div><strong>לקוח:</strong> {order.company_name}</div>
+        <div><strong>איש קשר:</strong> {order.contact_name||"—"}</div>
+        <div><strong>כתובת:</strong> {order.is_pickup?"איסוף עצמי":(order.delivery_address||"—")}</div>
+        <div><strong>פריטים:</strong> {itemsSummary||"—"}</div>
+        <div><strong>קרטונים:</strong> {totalCartons}</div>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={{display:"block",fontSize:12,fontWeight:600,marginBottom:4}}>תאריך משלוח מבוקש</label>
+        <input type="date" value={scheduledDate} onChange={e=>setScheduledDate(e.target.value)} style={{...IS,direction:"ltr",textAlign:"right"}}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={{display:"block",fontSize:12,fontWeight:600,marginBottom:4}}>נהג (אופציונלי)</label>
+        <input type="text" value={driver} onChange={e=>setDriver(e.target.value)} placeholder="שם הנהג / חברת שליחויות" style={IS}/>
+      </div>
+      <div style={{marginBottom:16}}>
+        <label style={{display:"block",fontSize:12,fontWeight:600,marginBottom:4}}>הערות נוספות</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} style={{...IS,minHeight:70}}/>
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button type="button" onClick={onClose} disabled={transferring} style={{padding:"10px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
+        <button type="button" className="alut-btn-transfer" onClick={handleTransfer} disabled={transferring}>{transferring?"⏳ מעביר...":"🚚 העבר למשלוחים"}</button>
+      </div>
+    </div>
+  </Modal>;
+}
+
 function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [data,setData]=useState(order);
   const [editingCustomer,setEditingCustomer]=useState(false);
@@ -11324,6 +11591,8 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [showDavachModal,setShowDavachModal]=useState(null);
   const [showItzikModal,setShowItzikModal]=useState(null);
   const [redownloadingId,setRedownloadingId]=useState(null);
+  const [showCartonLabels,setShowCartonLabels]=useState(false);
+  const [showTransferModal,setShowTransferModal]=useState(false);
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
   const loadWorkOrderRecords=async()=>{
     try{
@@ -11478,6 +11747,12 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
       </div>:null}
       <div style={{background:"#f0fdfa",padding:12,borderRadius:10,marginBottom:16,fontSize:14,fontWeight:700,color:"#0d9488"}}>
         💰 סה״כ: {alutFmtMoney(data.total_price||calc.subtotalBeforeVat,true)} (כולל מע״מ)
+        {Number(data.total_cartons||calc.totalCartons)>0&&<span style={{fontWeight:600,marginRight:12}}> · 📦 {data.total_cartons||calc.totalCartons} קרטונים</span>}
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        {Number(data.total_cartons||calc.totalCartons)>0&&<button type="button" className="alut-btn-cartons" onClick={()=>setShowCartonLabels(true)}>🏷️ מדבקות לקרטונים ({data.total_cartons||calc.totalCartons})</button>}
+        {!data.transferred_to_shipments?<button type="button" className="alut-btn-transfer" onClick={()=>setShowTransferModal(true)}>🚚 העברה למשלוחים</button>:
+          <div className="alut-transferred-badge">✅ הועברה למשלוחים ({data.transferred_at?new Date(data.transferred_at).toLocaleDateString("he-IL"):"—"})</div>}
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {!editingCustomer&&<button type="button" onClick={()=>setEditingCustomer(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>✏️ ערוך פרטי לקוח</button>}
@@ -11490,6 +11765,8 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     {editItem&&<AlutItemEditModal item={editItem} order={data} pricingRows={pricingRows} onClose={()=>setEditItem(null)} onSaved={reload}/>}
     {showDavachModal&&<AlutDavachModal item={showDavachModal.item} itemIndex={showDavachModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowDavachModal(null)} onSaved={reload}/>}
     {showItzikModal&&<AlutItzikModal item={showItzikModal.item} itemIndex={showItzikModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowItzikModal(null)} onSaved={reload}/>}
+    {showCartonLabels&&<AlutCartonLabelsModal order={data} onClose={()=>setShowCartonLabels(false)}/>}
+    {showTransferModal&&<AlutTransferToShipmentsModal order={data} onClose={()=>setShowTransferModal(false)} onTransferred={()=>{reload();onSaved?.();}}/>}
   </Modal>;
 }
 
@@ -11533,7 +11810,10 @@ function AlutSeasonSummary({items,projectName}){
   },[items]);
   const year=(projectName||"").match(/\d{4}/)?.[0]||"2026";
   return<div className="alut-season-summary">
-    <div className="alut-season-title">📊 סיכום עונת {year}</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <div className="alut-season-title" style={{marginBottom:0}}>📊 סיכום עונת {year}</div>
+      <button type="button" className="alut-btn-print" onClick={()=>alutPrintWithClass("printing-alut-dashboard")}>🖨️ הדפס פירוט</button>
+    </div>
     <div className="alut-season-grid">
       <div className="alut-season-item hard">
         <div className="alut-season-label">🔷 קשיח</div>
@@ -11723,7 +12003,10 @@ function AlutSeasonalQuoteScreen({project,pricingRows,onClose}){
     <div className="alut-quote-modal" onClick={e=>e.stopPropagation()}>
       <div className="alut-quote-modal-header">
         <h1 className="alut-quote-modal-title">💰 הצעה עונתית - אלוט {year}</h1>
-        <button type="button" className="alut-quote-close-btn" onClick={onClose} title="סגור">×</button>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button type="button" className="alut-btn-print" onClick={()=>alutPrintWithClass("printing-alut-quote")}>🖨️ הדפס</button>
+          <button type="button" className="alut-quote-close-btn" onClick={onClose} title="סגור">×</button>
+        </div>
       </div>
       <div className="alut-quote-modal-body">
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",marginBottom:16}}>
@@ -11811,7 +12094,7 @@ function AlutDashboard(){
       const items=o.items||[];
       if(filterType!=="all"&&!items.some(i=>i.calendar_type===filterType))return false;
       if(filterStatus!=="all"&&!items.some(i=>i.status===filterStatus))return false;
-      if(urgentOnly&&!items.some(i=>{const d=alutDaysUntilDeadline(i.delivery_deadline);return d!==null&&d<=3;}))return false;
+      if(urgentOnly&&!items.some(i=>{const d=alutDaysUntilDeadline(i.delivery_deadline);return d!==null&&d<=4&&!["delivered","cancelled"].includes(i.status);}))return false;
       if(search.trim()){
         const s=search.trim().toLowerCase();
         if(!String(o.order_number).includes(s)&&!(o.company_name||"").toLowerCase().includes(s)&&!(o.contact_name||"").toLowerCase().includes(s))return false;
@@ -11823,11 +12106,13 @@ function AlutDashboard(){
     const sumItems=arr=>arr.reduce((a,x)=>a+Number(x.subtotal||0),0);
     const sumOrders=arr=>arr.reduce((a,x)=>a+Number(x.total_price||0),0);
     const inPrint=allItems.filter(i=>ALUT_IN_PRINT_STATUSES.includes(i.status));
+    const inBinding=allItems.filter(i=>ALUT_IN_BINDING_STATUSES.includes(i.status));
     const inShip=allItems.filter(i=>ALUT_IN_SHIPPING_STATUSES.includes(i.status));
     const done=allItems.filter(i=>i.status==="delivered");
     return[
       {label:"סה״כ הזמנות",count:orders.length,sum:sumOrders(orders),color:"#0d9488",bg:"#f0fdfa",isOrders:true},
       {label:"בהדפסה",count:inPrint.length,sum:sumItems(inPrint),color:"#f97316",bg:"#fff7ed",isOrders:false},
+      {label:"בכריכה",count:inBinding.length,sum:sumItems(inBinding),color:"#a855f7",bg:"#faf5ff",isOrders:false},
       {label:"במשלוח",count:inShip.length,sum:sumItems(inShip),color:"#6366f1",bg:"#eef2ff",isOrders:false},
       {label:"הושלמו",count:done.length,sum:sumItems(done),color:"#10b981",bg:"#ecfdf5",isOrders:false},
     ];
@@ -11841,10 +12126,25 @@ function AlutDashboard(){
   const thStyle={padding:"12px 10px",textAlign:"right",borderBottom:"2px solid #e5e7eb",fontSize:12,fontWeight:700,color:"var(--text3)",whiteSpace:"nowrap"};
   const tdStyle={padding:"12px 10px",borderBottom:"1px solid var(--border)",fontSize:13};
   const openDetail=(o)=>setDetailOrder(o);
-  return<div style={{direction:"rtl"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+  const activeFilterLabel=[
+    filterStatus!=="all"?`סטטוס: ${(ALUT_STATUS_CONFIG[filterStatus]||{}).label||filterStatus}`:null,
+    filterType!=="all"?`סוג: ${(ALUT_CALENDAR_TYPES[filterType]||{}).label||filterType}`:null,
+    urgentOnly?"דחוף בלבד":null,
+    search.trim()?`חיפוש: ${search.trim()}`:null,
+  ].filter(Boolean).join(" · ");
+  const handlePrintDashboard=()=>alutPrintWithClass("printing-alut-dashboard");
+  return<div style={{direction:"rtl"}} className="alut-dashboard-root">
+    <div className="alut-print-title">
+      🖨️ נטלי פרינט - דוח אלוט 2026
+      <div style={{fontSize:14,fontWeight:400,marginTop:8,color:"#6b7280"}}>
+        תאריך הדפסה: {new Date().toLocaleDateString("he-IL")}
+        {activeFilterLabel?` • סינון: ${activeFilterLabel}`:""}
+      </div>
+    </div>
+    <div className="alut-actions-bar" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h1 style={{fontSize:22,fontWeight:800,margin:0,color:"var(--text)"}}>🗓️ {projectName}</h1>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" className="alut-btn-print" onClick={handlePrintDashboard}>🖨️ הדפס</button>
         <button type="button" onClick={()=>setShowPricing(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>⚙️ הגדרות מחירים</button>
         <button type="button" onClick={()=>setShowSeasonalQuote(true)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>💰 הצעה עונתית</button>
         <button type="button" onClick={()=>{setNewOrderOpen(false);setNewOrderInitial(null);setPasteEmailOpen(true);}} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #99f6e4",background:"#fff",color:"#0d9488",fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📧 הדבק מייל של קארין</button>
@@ -11852,8 +12152,8 @@ function AlutDashboard(){
       </div>
     </div>
     {!loading&&<AlutSeasonSummary items={allItems} projectName={projectName}/>}
-    <div className="kg4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
-      {kpis.map((k,i)=><Card key={i} style={{padding:16,background:k.bg,border:`1px solid ${k.color}30`}}>
+    <div className="kg4 alut-kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
+      {kpis.map((k,i)=><Card key={i} style={{padding:16,background:k.bg,border:`1px solid ${k.color}30`,borderRight:`4px solid ${k.color}`}}>
         <div style={{fontSize:12,color:"var(--text3)",fontWeight:600,marginBottom:4}}>{k.label}</div>
         <div style={{fontSize:28,fontWeight:800,color:k.color,lineHeight:1.1}}>{k.count}</div>
         <div style={{fontSize:12,color:"var(--text2)",marginTop:6}}>{alutFmtMoney(k.sum)} ללא מע״מ{k.isOrders?"":" · פריטים"}</div>
@@ -11888,13 +12188,14 @@ function AlutDashboard(){
               const items=o.items||[];
               const stSum=alutFormatStatusSummary(items);
               const dl=alutGetOrderDeadlineInfo(items);
-              return<tr key={o.id} onClick={()=>openDetail(o)} style={{background:"#fff",cursor:"pointer"}}>
+              const isUrgent=alutOrderIsUrgent(o);
+              return<tr key={o.id} onClick={()=>openDetail(o)} className={isUrgent?"alut-item-urgent":""} style={{background:isUrgent?"#fef3c7":"#fff",cursor:"pointer"}}>
                 <td style={{...tdStyle,fontWeight:700}}>#{o.order_number}</td>
                 <td style={tdStyle}>{o.company_name}</td>
                 <td style={tdStyle}>{alutFormatItemsSummary(items)}</td>
                 <td style={tdStyle}>{alutTotalQuantity(items)}</td>
                 <td style={tdStyle}>{stSum.type==="single"?<span style={{padding:"4px 10px",borderRadius:20,fontSize:12,fontWeight:600,background:stSum.bg}}>{stSum.label}</span>:<span style={{fontSize:12}}>{stSum.badges}</span>}</td>
-                <td style={{...tdStyle,color:dl.color,fontWeight:dl.bold?800:500}}>{dl.text}</td>
+                <td style={tdStyle}>{alutRenderDeadlineCell(dl)}</td>
                 <td style={{...tdStyle,fontWeight:700}}>{alutFmtMoney(o.total_price,true)}</td>
                 <td style={tdStyle}><AlutOrderRowActions order={o} onDelete={handleDelete}/></td>
               </tr>;
@@ -11907,7 +12208,8 @@ function AlutDashboard(){
           const items=o.items||[];
           const stSum=alutFormatStatusSummary(items);
           const dl=alutGetOrderDeadlineInfo(items);
-          return<Card key={o.id} style={{padding:16,cursor:"pointer"}} onClick={()=>openDetail(o)}>
+          const isUrgent=alutOrderIsUrgent(o);
+          return<Card key={o.id} style={{padding:16,cursor:"pointer",background:isUrgent?"#fef3c7":"#fff",border:isUrgent?"1px solid #fbbf24":undefined}} onClick={()=>openDetail(o)}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div>
                 <div style={{fontWeight:800,fontSize:16}}>#{o.order_number} — {o.company_name}</div>
@@ -11916,7 +12218,7 @@ function AlutDashboard(){
               <AlutOrderRowActions order={o} onDelete={handleDelete}/>
             </div>
             <div style={{marginBottom:8}}>{stSum.type==="single"?<span style={{padding:"4px 10px",borderRadius:20,fontSize:12,background:stSum.bg,fontWeight:600}}>{stSum.label}</span>:<span style={{fontSize:12}}>{stSum.badges}</span>}</div>
-            <div style={{fontSize:13,color:dl.color,fontWeight:dl.bold?800:500,marginBottom:8}}>📅 {dl.text}</div>
+            <div style={{marginBottom:8}}>{alutRenderDeadlineCell(dl)}</div>
             <div style={{fontSize:16,fontWeight:800,color:"#0d9488"}}>{alutFmtMoney(o.total_price,true)} כולל מע״מ</div>
           </Card>;
         })}
@@ -13030,16 +13332,16 @@ function App(){
               if(weeklySummaryBusy)return;
               setWeeklySummaryBusy(true);
               try{
-                const {data,error}=await supabaseClient.functions.invoke("alut-weekly-summary");
+                const {data,error}=await supabaseClient.functions.invoke("alut-daily-summary");
                 const result=data||error;
-                console.log("Weekly summary results:",result);
+                console.log("Daily summary results:",result);
                 window.alert(JSON.stringify(result,null,2));
               }catch(e){
-                console.error("Weekly summary failed:",e);
-                window.alert("שגיאה בסיכום שבועי: "+(e.message||String(e)));
+                console.error("Daily summary failed:",e);
+                window.alert("שגיאה בסיכום יומי: "+(e.message||String(e)));
               }finally{setWeeklySummaryBusy(false);}
             }} disabled={weeklySummaryBusy} style={{padding:"9px 18px",borderRadius:10,border:"2px solid #0d9488",background:weeklySummaryBusy?"#ccfbf1":"linear-gradient(135deg,#0d9488,#14b8a6)",color:weeklySummaryBusy?"#115e59":"#fff",fontWeight:700,fontSize:13,cursor:weeklySummaryBusy?"wait":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(13,148,136,0.35)",display:"flex",alignItems:"center",gap:6}}>
-              {weeklySummaryBusy?"⏳ שולח...":"📊 בדיקת סיכום שבועי"}
+              {weeklySummaryBusy?"⏳ שולח...":"📊 בדיקת סיכום יומי"}
             </button>
             <button onClick={()=>setShowReportModal(true)} style={{padding:"9px 18px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#7C3AED,#2563EB)",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(124,58,237,0.3)",display:"flex",alignItems:"center",gap:6}}>📧 שלח דוחות יומיים</button>
           </div>}

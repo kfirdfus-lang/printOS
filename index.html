@@ -183,6 +183,39 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .logout-btn{background:transparent;border:1px solid #dc2626;color:#dc2626;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;transition:all .15s}
 .logout-btn:hover{background:#fee2e2}
 @media (max-width:640px){.login-header h1{font-size:28px}.login-users-list{grid-template-columns:1fr}.login-form{padding:20px}}
+.tsm-custom-date-section{padding:12px 10px;border-top:1px solid #e5e7eb;background:#f9fafb;margin:4px -8px 0;border-radius:0 0 8px 8px}
+.tsm-custom-date-label{font-size:13px;color:#6b7280;font-weight:600;margin-bottom:8px}
+.tsm-custom-date-row{display:flex;gap:8px;align-items:center}
+.tsm-custom-date-input{flex:1;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;font-family:inherit;direction:ltr}
+.tsm-custom-date-btn{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 14px;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:14px;white-space:nowrap;font-family:inherit}
+.tsm-custom-date-btn:disabled{opacity:.5;cursor:not-allowed}
+.tsm-menu{position:fixed;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);padding:8px;z-index:9999;min-width:240px;max-width:320px;direction:rtl;max-height:80vh;overflow-y:auto}
+@media (max-width:640px){
+  .tsm-menu{bottom:0!important;left:0!important;right:0!important;top:auto!important;max-width:none;min-width:0;border-radius:16px 16px 0 0;padding:12px 12px 24px;animation:tsmSlideUp .2s ease}
+  @keyframes tsmSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+}
+.task-schedule-btn,.task-action-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:4px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:14px;cursor:pointer;font-family:inherit;flex-shrink:0}
+.task-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@media (max-width:640px){
+  .task-schedule-btn,.task-action-btn{width:44px;height:44px;padding:8px;font-size:20px;margin:0}
+  .task-actions{gap:6px}
+  button.task-move-delivery-btn{min-height:44px;padding:10px 14px;font-size:13px}
+}
+.smm-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9998}
+.smm-menu{position:fixed;bottom:0;left:0;right:0;background:#fff;border-radius:16px 16px 0 0;max-height:80vh;overflow-y:auto;z-index:9999;animation:smmSlideUp .2s ease;direction:rtl}
+@keyframes smmSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.smm-header{padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:1}
+.smm-title{font-size:16px;font-weight:700;color:#0d9488}
+.smm-close{background:transparent;border:none;font-size:20px;cursor:pointer;color:#6b7280;width:32px;height:32px;border-radius:50%;font-family:inherit}
+.smm-body{padding:12px}
+.smm-day-btn{width:100%;padding:14px 16px;background:#f9fafb;border:2px solid transparent;border-radius:8px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-family:inherit;transition:all .15s}
+.smm-day-btn:hover{background:#f0fdfa;border-color:#0d9488}
+.smm-day-name{font-weight:600;color:#1f2937}
+.smm-day-date{color:#6b7280;font-size:13px}
+.smm-divider{height:1px;background:#e5e7eb;margin:12px 0}
+.smm-unschedule{background:#fef3c7;color:#92400e}
+@media (min-width:641px){.smm-menu{position:fixed;bottom:auto;left:50%;right:auto;top:50%;transform:translate(-50%,-50%);max-width:360px;width:90%;max-height:70vh;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.15);animation:none}}
+
 .alut-season-summary{background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%);border:2px solid #14b8a6;border-radius:12px;padding:20px;margin-bottom:20px}
 .alut-season-title{font-size:18px;font-weight:900;color:#0d9488;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .alut-season-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -247,7 +280,7 @@ const openMoveToDeliveryFromTask=(e,task)=>{if(e)e.stopPropagation();if(typeof w
 function TaskMoveToDeliveryBtn({task}){
   const ds=task.delivery_status;
   if(ds&&ds!=="pending")return<span style={{padding:"4px 10px",background:"#ede9fe",color:"#5b21b6",borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>📦 במשלוחים</span>;
-  return<button type="button" onClick={e=>openMoveToDeliveryFromTask(e,task)} style={MOVE_TO_DELIVERY_BTN_STYLE}>📦 למשלוחים</button>;
+  return<button type="button" className="task-move-delivery-btn" onClick={e=>openMoveToDeliveryFromTask(e,task)} style={MOVE_TO_DELIVERY_BTN_STYLE}>📦 למשלוחים</button>;
 }
 const SU="https://pvwcpukfhyrmdpxgfwrk.supabase.co";
 const SA="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2d2NwdWtmaHlybWRweGdmd3JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NzIzNzMsImV4cCI6MjA5MjQ0ODM3M30.69GpTOQdwtAgouGN0MIHqQc6bImxAbfQ72xL2S4KaoM";
@@ -895,30 +928,60 @@ function RecentlyCompletedTab({tasks,loading,onRestore,user,clients}){
   </div>;
 }
 
+function useLongPress(callback,delay=500){
+  const timeoutRef=useRef(null);
+  const start=e=>{
+    if(e.type==="touchstart")e.stopPropagation();
+    const target=e.currentTarget;
+    timeoutRef.current=setTimeout(()=>{
+      if(navigator.vibrate)try{navigator.vibrate(50);}catch(_){}
+      callback({currentTarget:target,clientX:e.touches?.[0]?.clientX,clientY:e.touches?.[0]?.clientY});
+    },delay);
+  };
+  const clear=()=>{
+    if(timeoutRef.current){clearTimeout(timeoutRef.current);timeoutRef.current=null;}
+  };
+  return{onTouchStart:start,onTouchEnd:clear,onTouchMove:clear,onTouchCancel:clear};
+}
+
+function generateNextWorkingDays(count=5){
+  const days=[];
+  const today=new Date();today.setHours(0,0,0,0);
+  const dayNames=["יום ראשון","יום שני","יום שלישי","יום רביעי","יום חמישי","יום שישי","שבת"];
+  for(let i=0;i<21&&days.length<count;i++){
+    const d=new Date(today);d.setDate(today.getDate()+i);
+    const dow=d.getDay();
+    if(dow===5||dow===6)continue;
+    let label;
+    if(i===0)label="היום";
+    else if(i===1)label="מחר";
+    else label=dayNames[dow];
+    days.push({date:toLocalDateStr(d),label,dayNumber:d.getDate(),monthName:d.toLocaleDateString("he-IL",{month:"short"}),dateStr:`${d.getDate()}/${d.getMonth()+1}`});
+  }
+  return days;
+}
+
 function useScheduleMenu(){
   const [menu,setMenu]=useState(null);
-  const openMenu=(e,task)=>{e.preventDefault();e.stopPropagation();setMenu({task,x:e.clientX,y:e.clientY});};
+  const openMenu=(e,task)=>{
+    if(e&&typeof e.preventDefault==="function"){e.preventDefault();e.stopPropagation();}
+    const x=e?.clientX??(typeof window!=="undefined"?window.innerWidth/2:0);
+    const y=e?.clientY??100;
+    setMenu({task,x,y});
+  };
+  const openMenuAt=(task,rect)=>{
+    const x=rect?(rect.left||0): (typeof window!=="undefined"?window.innerWidth/2:0);
+    const y=rect?(rect.bottom||rect.top||100):100;
+    setMenu({task,x,y});
+  };
   const closeMenu=()=>setMenu(null);
-  return{menu,openMenu,closeMenu};
+  return{menu,openMenu,openMenuAt,closeMenu};
 }
 
 function TaskScheduleMenu({task,x,y,onClose,onUpdate,allTasks}){
-  const upcomingDays=useMemo(()=>{
-    const days=[];
-    const today=new Date();today.setHours(0,0,0,0);
-    const dayNames=["יום ראשון","יום שני","יום שלישי","יום רביעי","יום חמישי","יום שישי","שבת"];
-    for(let i=0;i<14&&days.length<5;i++){
-      const d=new Date(today);d.setDate(today.getDate()+i);
-      const dow=d.getDay();
-      if(dow===5||dow===6)continue;
-      let label;
-      if(i===0)label="היום";
-      else if(i===1)label="מחר";
-      else label=dayNames[dow];
-      days.push({date:toLocalDateStr(d),label,dayNumber:d.getDate(),monthName:d.toLocaleDateString("he-IL",{month:"short"})});
-    }
-    return days;
-  },[]);
+  const [customDate,setCustomDate]=useState("");
+  const upcomingDays=useMemo(()=>generateNextWorkingDays(5),[]);
+  const todayStr=toLocalDateStr(new Date());
   const handleSchedule=async dateStr=>{
     try{
       const dayCount=(allTasks||[]).filter(t=>taskSchedDateKey(t)===dateStr).length;
@@ -934,32 +997,54 @@ function TaskScheduleMenu({task,x,y,onClose,onUpdate,allTasks}){
   };
   const label=(task.client_name||task.title||"").substring(0,25);
   return<>
-    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:9998}}/>
-    <div style={{position:"fixed",top:y,left:x,background:"#fff",border:"1px solid #d1d5db",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",padding:8,zIndex:9999,minWidth:200,direction:"rtl"}}>
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:9998,background:typeof window!=="undefined"&&window.innerWidth<=640?"rgba(0,0,0,0.45)":"transparent"}}/>
+    <div className="tsm-menu" style={{top:y,left:Math.min(x,typeof window!=="undefined"?window.innerWidth-260:x)}}>
       <div style={{padding:"6px 10px",fontSize:11,color:"#6b7280",borderBottom:"1px solid #f3f4f6",marginBottom:4}}>📅 תזמן את "{label}":</div>
       {upcomingDays.map(d=>{
         const isScheduled=taskSchedDateKey(task)===d.date;
-        return<button type="button" key={d.date} onClick={()=>handleSchedule(d.date)} style={{display:"block",width:"100%",padding:"8px 12px",textAlign:"right",background:isScheduled?"#f0fdfa":"transparent",color:isScheduled?"#0d9488":"#374151",border:"none",borderRadius:4,cursor:"pointer",fontWeight:isScheduled?600:400,fontSize:13,fontFamily:"inherit"}} onMouseEnter={e=>{if(!isScheduled)e.currentTarget.style.background="#f9fafb";}} onMouseLeave={e=>{if(!isScheduled)e.currentTarget.style.background="transparent";}}>
+        return<button type="button" key={d.date} onClick={()=>handleSchedule(d.date)} style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"right",background:isScheduled?"#f0fdfa":"transparent",color:isScheduled?"#0d9488":"#374151",border:"none",borderRadius:4,cursor:"pointer",fontWeight:isScheduled?600:400,fontSize:13,fontFamily:"inherit"}}>
           {isScheduled&&"⭐ "}{d.label}<span style={{color:"#9ca3af",marginRight:8,fontSize:11}}>{d.dayNumber}/{d.monthName}</span>
         </button>;
       })}
+      <div className="tsm-custom-date-section">
+        <div className="tsm-custom-date-label">📅 או בחר תאריך אחר:</div>
+        <div className="tsm-custom-date-row">
+          <input type="date" value={customDate} min={todayStr} onChange={e=>setCustomDate(e.target.value)} className="tsm-custom-date-input"/>
+          <button type="button" className="tsm-custom-date-btn" disabled={!customDate} onClick={()=>{
+            if(!customDate){window.alert("אנא בחר תאריך");return;}
+            handleSchedule(customDate);
+          }}>✓ תזמן</button>
+        </div>
+      </div>
       {task.scheduled_for_date&&<>
         <div style={{borderTop:"1px solid #f3f4f6",margin:"4px 0"}}/>
-        <button type="button" onClick={handleClear} style={{display:"block",width:"100%",padding:"8px 12px",textAlign:"right",background:"transparent",color:"#ef4444",border:"none",borderRadius:4,cursor:"pointer",fontSize:13,fontFamily:"inherit"}} onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>❌ הסר תזמון</button>
+        <button type="button" onClick={handleClear} style={{display:"block",width:"100%",padding:"10px 12px",textAlign:"right",background:"transparent",color:"#ef4444",border:"none",borderRadius:4,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>❌ הסר תזמון</button>
       </>}
     </div>
   </>;
 }
 
-function TaskScheduleCard({task,onDragStart,onContextMenu}){
-  return<div draggable onDragStart={onDragStart} onContextMenu={onContextMenu} style={{background:"#fff",border:`2px solid ${taskPriorityBorderColor(task.priority)}`,borderRadius:6,padding:8,cursor:"grab",fontSize:12}}>
+function TaskScheduleBtn({task,onScheduleAt}){
+  return<button type="button" className="task-schedule-btn" title="תזמן משימה" onClick={e=>{
+    e.stopPropagation();
+    onScheduleAt?.(task,e.currentTarget.getBoundingClientRect());
+  }}>📅</button>;
+}
+
+function TaskScheduleCard({task,onDragStart,onContextMenu,onScheduleAt}){
+  const longPress=useLongPress(()=>{
+    if(onScheduleAt)onScheduleAt(task,{left:0,bottom:120,top:80});
+    else if(onContextMenu)onContextMenu({preventDefault(){},stopPropagation(){},clientX:typeof window!=="undefined"?window.innerWidth/2:0,clientY:120},task);
+  });
+  return<div draggable onDragStart={onDragStart} onContextMenu={e=>onContextMenu?.(e,task)} {...longPress} style={{background:"#fff",border:`2px solid ${taskPriorityBorderColor(task.priority)}`,borderRadius:6,padding:8,cursor:"grab",fontSize:12,position:"relative",userSelect:"none",WebkitUserSelect:"none"}}>
     <div style={{fontWeight:600,marginBottom:2}}>{task.client_name||"—"}</div>
     {task.title&&<div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{task.title}</div>}
     {task.bina_order_id&&<div style={{fontSize:10,color:"#9ca3af",marginTop:2,direction:"ltr",textAlign:"right"}}>#{task.bina_order_id}</div>}
+    {onScheduleAt&&<button type="button" className="task-schedule-btn" title="תזמן" onClick={e=>{e.stopPropagation();onScheduleAt(task,e.currentTarget.getBoundingClientRect());}} style={{position:"absolute",top:4,left:4,width:28,height:28,fontSize:12}}>📅</button>}
   </div>;
 }
 
-function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu}){
+function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu,onScheduleAt}){
   const [weekStart,setWeekStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());d.setHours(0,0,0,0);return d;});
   const [draggedTask,setDraggedTask]=useState(null);
   const weekDays=useMemo(()=>{
@@ -1005,7 +1090,7 @@ function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu}){
     {unsched.length>0&&<div onDragOver={e=>e.preventDefault()} onDrop={()=>handleDrop("_unscheduled")} style={{background:"#fef3c7",padding:15,borderRadius:8,marginBottom:15,border:"2px dashed #f59e0b"}}>
       <h3 style={{margin:"0 0 10px",color:"#78350f",fontSize:14}}>📋 לא מתוזמן ({unsched.length})</h3>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {unsched.slice(0,20).map(t=><TaskScheduleCard key={t.id} task={t} onDragStart={()=>setDraggedTask(t)} onContextMenu={e=>onScheduleMenu(e,t)}/>)}
+        {unsched.slice(0,20).map(t=><TaskScheduleCard key={t.id} task={t} onDragStart={()=>setDraggedTask(t)} onContextMenu={onScheduleMenu} onScheduleAt={onScheduleAt}/>)}
         {unsched.length>20&&<div style={{padding:8,fontSize:12,color:"#78350f",alignSelf:"center"}}>+{unsched.length-20} נוספות</div>}
       </div>
     </div>}
@@ -1021,7 +1106,7 @@ function WeeklyTasksView({allTasks,onUpdate,onScheduleMenu}){
             <div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{tasksForDay.length} משימות</div>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {tasksForDay.map(t=><TaskScheduleCard key={t.id} task={t} onDragStart={()=>setDraggedTask(t)} onContextMenu={e=>onScheduleMenu(e,t)}/>)}
+            {tasksForDay.map(t=><TaskScheduleCard key={t.id} task={t} onDragStart={()=>setDraggedTask(t)} onContextMenu={onScheduleMenu} onScheduleAt={onScheduleAt}/>)}
           </div>
         </div>;
       })}
@@ -1045,12 +1130,16 @@ function getDayColor(group,index){
   return DAY_COLORS[index%DAY_COLORS.length];
 }
 
-function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onScheduleMenu,markTaskItemDone,updStatus,deleteTask,setEditTask,user,clients,onUpdate}){
+function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onScheduleMenu,onScheduleAt,markTaskItemDone,updStatus,deleteTask,setEditTask,user,clients,onUpdate}){
   const groupedTasks=useMemo(()=>groupTasksByScheduledDate(tasks),[tasks]);
-  const renderTaskCard=t=>{
+  const TaskCard=({t})=>{
     const stripeColor=(tasksListDept?(DEPT_COLORS[tasksListDept]||"var(--blue)"):(DEPT_COLORS[t.dept]||"var(--blue)"));
     const deptItems=(t.has_items&&tasksListDept)?(taskItems||[]).filter(i=>i.task_id===t.id&&i.department===tasksListDept&&i.status!=="ארכיון"):[];
-    return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`}} onClick={()=>onOpenDet(t)} onContextMenu={e=>onScheduleMenu(e,t)}>
+    const longPress=useLongPress(()=>{
+      if(onScheduleAt)onScheduleAt(t,{left:0,bottom:typeof window!=="undefined"?window.innerHeight*0.3:200,top:100});
+      else onScheduleMenu?.({preventDefault(){},stopPropagation(){},clientX:typeof window!=="undefined"?window.innerWidth/2:0,clientY:150},t);
+    });
+    return<div key={t.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:13,padding:"14px 16px",cursor:"pointer",boxShadow:"var(--shadow)",borderRight:`4px solid ${stripeColor}`,userSelect:"none",WebkitUserSelect:"none"}} onClick={()=>onOpenDet(t)} onContextMenu={e=>onScheduleMenu(e,t)} {...longPress}>
       <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontWeight:700,fontSize:14,color:"var(--text)",marginBottom:3}}>{t.title}{t.bina_order_id?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· #{t.bina_order_id}</span>:null}{t.total_amount!=null&&Number(t.total_amount)>0?<span style={{color:"var(--text3)",fontWeight:600,fontSize:12,marginInlineStart:6}}>· {fmtCurrencySimple(t.total_amount)}</span>:null}</div>
@@ -1067,14 +1156,15 @@ function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onSchedu
         </div>)}
       </div>}
       {t.has_items&&!tasksListDept&&<div style={{fontSize:11,color:"var(--text3)",marginBottom:10,padding:"6px 8px",background:"var(--bg2)",borderRadius:8}}>הזמנה עם פריטים לפי מחלקות — בחר מחלקה מהסינון למעלה כדי לראות ולסמן פריטים.</div>}
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+      <div className="task-actions" style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
         <Badge status={t.status}/>
         <select value={t.status} onChange={e=>updStatus(t.id,e.target.value)} style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:7,padding:"4px 9px",color:"var(--text)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",direction:"rtl"}}>
           {["ממתין","בביצוע","הושלם","תקוע"].map(s=><option key={s} value={s}>{s}</option>)}
         </select>
         {t.due_date&&<span style={{color:"var(--text3)",fontSize:11,marginRight:"auto"}}>📅 {t.due_date}</span>}
         {taskSchedDateKey(t)&&<span style={{color:"#0d9488",fontSize:11}}>🗓️ {taskSchedDateKey(t)}</span>}
-        <button type="button" onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",padding:"4px 8px",borderRadius:7,border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️</button>
+        <TaskScheduleBtn task={t} onScheduleAt={onScheduleAt}/>
+        <button type="button" className="task-action-btn" onClick={()=>deleteTask(t.id)} style={{marginRight:"auto",border:"1px solid var(--red-light)",background:"var(--red-light)",color:"var(--red)",fontSize:11,fontWeight:600}}>🗑️</button>
         <button type="button" onClick={e=>{e.stopPropagation();setEditTask({...t});}} style={{padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך</button>
         <button type="button" onClick={e=>openLabelPrintTask(e,t)} title="הדפס מדבקת אריזה" style={LABEL_PRINT_BTN_STYLE}>🏷️</button>
         <button type="button" onClick={e=>openDeliveryNoteFromTask(e,t)} title="תעודת משלוח" style={DELIVERY_NOTE_BTN_STYLE}>📋 תעודת משלוח</button>
@@ -1102,7 +1192,7 @@ function TasksListView({tasks,loading,tasksListDept,taskItems,onOpenDet,onSchedu
           <div style={{flex:1,fontSize:14}}>{group.label}</div>
           <div style={{fontSize:12,padding:"2px 10px",borderRadius:12,background:group.isHighlight?"rgba(255,255,255,0.25)":"white",color:group.isHighlight?"white":"#6b7280",fontWeight:600}}>{group.tasks.length}</div>
         </div>
-        <div style={{background:dayColor.bg,border:`1px solid ${dayColor.border}`,borderRadius:8,padding:8,display:"flex",flexDirection:"column",gap:6}}>{group.tasks.map(renderTaskCard)}</div>
+        <div style={{background:dayColor.bg,border:`1px solid ${dayColor.border}`,borderRadius:8,padding:8,display:"flex",flexDirection:"column",gap:6}}>{group.tasks.map(t=><TaskCard key={t.id} t={t}/>)}</div>
       </div>;
     })}
     {tasks.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
@@ -4126,10 +4216,36 @@ function ShipmentDetailsModal({task,drivers,onClose,onUpdate,onOpenDeliveryNote,
   </Modal>;
 }
 
-function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryNote,onRefresh,user,clients}){
+function ShipmentMoveMenu({onClose,onMoveTo}){
+  const daysAhead=useMemo(()=>generateNextWorkingDays(6),[]);
+  return<>
+    <div className="smm-backdrop" onClick={onClose}/>
+    <div className="smm-menu">
+      <div className="smm-header">
+        <div className="smm-title">📦 העבר משלוח ל:</div>
+        <button type="button" onClick={onClose} className="smm-close">✕</button>
+      </div>
+      <div className="smm-body">
+        {daysAhead.map(day=>(
+          <button type="button" key={day.date} onClick={()=>{onMoveTo(day.date);onClose();}} className="smm-day-btn">
+            <span className="smm-day-name">{day.label}</span>
+            <span className="smm-day-date">{day.dateStr}</span>
+          </button>
+        ))}
+        <div className="smm-divider"/>
+        <button type="button" onClick={()=>{onMoveTo(null);onClose();}} className="smm-day-btn smm-unschedule">
+          🔀 ממתין לתזמון
+        </button>
+      </div>
+    </div>
+  </>;
+}
+
+function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryNote,onRefresh,user,clients,onMoveTo}){
   const [showDetails,setShowDetails]=useState(false);
   const [showEditDirect,setShowEditDirect]=useState(false);
   const [copied,setCopied]=useState(false);
+  const [showMoveMenu,setShowMoveMenu]=useState(false);
   const isDelivered=task.delivery_status==="delivered";
   const driver=drivers.find(d=>d.id===task.assigned_driver_id);
   const typeIcon={local:"🚚",courier:"📮",pickup:"🛒"}[task.delivery_type||"local"]||"🚚";
@@ -4145,8 +4261,12 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
     e.stopPropagation();
     window.open(`https://wa.me/?text=${encodeURIComponent(formatSingleShipmentText(task))}`,"_blank");
   };
+  const longPress=useLongPress(()=>{
+    if(readonly||isDelivered||!onMoveTo)return;
+    setShowMoveMenu(true);
+  });
   return<>
-    <div draggable={!readonly&&!isDelivered} onDragStart={onDragStart} onClick={()=>setShowDetails(true)} style={{background:isDelivered?"#f3f4f6":"#fff",border:`2px solid ${cubeColor}`,borderRadius:8,padding:compact?6:10,cursor:isDelivered?"pointer":(readonly?"pointer":"grab"),fontSize:compact?11:12,position:"relative",opacity:isDelivered?0.7:1,transition:"all 0.2s",      color:textMain}}>
+    <div draggable={!readonly&&!isDelivered} onDragStart={onDragStart} onClick={()=>setShowDetails(true)} {...(!readonly&&!isDelivered?longPress:{})} style={{background:isDelivered?"#f3f4f6":"#fff",border:`2px solid ${cubeColor}`,borderRadius:8,padding:compact?6:10,cursor:isDelivered?"pointer":(readonly?"pointer":"grab"),fontSize:compact?11:12,position:"relative",opacity:isDelivered?0.7:1,transition:"all 0.2s",color:textMain,userSelect:"none",WebkitUserSelect:"none"}}>
       {isDelivered&&<div style={{position:"absolute",top:6,left:6,width:28,height:28,background:"#10b981",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:18,fontWeight:"bold",boxShadow:"0 2px 4px rgba(16,185,129,0.3)",zIndex:2}}>✓</div>}
       {!compact&&(task.notif_ready_sent_at||task.notif_shipped_sent_at||task.notif_delivered_sent_at)&&<div style={{display:"flex",gap:4,marginBottom:6,flexWrap:"wrap"}}>
         {task.notif_ready_sent_at&&<span style={{fontSize:10,padding:"2px 6px",background:"#d1fae5",color:"#065f46",borderRadius:4,fontWeight:600}} title={task.notif_ready_sent_at?`מוכן: ${new Date(task.notif_ready_sent_at).toLocaleString("he-IL")}`:""}>✓ מוכן</span>}
@@ -4159,6 +4279,7 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
           {task.archived_at&&<span style={{fontSize:10,background:"#fef3c7",color:"#92400e",padding:"2px 6px",borderRadius:4,marginRight:4}} title="המשימה בארכיון — מוצגת כי המשלוח עדיין פעיל">🗄️ מארכיון</span>}
           {task.client_name||"—"}
         </span>
+        {!readonly&&!isDelivered&&onMoveTo&&<button type="button" className="task-action-btn" title="העבר ליום אחר" onClick={e=>{e.stopPropagation();setShowMoveMenu(true);}} style={{width:28,height:28,fontSize:12}}>📅</button>}
       </div>
       {!compact&&(task.bina_order_id||task.sales_agent)&&<div style={{fontSize:10,color:textMuted,marginTop:3,display:"flex",justifyContent:"space-between",gap:6}}>
         {task.bina_order_id&&<span>📝 <span style={{direction:"ltr",display:"inline-block"}}>#{task.bina_order_id}</span></span>}
@@ -4190,6 +4311,7 @@ function ShipmentCube({task,drivers,onDragStart,compact,readonly,onOpenDeliveryN
     </div>
     {showDetails&&<ShipmentDetailsModal task={task} drivers={drivers} onClose={()=>setShowDetails(false)} onUpdate={onRefresh} onOpenDeliveryNote={onOpenDeliveryNote} user={user}/>}
     {showEditDirect&&<EditShipmentModal task={task} drivers={drivers} onClose={()=>setShowEditDirect(false)} onUpdate={onRefresh}/>}
+    {showMoveMenu&&onMoveTo&&<ShipmentMoveMenu onClose={()=>setShowMoveMenu(false)} onMoveTo={dateStr=>onMoveTo(task,dateStr)}/>}
   </>;
 }
 
@@ -4280,7 +4402,7 @@ function SplitByDriverModal({date,tasks,drivers,onClose}){
   </Modal>;
 }
 
-function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsApp,onSplitDay,isToday,onOpenDeliveryNote,onRefresh,user,clients}){
+function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsApp,onSplitDay,isToday,onOpenDeliveryNote,onRefresh,user,clients,onMoveTo}){
   const [dragOver,setDragOver]=useState(false);
   const dayName=date.toLocaleDateString("he-IL",{weekday:"long"});
   const dateNum=date.toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
@@ -4291,7 +4413,7 @@ function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsA
       <div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>{tasks.length} משלוחים</div>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
-      {tasks.map(task=><ShipmentCube key={task.id} task={task} drivers={drivers} onDragStart={()=>onDragStart(task)} onOpenDeliveryNote={onOpenDeliveryNote} onRefresh={onRefresh} user={user} clients={clients}/>)}
+      {tasks.map(task=><ShipmentCube key={task.id} task={task} drivers={drivers} onDragStart={()=>onDragStart(task)} onOpenDeliveryNote={onOpenDeliveryNote} onRefresh={onRefresh} user={user} clients={clients} onMoveTo={onMoveTo}/>)}
       {tasks.length===0&&<div style={{textAlign:"center",padding:20,color:"var(--text3)",fontSize:12,border:"1px dashed var(--border)",borderRadius:6}}>גרור משלוח לכאן</div>}
     </div>
     {tasks.length>0&&<div style={{marginTop:10,paddingTop:8,borderTop:"1px solid var(--border)",display:"flex",gap:6}}>
@@ -4368,6 +4490,15 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
       if(refreshAll)await refreshAll();
     }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
   };
+  const handleMoveTo=async(task,dateStr)=>{
+    try{
+      const dayTasks=dateStr?tasks.filter(t=>t.scheduled_delivery_date===dateStr&&t.id!==task.id):[];
+      const newOrder=dateStr?dayTasks.length+1:null;
+      await sb(`tasks?id=eq.${task.id}`,{method:"PATCH",body:JSON.stringify({scheduled_delivery_date:dateStr,delivery_order:newOrder})});
+      await loadData();
+      if(refreshAll)await refreshAll();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
   const formatShipmentDayText=(date,dayTasks)=>{
     const dateStr=date.toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
     let text=`📦 *משלוחי יום ${dateStr}*\n`;
@@ -4425,7 +4556,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
     {unscheduledTasks.length>0&&<div onDragOver={e=>e.preventDefault()} onDrop={()=>handleDrop(null)} style={{background:"#fef3c7",padding:15,borderRadius:10,marginBottom:15,border:"2px dashed #f59e0b"}}>
       <h3 style={{margin:"0 0 10px",color:"#78350f",fontSize:15}}>📦 ממתינים לתזמון ({unscheduledTasks.length})</h3>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {unscheduledTasks.map(task=><ShipmentCube key={task.id} task={task} drivers={drivers} onDragStart={()=>handleDragStart(task)} compact onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients}/>)}
+        {unscheduledTasks.map(task=><ShipmentCube key={task.id} task={task} drivers={drivers} onDragStart={()=>handleDragStart(task)} compact onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients} onMoveTo={handleMoveTo}/>)}
       </div>
     </div>}
     {weekendTasks.length>0&&<div style={{background:"#fef2f2",padding:15,borderRadius:10,marginBottom:15,border:"2px solid #fca5a5"}}>
@@ -4436,14 +4567,14 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
           const p=String(task.scheduled_delivery_date).split("-").map(Number);
           const dateLabel=p.length>=3?new Date(p[0],p[1]-1,p[2]).toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"}):"";
           return<div key={task.id} style={{display:"flex",flexDirection:"column"}}>
-            <ShipmentCube task={task} drivers={drivers} onDragStart={()=>handleDragStart(task)} onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients}/>
+            <ShipmentCube task={task} drivers={drivers} onDragStart={()=>handleDragStart(task)} onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients} onMoveTo={handleMoveTo}/>
             <div style={{textAlign:"center",fontSize:10,color:"#991b1b",marginTop:2,fontWeight:600}}>{dateLabel}</div>
           </div>;
         })}
       </div>
     </div>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
-      {weekDays.map((date,i)=><DayColumn key={i} date={date} tasks={getTasksForDay(date)} drivers={drivers} onDragStart={handleDragStart} onDrop={()=>handleDrop(date)} onCopyDay={()=>copyDayToClipboard(date)} onSendWhatsApp={()=>sendDayWhatsApp(date)} onSplitDay={()=>setShowSplitByDriverModal({date,tasks:getTasksForDay(date)})} isToday={toLocalDateStr(date)===toLocalDateStr(new Date())} onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients}/>)}
+      {weekDays.map((date,i)=><DayColumn key={i} date={date} tasks={getTasksForDay(date)} drivers={drivers} onDragStart={handleDragStart} onDrop={()=>handleDrop(date)} onCopyDay={()=>copyDayToClipboard(date)} onSendWhatsApp={()=>sendDayWhatsApp(date)} onSplitDay={()=>setShowSplitByDriverModal({date,tasks:getTasksForDay(date)})} isToday={toLocalDateStr(date)===toLocalDateStr(new Date())} onOpenDeliveryNote={openNote} onRefresh={loadData} user={user} clients={clients} onMoveTo={handleMoveTo}/>)}
     </div>
     {pastTasks.length>0&&<details style={{marginTop:20,background:"#fff",padding:15,borderRadius:10,border:"1px solid var(--border)"}}>
       <summary style={{cursor:"pointer",fontWeight:600}}>📚 משלוחים קודמים ({pastTasks.length})</summary>
@@ -9800,6 +9931,67 @@ const parseBillingAddressForBina=(addr)=>{
 };
 const signupPhoneDigits=s=>String(s||"").replace(/\D/g,"");
 
+function buildAdminSignupNotification(formData){
+  const f=formData||{};
+  const biz=escHtml(f.business_name||f.full_name||"—");
+  const contact=escHtml(f.contact_name||f.full_name||"—");
+  const phone=escHtml(f.phone||"—");
+  const email=escHtml(f.email||"—");
+  const taxId=escHtml(f.business_id||f.personal_id||"—");
+  const address=escHtml(f.billing_address||"—");
+  const notes=f.notes?`<div class="field"><div class="field-label">📝 הערות:</div><div class="field-value">${escHtml(f.notes)}</div></div>`:"";
+  const when=`${new Date().toLocaleDateString("he-IL")} ${new Date().toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"})}`;
+  return`<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head><meta charset="UTF-8">
+<style>
+body{font-family:Arial,sans-serif;padding:20px;background:#f9fafb;direction:rtl}
+.container{max-width:600px;margin:0 auto;background:white;border-radius:12px;overflow:hidden}
+.header{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:white;padding:20px 30px}
+.header h1{margin:0;font-size:22px}
+.body{padding:20px 30px}
+.field{padding:10px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:8px}
+.field:last-child{border-bottom:none}
+.field-label{font-weight:700;color:#0d9488;min-width:130px}
+.field-value{color:#1f2937}
+.cta{background:#f0fdfa;padding:15px 30px;text-align:center;font-size:13px;color:#0d9488}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🆕 טופס לקוח חדש התקבל</h1>
+    <p style="margin:5px 0 0 0;opacity:0.9;font-size:14px">${when}</p>
+  </div>
+  <div class="body">
+    <div class="field"><div class="field-label">🏢 שם עסק:</div><div class="field-value">${biz}</div></div>
+    <div class="field"><div class="field-label">👤 איש קשר:</div><div class="field-value">${contact}</div></div>
+    <div class="field"><div class="field-label">📞 טלפון:</div><div class="field-value">${phone}</div></div>
+    <div class="field"><div class="field-label">📧 מייל:</div><div class="field-value">${email}</div></div>
+    <div class="field"><div class="field-label">🆔 ח.פ. / ת.ז.:</div><div class="field-value">${taxId}</div></div>
+    <div class="field"><div class="field-label">📍 כתובת:</div><div class="field-value">${address}</div></div>
+    ${notes}
+  </div>
+  <div class="cta">💡 היכנס ל-PrintOS ואשר את הטופס כדי לפתוח לקוח בבינה</div>
+</div>
+</body>
+</html>`;
+}
+
+async function sendAdminSignupNotification(formData){
+  try{
+    const name=formData.business_name||formData.full_name||formData.contact_name||"לקוח";
+    await sendEmail({
+      to:["kfir.dfus@gmail.com","natalie.zem@gmail.com"],
+      subject:`🆕 טופס לקוח חדש: ${name}`,
+      html:buildAdminSignupNotification(formData),
+      from:"PrintOS - טפסים <orders@natalie-print.com>",
+    });
+  }catch(err){
+    console.error("Failed to send admin notification:",err);
+  }
+}
+
 function buildThankYouEmail(customerName,businessOrName){
   const cn=escHtml(customerName);
   const bn=escHtml(businessOrName);
@@ -9983,6 +10175,18 @@ function ClientSignupPage({token}){
       });
       const customerName=clientType==="business"?(contactName||businessName):fullName;
       const displayBiz=clientType==="business"?businessName:fullName;
+      const submittedPayload={
+        business_name:businessName.trim()||null,
+        business_id:businessId.trim()||null,
+        full_name:fullName.trim()||null,
+        personal_id:personalId.trim()||null,
+        phone:phone.trim(),
+        email:email.trim(),
+        contact_name:contactName.trim()||null,
+        billing_address:billingAddress.trim(),
+        notes:notes.trim()||null,
+      };
+      try{await sendAdminSignupNotification(submittedPayload);}catch(_){}
       try{
         await sendEmail({
           to:email.trim(),
@@ -12068,7 +12272,7 @@ function App(){
   const [clients,setClients]=useState([]);
   const [tab,setTab]=useState("dashboard");
   const [tasksViewMode,setTasksViewMode]=useState("list");
-  const {menu:scheduleMenu,openMenu:openScheduleMenu,closeMenu:closeScheduleMenu}=useScheduleMenu();
+  const {menu:scheduleMenu,openMenu:openScheduleMenu,openMenuAt:openScheduleMenuAt,closeMenu:closeScheduleMenu}=useScheduleMenu();
   const [showSales,setShowSales]=useState(false);
   const [showQuotes,setShowQuotes]=useState(false);
   const [showDebt,setShowDebt]=useState(false);
@@ -12925,7 +13129,7 @@ function App(){
           <button type="button" onClick={()=>setTasksViewMode("weekly")} style={{padding:"8px 16px",background:tasksViewMode==="weekly"?"#fff":"transparent",color:tasksViewMode==="weekly"?"#0d9488":"#6b7280",border:"none",borderRadius:6,cursor:"pointer",fontWeight:tasksViewMode==="weekly"?600:400,boxShadow:tasksViewMode==="weekly"?"0 1px 2px rgba(0,0,0,0.1)":"none",fontFamily:"inherit",fontSize:13}}>📅 לוח שבועי</button>
         </div>
 
-        {tasksViewMode==="weekly"?<WeeklyTasksView allTasks={visTasks} onUpdate={refreshAll} onScheduleMenu={openScheduleMenu}/>:<TasksListView tasks={visTasks} loading={loading} tasksListDept={tasksListDept} taskItems={taskItems} onOpenDet={setDet} onScheduleMenu={openScheduleMenu} markTaskItemDone={markTaskItemDone} updStatus={updStatus} deleteTask={deleteTask} setEditTask={setEditTask} user={user} clients={clients} onUpdate={refreshAll}/>}
+        {tasksViewMode==="weekly"?<WeeklyTasksView allTasks={visTasks} onUpdate={refreshAll} onScheduleMenu={openScheduleMenu} onScheduleAt={openScheduleMenuAt}/>:<TasksListView tasks={visTasks} loading={loading} tasksListDept={tasksListDept} taskItems={taskItems} onOpenDet={setDet} onScheduleMenu={openScheduleMenu} onScheduleAt={openScheduleMenuAt} markTaskItemDone={markTaskItemDone} updStatus={updStatus} deleteTask={deleteTask} setEditTask={setEditTask} user={user} clients={clients} onUpdate={refreshAll}/>}
         {scheduleMenu&&<TaskScheduleMenu task={scheduleMenu.task} x={scheduleMenu.x} y={scheduleMenu.y} onClose={closeScheduleMenu} onUpdate={refreshAll} allTasks={visTasks}/>}
       </div>}
 
@@ -13128,6 +13332,7 @@ function App(){
           <TaskInquiryButton task={det} user={user} />
           <RefreshFromBinaButton task={det} onUpdate={refreshAll} />
           <TaskMoveToDeliveryBtn task={det}/>
+          <TaskScheduleBtn task={det} onScheduleAt={openScheduleMenuAt}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
           {[["לקוח",det.client_name],["מחלקה",det.dept],["אחראי",det.assignee],["עדיפות",det.priority],["תאריך",det.due_date],["הערות",det.notes]].filter(([,v])=>v).map(([l,v])=><div key={l} style={{background:"var(--bg2)",borderRadius:10,padding:"10px 12px"}}>

@@ -11,6 +11,7 @@
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/konva@9.3.6/konva.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
 <script>
   // Fallback until app helper is initialized inside the main script.
   window.sendAlert = function() {
@@ -151,6 +152,37 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .debt-cell-total{background:#f0fdfa;font-weight:700;color:#0d9488;text-align:left;direction:ltr}
 .debt-grand-total-row td{background:#f9fafb;border-top:2px solid #0d9488;font-weight:700}
 @media (max-width:640px){.debt-report-summary-cards{grid-template-columns:1fr}.debt-aging-grid{grid-template-columns:repeat(2,1fr)}.debt-date-filters{flex-direction:column;align-items:stretch}}
+.login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);padding:20px;direction:rtl}
+.login-header{text-align:center;color:#fff;margin-bottom:30px}
+.login-header h1{font-size:36px;font-weight:900;margin:0 0 8px 0}
+.login-header p{margin:0;opacity:.9;font-size:14px}
+.login-users-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:700px;width:100%}
+.login-user-card{background:#fff;border:none;border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:all .2s;position:relative;font-family:inherit;text-align:right}
+.login-user-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.15)}
+.login-user-avatar{font-size:32px;width:50px;height:50px;display:flex;align-items:center;justify-content:center;background:#f0fdfa;border-radius:50%;flex-shrink:0}
+.login-user-card.admin .login-user-avatar{background:#fef3c7}
+.login-user-info{flex:1;text-align:right}
+.login-user-name{font-weight:700;font-size:16px;color:#1f2937}
+.login-user-role{font-size:13px;color:#6b7280}
+.login-user-badge{position:absolute;top:8px;left:8px;background:#f59e0b;color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;font-weight:700}
+.login-form{background:#fff;padding:30px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+.login-first-time-msg{background:#fef3c7;color:#92400e;padding:12px;border-radius:8px;margin-bottom:20px;font-size:14px;border-right:4px solid #f59e0b;text-align:right}
+.login-field{margin-bottom:15px}
+.login-field label{display:block;font-weight:600;color:#374151;margin-bottom:6px;font-size:14px}
+.login-field input{width:100%;padding:12px;border:2px solid #e5e7eb;border-radius:8px;font-size:16px;direction:ltr;text-align:right;box-sizing:border-box;font-family:inherit}
+.login-field input:focus{border-color:#0d9488;outline:none}
+.login-hint{font-size:12px;color:#6b7280;margin-top:-8px;margin-bottom:15px}
+.login-checkbox{display:flex;align-items:center;gap:8px;margin:15px 0;font-size:14px;color:#4b5563;cursor:pointer}
+.login-error{background:#fee2e2;color:#991b1b;padding:10px;border-radius:6px;font-size:14px;margin:10px 0;border-right:3px solid #dc2626}
+.login-actions{display:flex;gap:10px;margin-top:20px}
+.login-btn-primary{flex:1;background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:15px;font-family:inherit}
+.login-btn-primary:disabled{opacity:.6;cursor:not-allowed}
+.login-btn-back{background:#f3f4f6;color:#374151;padding:12px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit}
+.login-btn-back:disabled{opacity:.6;cursor:not-allowed}
+.login-loading{text-align:center;padding:40px;color:#6b7280}
+.logout-btn{background:transparent;border:1px solid #dc2626;color:#dc2626;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit;transition:all .15s}
+.logout-btn:hover{background:#fee2e2}
+@media (max-width:640px){.login-header h1{font-size:28px}.login-users-list{grid-template-columns:1fr}.login-form{padding:20px}}
 .alut-season-summary{background:linear-gradient(135deg,#f0fdfa 0%,#ecfeff 100%);border:2px solid #14b8a6;border-radius:12px;padding:20px;margin-bottom:20px}
 .alut-season-title{font-size:18px;font-weight:900;color:#0d9488;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .alut-season-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -499,6 +531,9 @@ const Modal=({open,onClose,children,title,maxWidth=520})=>!open?null:
     </div>
   </div>;
 
+const CLIENT_EMAIL_FOOTER_HTML='<p style="margin:0 0 4px 0;color:#64748b;font-size:13px;">📞 <span style="direction:ltr;display:inline-block;">03-6815703</span> &nbsp;•&nbsp; 📧 <a href="mailto:orders@natalie-print.com" style="color:#0d9488;text-decoration:none;">orders@natalie-print.com</a></p><p style="margin:6px 0 0 0;color:#94a3b8;font-size:11px;">שד׳ הר ציון 104, תל אביב</p>';
+const CLIENT_EMAIL_FOOTER_TEXT='03-6815703 | orders@natalie-print.com';
+
 function buildClientNotificationEmail({task,itemsList,clientData,notificationType}){
   const items=itemsList;
   const type=notificationType;
@@ -526,9 +561,9 @@ function buildClientNotificationEmail({task,itemsList,clientData,notificationTyp
     locationBlock=address?`<div style="background:#f0fdfa;border-radius:8px;padding:16px;margin:20px 0;border-right:4px solid #2dd4bf;"><div style="color:#0d9488;font-weight:600;margin-bottom:8px;font-size:15px;">📍 נמסר ל</div><div style="color:#134e4a;line-height:1.6;">${e(address)}</div></div>`:"";
   }
   const subject=shortTitle?`${emoji} הזמנה #${orderNum} - ${shortTitle} - ${title}`:`${emoji} הזמנה #${orderNum} - ${title} - דפוס נטלי`;
-  const htmlOut=`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${e(title)}</title></head><body style="margin:0;padding:0;background:#f8fafc;font-family:'Segoe UI',Arial,sans-serif;direction:rtl;"><div style="max-width:600px;margin:0 auto;background:#ffffff;"><div style="background:#ffffff;padding:30px 20px;text-align:center;">${logoSvg}</div><div style="height:4px;background:linear-gradient(90deg,#2dd4bf 0%,#0d9488 100%);"></div><div style="padding:30px 28px;"><h1 style="margin:0 0 8px 0;color:#0d9488;font-size:24px;font-weight:700;text-align:right;">${emoji} ${e(title)}</h1>${shortTitle?`<div style="margin:0 0 20px 0;color:#64748b;font-size:15px;text-align:right;font-weight:500;">${e(shortTitle)}</div>`:'<div style="margin-bottom:20px;"></div>'}<p style="margin:0 0 16px 0;color:#134e4a;font-size:16px;line-height:1.6;text-align:right;">שלום ${e(contactName)},</p><p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.7;text-align:right;">${e(mainMessage)}</p><div style="background:#f8fafc;border-radius:8px;padding:20px;margin:0 0 20px 0;"><div style="color:#64748b;font-size:13px;margin-bottom:6px;text-align:right;">מספר הזמנה</div><div style="color:#0d9488;font-size:22px;font-weight:700;direction:ltr;text-align:right;">#${e(orderNum)}</div><div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;"><div style="color:#64748b;font-size:13px;margin-bottom:10px;text-align:right;">📦 פריטים</div><ul style="list-style:none;padding:0;margin:0;text-align:right;">${itemsHtml}</ul></div></div>${locationBlock}<div style="margin-top:30px;padding-top:20px;border-top:2px solid #f0fdfa;"><p style="margin:0 0 4px 0;color:#475569;font-size:14px;text-align:right;">בברכה,</p>${agent?`<p style="margin:0 0 4px 0;color:#134e4a;font-size:16px;font-weight:600;text-align:right;">${e(agent)}</p>`:""}<p style="margin:0;color:#0d9488;font-size:14px;font-weight:600;text-align:right;">דפוס נטלי</p></div></div><div style="height:3px;background:linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%);"></div><div style="background:#f8fafc;padding:18px 20px;text-align:center;"><p style="margin:0 0 4px 0;color:#64748b;font-size:13px;"><a href="https://natalie-print.com" style="color:#0d9488;text-decoration:none;font-weight:600;">natalie-print.com</a> &nbsp;•&nbsp; <span style="direction:ltr;display:inline-block;">03-6815703</span></p><p style="margin:6px 0 0 0;color:#94a3b8;font-size:11px;">שד׳ הר ציון 104, תל אביב</p></div></div></body></html>`;
+  const htmlOut=`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${e(title)}</title></head><body style="margin:0;padding:0;background:#f8fafc;font-family:'Segoe UI',Arial,sans-serif;direction:rtl;"><div style="max-width:600px;margin:0 auto;background:#ffffff;"><div style="background:#ffffff;padding:30px 20px;text-align:center;">${logoSvg}</div><div style="height:4px;background:linear-gradient(90deg,#2dd4bf 0%,#0d9488 100%);"></div><div style="padding:30px 28px;"><h1 style="margin:0 0 8px 0;color:#0d9488;font-size:24px;font-weight:700;text-align:right;">${emoji} ${e(title)}</h1>${shortTitle?`<div style="margin:0 0 20px 0;color:#64748b;font-size:15px;text-align:right;font-weight:500;">${e(shortTitle)}</div>`:'<div style="margin-bottom:20px;"></div>'}<p style="margin:0 0 16px 0;color:#134e4a;font-size:16px;line-height:1.6;text-align:right;">שלום ${e(contactName)},</p><p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.7;text-align:right;">${e(mainMessage)}</p><div style="background:#f8fafc;border-radius:8px;padding:20px;margin:0 0 20px 0;"><div style="color:#64748b;font-size:13px;margin-bottom:6px;text-align:right;">מספר הזמנה</div><div style="color:#0d9488;font-size:22px;font-weight:700;direction:ltr;text-align:right;">#${e(orderNum)}</div><div style="margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0;"><div style="color:#64748b;font-size:13px;margin-bottom:10px;text-align:right;">📦 פריטים</div><ul style="list-style:none;padding:0;margin:0;text-align:right;">${itemsHtml}</ul></div></div>${locationBlock}<div style="margin-top:30px;padding-top:20px;border-top:2px solid #f0fdfa;"><p style="margin:0 0 4px 0;color:#475569;font-size:14px;text-align:right;">בברכה,</p>${agent?`<p style="margin:0 0 4px 0;color:#134e4a;font-size:16px;font-weight:600;text-align:right;">${e(agent)}</p>`:""}<p style="margin:0;color:#0d9488;font-size:14px;font-weight:600;text-align:right;">דפוס נטלי</p></div></div><div style="height:3px;background:linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%);"></div><div style="background:#f8fafc;padding:18px 20px;text-align:center;">${CLIENT_EMAIL_FOOTER_HTML}</div></div></body></html>`;
   const itemsText=(items&&items.length>0)?items.map(i=>`• ${i.description||"—"} (כמות: ${i.quantity??0})`).join("\n"):`• ${task.title||"פריט"}`;
-  const text=`שלום ${contactName},\n\n${mainMessage}\n\nמספר הזמנה: #${orderNum}\n\nפריטים:\n${itemsText}\n\n${address?`כתובת: ${address}\n`:""}\nבברכה,\n${agent?agent+"\n":""}דפוס נטלי\n03-6815703\nnatalie-print.com`;
+  const text=`שלום ${contactName},\n\n${mainMessage}\n\nמספר הזמנה: #${orderNum}\n\nפריטים:\n${itemsText}\n\n${address?`כתובת: ${address}\n`:""}\nבברכה,\n${agent?agent+"\n":""}דפוס נטלי\n${CLIENT_EMAIL_FOOTER_TEXT}`;
   return{subject,html:htmlOut,text};
 }
 
@@ -2938,7 +2973,7 @@ function generateDeliveryNoteHTML(note,_isSigningView=false){
   <div class="footer">
     <strong>נטלי פתרונות הדפסה בע"מ</strong> | ח.פ. 517205332<br>
     שד׳ הר ציון 104, תל אביב | טל: <span class="ltr">03-6815703</span><br>
-    natalie-print.com
+    orders@natalie-print.com
   </div>
 </body>
 </html>`;
@@ -4571,66 +4606,219 @@ function ClientDeliveryEditModal({client,user,onClose,onSaved}){
 }
 
 // ── LOGIN ──
-function Login({onLogin}){
+function Login({onLogin,sb}){
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [sel,setSel]=useState(null);
+  const [selectedUser,setSelectedUser]=useState(null);
+  const [password,setPassword]=useState("");
+  const [confirmPassword,setConfirmPassword]=useState("");
+  const [rememberMe,setRememberMe]=useState(true);
+  const [error,setError]=useState("");
+  const [busy,setBusy]=useState(false);
 
   useEffect(()=>{
-    sb("users?order=role.desc,name.asc").then(u=>{setUsers(u);setLoading(false);}).catch(()=>setLoading(false));
+    (async()=>{
+      try{
+        const data=await sb("users?order=role.desc,name.asc");
+        setUsers(data||[]);
+      }catch(err){
+        console.error("Failed to load users:",err);
+      }finally{
+        setLoading(false);
+      }
+    })();
+    try{
+      const saved=localStorage.getItem("printos_session");
+      if(saved){
+        const session=JSON.parse(saved);
+        if(session.expires_at&&session.expires_at>Date.now()&&session.user){
+          onLogin(session.user);
+        }else{
+          localStorage.removeItem("printos_session");
+        }
+      }
+    }catch(_){
+      localStorage.removeItem("printos_session");
+    }
   },[]);
 
-  const admin=users.filter(u=>u.role==="admin");
-  const workers=users.filter(u=>u.role==="worker");
+  function completeLogin(user){
+    const safeUser={...user,password_hash:undefined};
+    if(rememberMe){
+      try{
+        localStorage.setItem("printos_session",JSON.stringify({
+          user:safeUser,
+          expires_at:Date.now()+30*24*60*60*1000,
+        }));
+      }catch(err){
+        console.warn("Could not save session:",err);
+      }
+    }else{
+      localStorage.removeItem("printos_session");
+    }
+    onLogin(safeUser);
+  }
 
-  if(loading)return<div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}><Spinner sz={36}/></div>;
+  async function handleLogin(){
+    setError("");
+    if(!selectedUser)return;
+    const isFirstTime=!selectedUser.password_hash;
+    const bcrypt=window.dcodeIO&&window.dcodeIO.bcrypt;
+    if(!bcrypt){
+      setError("ספריית האבטחה לא נטענה — רענן את הדף");
+      return;
+    }
+    if(isFirstTime){
+      if(password.length<6){setError("הסיסמה חייבת להיות לפחות 6 תווים");return;}
+      if(password!==confirmPassword){setError("הסיסמאות לא תואמות");return;}
+      setBusy(true);
+      try{
+        const salt=bcrypt.genSaltSync(10);
+        const hash=bcrypt.hashSync(password,salt);
+        await sb(`users?id=eq.${selectedUser.id}`,{
+          method:"PATCH",
+          body:JSON.stringify({password_hash:hash,password_updated_at:new Date().toISOString()}),
+          headers:{"Content-Type":"application/json",Prefer:"return=minimal"},
+        });
+        completeLogin({...selectedUser,password_hash:hash});
+      }catch(err){
+        setError("שגיאה בשמירת הסיסמה: "+(err.message||String(err)));
+      }finally{
+        setBusy(false);
+      }
+    }else{
+      if(!password){setError("אנא הקלד סיסמה");return;}
+      setBusy(true);
+      try{
+        const isValid=bcrypt.compareSync(password,selectedUser.password_hash);
+        if(!isValid){setError("סיסמה שגויה");setBusy(false);return;}
+        completeLogin(selectedUser);
+      }catch(_){
+        setError("שגיאה בבדיקת הסיסמה");
+        setBusy(false);
+      }
+    }
+  }
 
-  return<div style={{minHeight:"100vh",background:"linear-gradient(135deg,#EFF6FF 0%,#F8FAFC 50%,#F0FDF4 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
-    <div style={{width:"100%",maxWidth:640,animation:"fadeUp 0.4s ease"}}>
+  function handleUserSelect(user){
+    setSelectedUser(user);
+    setPassword("");
+    setConfirmPassword("");
+    setError("");
+    setTimeout(()=>{
+      const input=document.getElementById("password-input");
+      if(input)input.focus();
+    },100);
+  }
 
-      {/* Logo */}
-      <div style={{textAlign:"center",marginBottom:40}}>
-        <div style={{width:64,height:64,borderRadius:18,background:"linear-gradient(135deg,#2563EB,#7C3AED)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px",boxShadow:"0 8px 24px rgba(37,99,235,0.25)"}}>🖨️</div>
-        <h1 style={{fontSize:28,fontWeight:900,color:"var(--text)",margin:"0 0 6px",letterSpacing:"-0.5px"}}>PrintOS</h1>
-        <p style={{color:"var(--text3)",fontSize:14}}>בחר את הפרופיל שלך להמשך</p>
+  function handleBack(){
+    setSelectedUser(null);
+    setPassword("");
+    setConfirmPassword("");
+    setError("");
+  }
+
+  if(loading)return<div className="login-screen"><div className="login-loading"><Spinner sz={36}/></div></div>;
+
+  if(!selectedUser){
+    return<div className="login-screen">
+      <div className="login-header">
+        <h1>🖨️ PrintOS</h1>
+        <p>בחר משתמש כדי להיכנס</p>
       </div>
-
-      {/* Admin */}
-      {admin.length>0&&<div style={{marginBottom:24}}>
-        <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.08em",marginBottom:10,paddingRight:4}}>מנהלים</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
-          {admin.map(u=>{
-            const isSel=sel===u.id;
-            return<button key={u.id} onClick={()=>setSel(u.id)} style={{background:isSel?"#EFF6FF":"#fff",border:`2px solid ${isSel?"#2563EB":"var(--border)"}`,borderRadius:14,padding:"16px 14px",cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all 0.15s",boxShadow:isSel?"0 0 0 4px rgba(37,99,235,0.12)":"var(--shadow)"}}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:u.color||"#2563EB",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,color:"#fff",margin:"0 auto 10px"}}>{u.initials||u.name?.[0]}</div>
-              <div style={{fontWeight:700,fontSize:13,color:"var(--text)",marginBottom:3}}>{u.name}</div>
-              <div style={{fontSize:11,color:"var(--text3)"}}>👑 מנהל ראשי</div>
-              {isSel&&<div style={{marginTop:8,width:20,height:20,borderRadius:"50%",background:"#2563EB",display:"flex",alignItems:"center",justifyContent:"center",margin:"8px auto 0",fontSize:11,color:"#fff",fontWeight:800}}>✓</div>}
-            </button>;
-          })}
-        </div>
-      </div>}
-
-      {/* Workers */}
-      <div style={{marginBottom:28}}>
-        <div style={{fontSize:11,fontWeight:700,color:"var(--text3)",letterSpacing:"0.08em",marginBottom:10,paddingRight:4}}>עובדים</div>
-        <div className="login-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-          {workers.map(u=>{
-            const isSel=sel===u.id;
-            const color=u.color||DEPT_COLORS[u.dept]||"#475569";
-            return<button key={u.id} onClick={()=>setSel(u.id)} style={{background:isSel?`${color}0D`:"#fff",border:`2px solid ${isSel?color:"var(--border)"}`,borderRadius:14,padding:"14px 12px",cursor:"pointer",fontFamily:"inherit",textAlign:"center",transition:"all 0.15s",boxShadow:isSel?`0 0 0 4px ${color}20`:"var(--shadow)"}}>
-              <div style={{width:40,height:40,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#fff",margin:"0 auto 8px"}}>{u.initials||u.name?.[0]}</div>
-              <div style={{fontWeight:700,fontSize:12,color:"var(--text)",marginBottom:2}}>{u.name}</div>
-              <div style={{fontSize:10,color:color,fontWeight:600,background:`${color}15`,borderRadius:20,padding:"2px 6px",display:"inline-block"}}>{u.dept}</div>
-              {isSel&&<div style={{marginTop:6,width:18,height:18,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",margin:"6px auto 0",fontSize:10,color:"#fff",fontWeight:800}}>✓</div>}
-            </button>;
-          })}
-        </div>
+      <div className="login-users-list">
+        {users.map(user=>{
+          const isAdmin=user.role==="admin";
+          return<button key={user.id} type="button" onClick={()=>handleUserSelect(user)} className={`login-user-card ${isAdmin?"admin":"worker"}`}>
+            <div className="login-user-avatar">{isAdmin?"👑":"👤"}</div>
+            <div className="login-user-info">
+              <div className="login-user-name">{user.name}</div>
+              <div className="login-user-role">{isAdmin?"מנהל/ת":(user.dept||"עובד/ת")}</div>
+            </div>
+            {!user.password_hash&&<div className="login-user-badge">כניסה ראשונה</div>}
+          </button>;
+        })}
       </div>
+    </div>;
+  }
 
-      <button onClick={()=>{const u=users.find(u=>u.id===sel);if(u)onLogin(u);}} disabled={!sel} style={{width:"100%",padding:"14px",borderRadius:14,border:"none",background:sel?"linear-gradient(135deg,#2563EB,#7C3AED)":"var(--bg3)",color:sel?"#fff":"var(--text3)",fontWeight:700,fontSize:15,cursor:sel?"pointer":"not-allowed",fontFamily:"inherit",boxShadow:sel?"0 4px 16px rgba(37,99,235,0.3)":"none",transition:"all 0.2s"}}>
-        {sel?`כניסה כ-${users.find(u=>u.id===sel)?.name}`:"בחר פרופיל להמשך"}
-      </button>
+  const isFirstTime=!selectedUser.password_hash;
+  return<div className="login-screen">
+    <div className="login-header">
+      <h1>שלום, {selectedUser.name} 👋</h1>
+      {isFirstTime&&<div className="login-first-time-msg">🎉 ברוך הבא! זו הכניסה הראשונה שלך - אנא בחר סיסמה</div>}
+    </div>
+    <div className="login-form">
+      <div className="login-field">
+        <label>{isFirstTime?"סיסמה חדשה:":"הקלד סיסמה:"}</label>
+        <input id="password-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!isFirstTime&&handleLogin()} disabled={busy} autoFocus/>
+      </div>
+      {isFirstTime&&<>
+        <div className="login-field">
+          <label>אישור סיסמה:</label>
+          <input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} disabled={busy}/>
+        </div>
+        <div className="login-hint">💡 לפחות 6 תווים</div>
+      </>}
+      <label className="login-checkbox">
+        <input type="checkbox" checked={rememberMe} onChange={e=>setRememberMe(e.target.checked)} disabled={busy}/>
+        זכור אותי ל-30 יום
+      </label>
+      {error&&<div className="login-error">⚠️ {error}</div>}
+      <div className="login-actions">
+        <button type="button" onClick={handleBack} className="login-btn-back" disabled={busy}>חזור</button>
+        <button type="button" onClick={handleLogin} className="login-btn-primary" disabled={busy}>{busy?"⏳":isFirstTime?"שמור וכניסה →":"כניסה →"}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function UsersPasswordAdmin(){
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [busyId,setBusyId]=useState(null);
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const data=await sb("users?order=role.desc,name.asc");
+      setUsers(Array.isArray(data)?data:[]);
+    }catch(e){
+      console.error(e);
+      setUsers([]);
+    }
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+  const handleResetPassword=async(u)=>{
+    if(!window.confirm(`לאפס את הסיסמה של ${u.name}? הוא/היא יצטרך/כו לבחור סיסמה חדשה בכניסה הבאה.`))return;
+    setBusyId(u.id);
+    try{
+      await sb(`users?id=eq.${u.id}`,{
+        method:"PATCH",
+        body:JSON.stringify({password_hash:null,password_updated_at:null}),
+        headers:{"Content-Type":"application/json",Prefer:"return=minimal"},
+      });
+      window.alert("הסיסמה אופסה. המשתמש יבחר סיסמה חדשה בכניסה הבאה.");
+      load();
+    }catch(err){
+      window.alert("שגיאה: "+(err.message||String(err)));
+    }
+    setBusyId(null);
+  };
+  if(loading)return<div style={{padding:30,textAlign:"center"}}><Spinner sz={28}/></div>;
+  return<div style={{padding:20,maxWidth:720}}>
+    <h2 style={{margin:"0 0 8px"}}>🔐 ניהול סיסמאות משתמשים</h2>
+    <p style={{margin:"0 0 20px",color:"#6b7280",fontSize:14}}>איפוס סיסמה מחזיר את המשתמש למסך "כניסה ראשונה" בפעם הבאה.</p>
+    <div style={{display:"grid",gap:10}}>
+      {users.map(u=><div key={u.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:14,background:"#fff",border:"1px solid var(--border)",borderRadius:10}}>
+        <div>
+          <div style={{fontWeight:700}}>{u.name} <span style={{fontSize:12,color:"#6b7280",fontWeight:500}}>({u.role==="admin"?"מנהל":"עובד"})</span></div>
+          <div style={{fontSize:12,color:u.password_hash?"#16a34a":"#d97706",marginTop:4}}>{u.password_hash?"✓ סיסמה מוגדרת":"⚠️ ממתין להגדרת סיסמה"}</div>
+        </div>
+        <button type="button" onClick={()=>handleResetPassword(u)} disabled={busyId===u.id} style={{padding:"8px 14px",background:"#fff",border:"1px solid #dc2626",color:"#dc2626",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,whiteSpace:"nowrap"}}>
+          {busyId===u.id?"⏳":"🔑 איפוס סיסמה"}
+        </button>
+      </div>)}
     </div>
   </div>;
 }
@@ -9640,7 +9828,7 @@ function buildThankYouEmail(customerName,businessOrName){
     </div>
     <div style="height:3px;background:linear-gradient(90deg,#0d9488 0%,#2dd4bf 100%);"></div>
     <div style="background:#f8fafc;padding:18px;text-align:center;color:#64748b;font-size:13px;">
-      natalie-print.com  •  <span style="direction:ltr;display:inline-block;">03-6815703</span>
+      📞 <span style="direction:ltr;display:inline-block;">03-6815703</span> &nbsp;•&nbsp; 📧 orders@natalie-print.com
     </div>
   </div>
 </body>
@@ -10270,7 +10458,10 @@ const ALUT_STATUS_EMAIL_MAP={
   delivered:{to_karin:{enabled:true},to_client:{enabled:true}},
 };
 
-function alutWrapEmailHtml(bodyContent){
+function alutWrapEmailHtml(bodyContent,forClient=false){
+  const footer=forClient
+    ?`<p style="margin:4px 0;"><strong>בברכה, נטלי פרינט - דפוס נטלי</strong></p><p style="margin:4px 0;">📞 03-6815703</p><p style="margin:4px 0;">📧 orders@natalie-print.com</p>`
+    :`<p style="margin:4px 0;"><strong>בברכה, נטלי פרינט - דפוס נטלי</strong></p><p style="margin:4px 0;">📧 orders@natalie-print.com</p><p style="margin:4px 0;">🌐 www.natalie-print.com</p>`;
   return`<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head><meta charset="UTF-8">
@@ -10291,9 +10482,7 @@ body{font-family:'Heebo',Arial,sans-serif;direction:rtl;color:#1f2937;background
 <div class="email-header"><h1>🖨️ נטלי פרינט</h1></div>
 <div class="email-body">${bodyContent}</div>
 <div class="email-footer">
-<p style="margin:4px 0;"><strong>בברכה, נטלי פרינט - דפוס נטלי</strong></p>
-<p style="margin:4px 0;">📧 orders@natalie-print.com</p>
-<p style="margin:4px 0;">🌐 www.natalie-print.com</p>
+${footer}
 </div>
 </div>
 </body></html>`;
@@ -10347,7 +10536,7 @@ function alutBuildClientEmail(item,order,newStatus){
     <ul><li>${qty} ${typeLabel}</li></ul>
     <p>אנחנו מקווים שאתם מרוצים מהמוצר. לכל שאלה או בעיה - אנחנו כאן.</p>
     <p>תודה שבחרת בנטלי פרינט!</p>`;
-  return{subject:"ההזמנה שלך מנטלי פרינט נמסרה 📦",html:alutWrapEmailHtml(body)};
+  return{subject:"ההזמנה שלך מנטלי פרינט נמסרה 📦",html:alutWrapEmailHtml(body,true)};
 }
 
 async function alutLogSentEmails(itemId,orderId,triggerStatus,results){
@@ -12215,6 +12404,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="user-passwords"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="shipments"&&user?.role==="admin"){
       loadArchive();
     }
@@ -12259,7 +12454,7 @@ function App(){
     if(tok)return<SignaturePage token={tok}/>;
   }
 
-  if(!user)return<Login onLogin={u=>{setUser(u);load(u);}}/>;
+  if(!user)return<Login sb={sb} onLogin={u=>{setUser(u);load(u);}}/>;
 
   const syncBina=async()=>{
     if(binaSyncing)return;
@@ -12297,6 +12492,13 @@ function App(){
 
 
   const isA=user?.role==="admin";
+  const handleLogout=()=>{
+    if(!window.confirm("להתנתק מהמערכת?"))return;
+    localStorage.removeItem("printos_session");
+    setUser(null);
+    setTasks([]);
+    setClients([]);
+  };
   const targetDeptForBoard=user?.role==="worker"?(user?.dept??null):(deptFilter==="all"?null:deptFilter);
   const boardTasks=tasksForDepartment(tasks,taskItems,targetDeptForBoard);
   const tasksListDept=isA?(deptFilter==="all"?null:deptFilter):(user?.dept??null);
@@ -12443,7 +12645,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -12470,7 +12672,7 @@ function App(){
         <div style={{fontWeight:700,fontSize:12,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.name}</div>
         <div style={{fontSize:10,color:"var(--text3)"}}>{isA?"מנהל ראשי":(user?.dept||"—")}</div>
       </div>
-      <button onClick={()=>{setUser(null);setTasks([]);setClients([]);}} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:14,padding:2}}>⎋</button>
+      <button type="button" onClick={handleLogout} className="logout-btn" title="יציאה">🚪</button>
     </div>
 
     {/* Nav */}
@@ -12762,6 +12964,7 @@ function App(){
 
       {/* SIGNUP FORMS */}
       {tab==="signup-forms"&&isA&&<ClientSignupFormsList user={user} onOpenGenerator={()=>setShowSignupGenerator(true)} onClientsChanged={refreshAll}/>}
+      {tab==="user-passwords"&&isA&&<UsersPasswordAdmin/>}
 
       {tab==="vacations"&&isA&&<VacationFormManager user={user}/>}
 

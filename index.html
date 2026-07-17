@@ -262,7 +262,24 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 @media(max-width:768px){
   .alut-table-wrap{display:none!important}
   .alut-cards-wrap{display:flex!important;flex-direction:column;gap:12px}
-  .alut-modal-full>div{max-width:100%!important;max-height:100vh!important;border-radius:0!important;height:100vh;padding:20px!important}
+  .alut-modal-full{
+    padding:0!important;
+    align-items:stretch!important;
+    justify-content:stretch!important;
+  }
+  .alut-modal-full>div{
+    max-width:100%!important;
+    width:100%!important;
+    max-height:100vh!important;
+    max-height:100dvh!important;
+    height:100vh!important;
+    height:100dvh!important;
+    border-radius:0!important;
+    padding:16px!important;
+    padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))!important;
+    overflow-y:auto!important;
+    -webkit-overflow-scrolling:touch;
+  }
   .alut-kpi-grid{grid-template-columns:repeat(2,1fr)!important}
 }
 .alut-print-title{display:none}
@@ -610,14 +627,14 @@ const Av=({u,sz=36})=>{
 
 const Spinner=({sz=20,color="#2563EB"})=><div style={{width:sz,height:sz,border:`2px solid #E2E8F0`,borderTop:`2px solid ${color}`,borderRadius:"50%",animation:"spin 0.7s linear infinite",flexShrink:0}}/>;
 
-const Card=({children,style={}})=><div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:16,boxShadow:"var(--shadow)",padding:20,...style}}>{children}</div>;
+const Card=({children,style={},...rest})=><div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:16,boxShadow:"var(--shadow)",padding:20,...style}} {...rest}>{children}</div>;
 
-const Modal=({open,onClose,children,title,maxWidth=520})=>!open?null:
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:28,width:"100%",maxWidth:maxWidth,maxHeight:"90vh",overflowY:"auto",boxShadow:"var(--shadow-lg)"}}>
-      {title&&<div style={{fontWeight:800,fontSize:17,color:"var(--text)",marginBottom:20,paddingBottom:16,borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+const Modal=({open,onClose,children,title,maxWidth=520,className="",fullScreenMobile=false})=>!open?null:
+  <div className={[className,fullScreenMobile?"alut-modal-full":""].filter(Boolean).join(" ")} onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:20,padding:28,width:"100%",maxWidth:maxWidth,maxHeight:"90vh",overflowY:"auto",WebkitOverflowScrolling:"touch",boxShadow:"var(--shadow-lg)"}}>
+      {title&&<div style={{fontWeight:800,fontSize:17,color:"var(--text)",marginBottom:20,paddingBottom:16,borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,position:"sticky",top:0,background:"#fff",zIndex:2}}>
         <span style={{flex:1}}>{title}</span>
-        <button type="button" onClick={onClose} aria-label="סגור" style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,width:36,height:36,cursor:"pointer",color:"var(--text2)",fontSize:18,lineHeight:1,fontFamily:"inherit",flexShrink:0}}>×</button>
+        <button type="button" onClick={onClose} aria-label="סגור" style={{background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,width:44,height:44,cursor:"pointer",color:"var(--text2)",fontSize:18,lineHeight:1,fontFamily:"inherit",flexShrink:0}}>×</button>
       </div>}
       {children}
     </div>
@@ -11667,7 +11684,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     }finally{setRedownloadingId(null);}
   };
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
-  return<Modal open={true} onClose={onClose} title={`📋 הזמנה #${data.order_number} - ${data.company_name}`} maxWidth={640}>
+  return<Modal open={true} onClose={onClose} title={`📋 הזמנה #${data.order_number} - ${data.company_name}`} maxWidth={640} fullScreenMobile>
     <div style={{direction:"rtl"}}>
       {!editingCustomer?<div style={{marginBottom:16,fontSize:13,lineHeight:1.7}}>
         <div><strong>פרטי לקוח:</strong> {data.contact_name||"—"} {data.contact_phone?`| ${data.contact_phone}`:""}</div>
@@ -12209,7 +12226,7 @@ function AlutDashboard(){
           const stSum=alutFormatStatusSummary(items);
           const dl=alutGetOrderDeadlineInfo(items);
           const isUrgent=alutOrderIsUrgent(o);
-          return<Card key={o.id} style={{padding:16,cursor:"pointer",background:isUrgent?"#fef3c7":"#fff",border:isUrgent?"1px solid #fbbf24":undefined}} onClick={()=>openDetail(o)}>
+          return<Card key={o.id} role="button" tabIndex={0} onClick={()=>openDetail(o)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openDetail(o);}}} style={{padding:16,cursor:"pointer",background:isUrgent?"#fef3c7":"#fff",border:isUrgent?"1px solid #fbbf24":undefined,WebkitTapHighlightColor:"rgba(13,148,136,0.15)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div>
                 <div style={{fontWeight:800,fontSize:16}}>#{o.order_number} — {o.company_name}</div>

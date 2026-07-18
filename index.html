@@ -283,16 +283,19 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
   .alut-kpi-grid{grid-template-columns:repeat(2,1fr)!important}
 }
 .alut-print-title{display:none}
+.alut-print-header,.alut-print-footer{display:none}
+.alut-item-statuses{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.alut-status-chip{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:#f3f4f6;color:#1f2937;white-space:nowrap}
 .alut-btn-print{padding:10px 16px;border-radius:10px;border:1px solid #99f6e4;background:#fff;color:#0d9488;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px}
 .alut-btn-cartons{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 16px;border-radius:8px;font-weight:600;font-size:14px;border:none;cursor:pointer;font-family:inherit;min-height:44px}
 .alut-btn-transfer{background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;font-size:14px;border:none;cursor:pointer;font-family:inherit;min-height:44px}
 .alut-transferred-badge{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;background:#ecfdf5;color:#059669;font-weight:700;font-size:13px;border:1px solid #a7f3d0}
-.alut-deadline-cell{font-size:12px;line-height:1.6}
-.alut-deadline-warning{color:#f59e0b;font-weight:600}
-.alut-deadline-main{color:#1f2937;font-weight:700}
-.alut-deadline-alert{background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;margin-top:4px;display:inline-block;animation:alutPulse 2s infinite}
+.alut-deadline-cell,.deadline-cell{font-size:12px;line-height:1.6}
+.alut-deadline-warning,.deadline-warning{color:#f59e0b;font-weight:600}
+.alut-deadline-main,.deadline-main{color:#1f2937;font-weight:700}
+.alut-deadline-alert,.deadline-alert{background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;margin-top:4px;display:inline-block;animation:alutPulse 2s infinite}
 @keyframes alutPulse{0%,100%{opacity:1}50%{opacity:.7}}
-tr.alut-item-urgent,tr.alut-item-urgent td{background:#fef3c7!important}
+tr.alut-item-urgent,tr.alut-item-urgent td,tr.item-urgent,tr.item-urgent td{background:#fef3c7!important}
 tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!important}
 .carton-labels-modal{position:fixed;inset:0;background:#f3f4f6;z-index:1000;overflow-y:auto;padding:20px;direction:rtl}
 .carton-labels-header{background:#fff;padding:16px 20px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.05);gap:12px;flex-wrap:wrap}
@@ -313,22 +316,89 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .carton-print-btn{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 20px;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-left:8px;font-family:inherit}
 .carton-close-btn{background:#f3f4f6;border:none;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:18px;font-family:inherit}
 @media print{
-  body.printing-alut-dashboard{background:#fff!important;padding:0!important;margin:0!important}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  body.printing-alut-dashboard{
+    background:#fff!important;padding:0!important;margin:0!important;
+    font-family:'Heebo',Arial,sans-serif!important;color:#000!important;
+  }
   body.printing-alut-dashboard .sd,
   body.printing-alut-dashboard .sm,
   body.printing-alut-dashboard .tm,
   body.printing-alut-dashboard .bn,
   body.printing-alut-dashboard .alut-actions-bar,
-  body.printing-alut-dashboard button,
-  body.printing-alut-dashboard .alut-cards-wrap,
+  body.printing-alut-dashboard .alut-filters,
   body.printing-alut-dashboard .alut-kpi-grid,
-  body.printing-alut-dashboard .alut-season-summary{display:none!important}
-  body.printing-alut-dashboard .alut-print-title{display:block!important;text-align:center;font-size:24px;font-weight:900;padding:20px;color:#0d9488}
-  body.printing-alut-dashboard .alut-table-wrap{display:block!important;box-shadow:none!important;border:none!important}
-  body.printing-alut-dashboard table{width:100%;border-collapse:collapse;font-size:11px}
-  body.printing-alut-dashboard th,body.printing-alut-dashboard td{border:1px solid #d1d5db;padding:6px 8px;text-align:right}
-  body.printing-alut-dashboard thead{background:#f0fdfa}
-  body.printing-alut-dashboard tbody tr{page-break-inside:avoid}
+  body.printing-alut-dashboard .alut-season-summary,
+  body.printing-alut-dashboard .alut-cards-wrap,
+  body.printing-alut-dashboard .global-search-trigger,
+  body.printing-alut-dashboard button,
+  body.printing-alut-dashboard .alut-col-price,
+  body.printing-alut-dashboard .alut-col-actions{display:none!important}
+  body.printing-alut-dashboard .ma{margin:0!important;padding:0!important}
+  body.printing-alut-dashboard .alut-print-header{
+    display:block!important;text-align:center;padding:8px 0 12px;border-bottom:2px solid #0d9488;margin-bottom:12px;
+  }
+  body.printing-alut-dashboard .alut-print-header h1{font-size:22px;font-weight:900;color:#0d9488;margin:0 0 6px}
+  body.printing-alut-dashboard .alut-print-header .print-meta{font-size:11px;color:#6b7280}
+  body.printing-alut-dashboard .alut-table-wrap{
+    display:block!important;overflow:visible!important;width:100%;box-shadow:none!important;border:none!important;border-radius:0!important;
+  }
+  body.printing-alut-dashboard table.alut-table{
+    width:100%;border-collapse:collapse;font-size:10pt;direction:rtl;table-layout:fixed;min-width:0!important;
+  }
+  body.printing-alut-dashboard table.alut-table thead{background:#0d9488!important;color:#fff!important;display:table-header-group}
+  body.printing-alut-dashboard table.alut-table th{
+    padding:6px 4px;text-align:right;font-weight:700;border:1px solid #0d9488;font-size:10pt;
+    color:#fff!important;background:#0d9488!important;white-space:nowrap;
+  }
+  body.printing-alut-dashboard table.alut-table td{
+    padding:5px 4px;border:1px solid #d1d5db;text-align:right;vertical-align:middle;
+    font-size:9.5pt;line-height:1.35;word-wrap:break-word;overflow:hidden;
+  }
+  body.printing-alut-dashboard table.alut-table th:nth-child(1),
+  body.printing-alut-dashboard table.alut-table td:nth-child(1){width:40px;text-align:center;font-weight:700}
+  body.printing-alut-dashboard table.alut-table th:nth-child(2),
+  body.printing-alut-dashboard table.alut-table td:nth-child(2){width:22%;font-weight:600}
+  body.printing-alut-dashboard table.alut-table th:nth-child(3),
+  body.printing-alut-dashboard table.alut-table td:nth-child(3){width:20%}
+  body.printing-alut-dashboard table.alut-table th:nth-child(4),
+  body.printing-alut-dashboard table.alut-table td:nth-child(4){width:55px;text-align:center;font-weight:700}
+  body.printing-alut-dashboard table.alut-table th:nth-child(5),
+  body.printing-alut-dashboard table.alut-table td:nth-child(5){width:18%}
+  body.printing-alut-dashboard table.alut-table th:nth-child(6),
+  body.printing-alut-dashboard table.alut-table td:nth-child(6){width:18%;text-align:center}
+  body.printing-alut-dashboard table.alut-table tbody tr{page-break-inside:avoid}
+  body.printing-alut-dashboard table.alut-table tbody tr:nth-child(even){background:#f9fafb!important}
+  body.printing-alut-dashboard table.alut-table tr.alut-item-urgent,
+  body.printing-alut-dashboard table.alut-table tr.alut-item-urgent td{background:#fef3c7!important}
+  body.printing-alut-dashboard .alut-item-statuses{display:flex!important;flex-wrap:wrap!important;gap:2px!important;max-width:100%}
+  body.printing-alut-dashboard .alut-status-chip{
+    display:inline-block!important;padding:1px 5px!important;font-size:8pt!important;border-radius:3px!important;
+    margin:1px!important;white-space:nowrap;background:#f3f4f6!important;color:#1f2937!important;border:1px solid #d1d5db;
+  }
+  body.printing-alut-dashboard .alut-status-in_print,
+  body.printing-alut-dashboard .alut-status-new,
+  body.printing-alut-dashboard .alut-status-design_in_progress,
+  body.printing-alut-dashboard .alut-status-design_sent,
+  body.printing-alut-dashboard .alut-status-design_approved{background:#fef3c7!important;color:#92400e!important}
+  body.printing-alut-dashboard .alut-status-at_davach,
+  body.printing-alut-dashboard .alut-status-at_itzik{background:#f3e8ff!important;color:#6b21a8!important}
+  body.printing-alut-dashboard .alut-status-ready_to_ship,
+  body.printing-alut-dashboard .alut-status-shipped{background:#dbeafe!important;color:#1e40af!important}
+  body.printing-alut-dashboard .alut-status-delivered{background:#d1fae5!important;color:#065f46!important}
+  body.printing-alut-dashboard .alut-deadline-cell,
+  body.printing-alut-dashboard .deadline-cell{font-size:8.5pt!important;line-height:1.3!important}
+  body.printing-alut-dashboard .alut-deadline-warning,
+  body.printing-alut-dashboard .deadline-warning{color:#d97706!important;font-size:8pt!important}
+  body.printing-alut-dashboard .alut-deadline-main,
+  body.printing-alut-dashboard .deadline-main{color:#1f2937!important;font-weight:700!important;font-size:9pt!important}
+  body.printing-alut-dashboard .alut-deadline-alert,
+  body.printing-alut-dashboard .deadline-alert{
+    background:#fee2e2!important;color:#dc2626!important;padding:1px 4px!important;font-size:7.5pt!important;animation:none!important;
+  }
+  body.printing-alut-dashboard .alut-print-footer{
+    display:block!important;text-align:center;padding:10px 0;margin-top:15px;border-top:1px solid #e5e7eb;font-size:9pt;color:#6b7280;
+  }
   body.printing-alut-quote .alut-quote-modal-backdrop{position:static;background:#fff;padding:0}
   body.printing-alut-quote .alut-quote-modal{box-shadow:none;max-height:none;overflow:visible}
   body.printing-alut-quote .alut-quote-modal-header button,
@@ -338,7 +408,7 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
   body.printing-carton-labels .carton-labels-modal{padding:0;background:#fff}
   body.printing-carton-labels .carton-labels-grid{grid-template-columns:repeat(2,1fr);gap:10px}
   body.printing-carton-labels .carton-label{box-shadow:none;page-break-inside:avoid}
-  @page{margin:15mm}
+  @page{margin:12mm}
 }
 </style>
 </head>
@@ -10687,19 +10757,44 @@ function alutOrderIsUrgent(order){
   });
 }
 function alutRenderDeadlineCell(dl){
-  if(!dl||!dl.deadline)return<span style={{color:"#9ca3af"}}>טרם אושרה סקיצה</span>;
-  return<div className="alut-deadline-cell">
-    <div className="alut-deadline-warning">⚠️ יציאה: {dl.warningStr}</div>
-    <div className="alut-deadline-main" style={{color:dl.color}}>🎯 דדליין: {dl.dateStr}{dl.diff!=null?(dl.diff<=0?" · עבר!":` · ${dl.diff} ימים`):""}</div>
-    {dl.urgent&&dl.diff>0&&<div className="alut-deadline-alert">🔥 פחות מ-4 ימים!</div>}
+  if(!dl||!dl.deadline)return<span className="alut-deadline-cell deadline-cell" style={{color:"#9ca3af"}}>טרם אושרה סקיצה</span>;
+  return<div className="alut-deadline-cell deadline-cell">
+    <div className="alut-deadline-warning deadline-warning">יציאה: {dl.warningStr}</div>
+    <div className="alut-deadline-main deadline-main" style={{color:dl.color}}>דדליין: {dl.dateStr}{dl.diff!=null?(dl.diff<=0?" · עבר!":` · ${dl.diff} ימים`):""}</div>
+    {dl.urgent&&dl.diff>0&&<div className="alut-deadline-alert deadline-alert">פחות מ-4 ימים!</div>}
   </div>;
 }
 function alutPrintWithClass(className){
+  let pageStyle=null;
+  if(className==="printing-alut-dashboard"){
+    pageStyle=document.createElement("style");
+    pageStyle.id="alut-print-page-style";
+    pageStyle.textContent="@page{size:A4 landscape;margin:10mm 8mm;}";
+    document.head.appendChild(pageStyle);
+  }
   document.body.classList.add(className);
   setTimeout(()=>{
     window.print();
-    setTimeout(()=>document.body.classList.remove(className),500);
+    setTimeout(()=>{
+      document.body.classList.remove(className);
+      if(pageStyle&&pageStyle.parentNode)pageStyle.parentNode.removeChild(pageStyle);
+    },500);
   },100);
+}
+function alutHandleDashboardPrint(){
+  const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if(isMobile){
+    if(!window.confirm("📱 הדפסה מהמובייל לא מומלצת.\n\nלתוצאה הכי טובה, פתח את הדשבורד במחשב והדפס משם.\n\nלהמשיך בכל זאת?"))return;
+  }
+  window.alert(
+    "💡 טיפ להדפסה נקייה:\n\n"+
+    "1. בחלון ההדפסה, לחץ \"אפשרויות נוספות\" (More settings)\n"+
+    "2. בטל את הסימון של \"כותרות וכותרות תחתונות\" (Headers and footers)\n"+
+    "3. בחר גודל דף: A4\n"+
+    "4. בחר כיוון: לרוחב (Landscape)\n\n"+
+    "לחץ אישור כדי להמשיך"
+  );
+  alutPrintWithClass("printing-alut-dashboard");
 }
 function alutFormatItemsSummary(items){
   if(!items?.length)return"—";
@@ -10711,17 +10806,31 @@ function alutTotalQuantity(items){
   return(items||[]).reduce((s,i)=>s+Number(i.quantity||0),0);
 }
 function alutFormatStatusSummary(items){
-  if(!items?.length)return{type:"empty",label:"—",bg:"#f3f4f6"};
-  const statuses=items.map(i=>i.status);
-  const unique=[...new Set(statuses)];
+  if(!items?.length)return{type:"empty",label:"—",bg:"#f3f4f6",statusKey:null,chips:[]};
+  const unique=[...new Set(items.map(i=>i.status))];
   if(unique.length===1){
     const st=ALUT_STATUS_CONFIG[unique[0]]||ALUT_STATUS_CONFIG.new;
-    return{type:"single",label:st.label,bg:st.bg};
+    return{type:"single",label:st.label,bg:st.bg,statusKey:unique[0],chips:[{status:unique[0],label:st.label,n:items.length}]};
   }
   const counts={};
   items.forEach(i=>{counts[i.status]=(counts[i.status]||0)+1;});
-  const badges=Object.entries(counts).map(([s,n])=>`${(ALUT_STATUS_CONFIG[s]||{}).dot||"•"}${n}`).join(" ");
-  return{type:"multi",badges};
+  const chips=Object.entries(counts).map(([s,n])=>{
+    const st=ALUT_STATUS_CONFIG[s]||{};
+    return{status:s,label:st.label||s,n};
+  });
+  const badges=chips.map(c=>`${(ALUT_STATUS_CONFIG[c.status]||{}).dot||"•"}${c.n}`).join(" ");
+  return{type:"multi",badges,chips};
+}
+function alutRenderStatusCell(stSum){
+  if(!stSum||stSum.type==="empty")return"—";
+  if(stSum.type==="single"){
+    return<div className="alut-item-statuses">
+      <span className={`alut-status-chip alut-status-${stSum.statusKey||""}`} style={{background:stSum.bg}}>{stSum.label}</span>
+    </div>;
+  }
+  return<div className="alut-item-statuses">
+    {(stSum.chips||[]).map(c=><span key={c.status} className={`alut-status-chip alut-status-${c.status}`}>{c.label} ×{c.n}</span>)}
+  </div>;
 }
 function alutGetDesignStatus(item){
   if(item.is_template_only)return{icon:"⚪",label:"טמפלייט בלבד"};
@@ -11829,7 +11938,7 @@ function AlutSeasonSummary({items,projectName}){
   return<div className="alut-season-summary">
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
       <div className="alut-season-title" style={{marginBottom:0}}>📊 סיכום עונת {year}</div>
-      <button type="button" className="alut-btn-print" onClick={()=>alutPrintWithClass("printing-alut-dashboard")}>🖨️ הדפס פירוט</button>
+      <button type="button" className="alut-btn-print" onClick={()=>alutHandleDashboardPrint()}>🖨️ הדפס פירוט</button>
     </div>
     <div className="alut-season-grid">
       <div className="alut-season-item hard">
@@ -12149,13 +12258,14 @@ function AlutDashboard(){
     urgentOnly?"דחוף בלבד":null,
     search.trim()?`חיפוש: ${search.trim()}`:null,
   ].filter(Boolean).join(" · ");
-  const handlePrintDashboard=()=>alutPrintWithClass("printing-alut-dashboard");
+  const handlePrintDashboard=()=>alutHandleDashboardPrint();
   return<div style={{direction:"rtl"}} className="alut-dashboard-root">
-    <div className="alut-print-title">
-      🖨️ נטלי פרינט - דוח אלוט 2026
-      <div style={{fontSize:14,fontWeight:400,marginTop:8,color:"#6b7280"}}>
-        תאריך הדפסה: {new Date().toLocaleDateString("he-IL")}
+    <div className="alut-print-header">
+      <h1>🖨️ נטלי פרינט - דוח אלוט 2026</h1>
+      <div className="print-meta">
+        תאריך הדפסה: {new Date().toLocaleDateString("he-IL")} • שעה: {new Date().toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"})}
         {activeFilterLabel?` • סינון: ${activeFilterLabel}`:""}
+        {" • "}סה״כ שורות: {filtered.length}
       </div>
     </div>
     <div className="alut-actions-bar" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
@@ -12176,7 +12286,7 @@ function AlutDashboard(){
         <div style={{fontSize:12,color:"var(--text2)",marginTop:6}}>{alutFmtMoney(k.sum)} ללא מע״מ{k.isOrders?"":" · פריטים"}</div>
       </Card>)}
     </div>
-    <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+    <div className="alut-filters" style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <input type="search" placeholder="🔍 חיפוש..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:160,padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}/>
       <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{padding:10,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}}>
         <option value="all">סוג לוח: הכל</option>
@@ -12196,9 +12306,9 @@ function AlutDashboard(){
     filtered.length===0?<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין הזמנות להצגה</div>:
     <>
       <div className="alut-table-wrap" style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,overflow:"auto",boxShadow:"var(--shadow)"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",minWidth:960}}>
+        <table className="alut-table" style={{width:"100%",borderCollapse:"collapse",minWidth:960}}>
           <thead><tr style={{background:"#f8fafa"}}>
-            <th style={thStyle}>#</th><th style={thStyle}>חברה</th><th style={thStyle}>פריטים</th><th style={thStyle}>סה״כ יחידות</th><th style={thStyle}>סטטוסים</th><th style={thStyle}>דדליין קרוב</th><th style={thStyle}>₪</th><th style={thStyle}>פעולות</th>
+            <th style={thStyle}>#</th><th style={thStyle}>חברה</th><th style={thStyle}>פריטים</th><th style={thStyle}>סה״כ יחידות</th><th style={thStyle}>סטטוסים</th><th style={thStyle}>דדליין קרוב</th><th className="alut-col-price" style={thStyle}>₪</th><th className="alut-col-actions" style={thStyle}>פעולות</th>
           </tr></thead>
           <tbody>
             {filtered.map(o=>{
@@ -12206,15 +12316,15 @@ function AlutDashboard(){
               const stSum=alutFormatStatusSummary(items);
               const dl=alutGetOrderDeadlineInfo(items);
               const isUrgent=alutOrderIsUrgent(o);
-              return<tr key={o.id} onClick={()=>openDetail(o)} className={isUrgent?"alut-item-urgent":""} style={{background:isUrgent?"#fef3c7":"#fff",cursor:"pointer"}}>
+              return<tr key={o.id} onClick={()=>openDetail(o)} className={isUrgent?"alut-item-urgent item-urgent":""} style={{background:isUrgent?"#fef3c7":"#fff",cursor:"pointer"}}>
                 <td style={{...tdStyle,fontWeight:700}}>#{o.order_number}</td>
                 <td style={tdStyle}>{o.company_name}</td>
                 <td style={tdStyle}>{alutFormatItemsSummary(items)}</td>
                 <td style={tdStyle}>{alutTotalQuantity(items)}</td>
-                <td style={tdStyle}>{stSum.type==="single"?<span style={{padding:"4px 10px",borderRadius:20,fontSize:12,fontWeight:600,background:stSum.bg}}>{stSum.label}</span>:<span style={{fontSize:12}}>{stSum.badges}</span>}</td>
+                <td style={tdStyle}>{alutRenderStatusCell(stSum)}</td>
                 <td style={tdStyle}>{alutRenderDeadlineCell(dl)}</td>
-                <td style={{...tdStyle,fontWeight:700}}>{alutFmtMoney(o.total_price,true)}</td>
-                <td style={tdStyle}><AlutOrderRowActions order={o} onDelete={handleDelete}/></td>
+                <td className="alut-col-price" style={{...tdStyle,fontWeight:700}}>{alutFmtMoney(o.total_price,true)}</td>
+                <td className="alut-col-actions" style={tdStyle}><AlutOrderRowActions order={o} onDelete={handleDelete}/></td>
               </tr>;
             })}
           </tbody>
@@ -12234,13 +12344,14 @@ function AlutDashboard(){
               </div>
               <AlutOrderRowActions order={o} onDelete={handleDelete}/>
             </div>
-            <div style={{marginBottom:8}}>{stSum.type==="single"?<span style={{padding:"4px 10px",borderRadius:20,fontSize:12,background:stSum.bg,fontWeight:600}}>{stSum.label}</span>:<span style={{fontSize:12}}>{stSum.badges}</span>}</div>
+            <div style={{marginBottom:8}}>{alutRenderStatusCell(stSum)}</div>
             <div style={{marginBottom:8}}>{alutRenderDeadlineCell(dl)}</div>
             <div style={{fontSize:16,fontWeight:800,color:"#0d9488"}}>{alutFmtMoney(o.total_price,true)} כולל מע״מ</div>
           </Card>;
         })}
       </div>
     </>}
+    <div className="alut-print-footer">נטלי פרינט © {new Date().getFullYear()} • דוח פנימי</div>
     {showPricing&&<AlutPricingModal pricingRows={pricingRows} onClose={()=>setShowPricing(false)} onSaved={loadData}/>}
     {showSeasonalQuote&&project&&<AlutSeasonalQuoteScreen project={project} pricingRows={pricingRows} onClose={()=>setShowSeasonalQuote(false)}/>}
     {pasteEmailOpen&&<AlutPasteEmailModal onClose={()=>setPasteEmailOpen(false)} onParsed={data=>{setPasteEmailOpen(false);setNewOrderInitial(data);setNewOrderKey(k=>k+1);setNewOrderOpen(true);}} onManualFill={text=>{setPasteEmailOpen(false);setNewOrderInitial({original_email:text});setNewOrderKey(k=>k+1);setNewOrderOpen(true);}}/>}

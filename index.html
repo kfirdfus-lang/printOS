@@ -113,6 +113,18 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .alut-region-badge{display:inline-block;background:#f0fdfa;color:#0d9488;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;margin-top:4px}
 .alut-region-badge.pickup{background:#ddd6fe;color:#5b21b6}
 .alut-region-badge.unknown{background:#fef3c7;color:#92400e}
+.quick-city-badge{display:inline-flex;align-items:center;gap:4px;margin-top:4px}
+.quick-city-unknown{display:inline-block;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600}
+.quick-city-edit-btn{background:transparent;border:1px solid #d1d5db;padding:1px 5px;border-radius:6px;cursor:pointer;font-size:11px;color:#6b7280;transition:all .15s;font-family:inherit;line-height:1.2}
+.quick-city-edit-btn:hover{background:#f3f4f6;color:#0d9488;border-color:#0d9488}
+.quick-city-editor{display:inline-flex;align-items:center;gap:4px;background:#fff;padding:3px;border-radius:6px;border:2px solid #0d9488;margin-top:4px}
+.quick-city-input{border:none;outline:none;padding:3px 8px;font-size:12px;width:100px;font-family:inherit;direction:rtl;text-align:right;background:transparent}
+.quick-city-save,.quick-city-cancel{border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;min-height:28px}
+.quick-city-save{background:#0d9488;color:#fff}
+.quick-city-save:hover:not(:disabled){background:#14b8a6}
+.quick-city-save:disabled{opacity:.5;cursor:not-allowed}
+.quick-city-cancel{background:#f3f4f6;color:#6b7280}
+.quick-city-cancel:hover:not(:disabled){background:#e5e7eb}
 .city-regions-manager{direction:rtl;max-width:960px}
 .city-regions-manager .add-city-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
 .city-regions-manager .add-city-form input,.city-regions-manager .add-city-form select,.city-regions-manager .city-search{padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px}
@@ -123,6 +135,8 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 @media (max-width:640px){
   .alut-region-filters{padding:10px}
   .alut-region-tab{padding:6px 10px;font-size:12px}
+  .quick-city-input{width:90px;font-size:13px}
+  .quick-city-save,.quick-city-cancel{padding:4px 10px}
 }
 .alut-email-checkbox-row{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
 .alut-email-preview-btn{background:transparent;border:1px solid #0d9488;color:#0d9488;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;margin-top:8px;font-family:inherit}
@@ -10772,12 +10786,65 @@ function alutResolveDeliveryCity(explicitCity,address,isPickup){
   if(typed)return typed;
   return extractCityFromAddress(address)||null;
 }
-function alutRenderRegionBadge(order){
+function getOrderCity(order){
+  if(!order||order.is_pickup)return null;
+  const typed=order.delivery_city&&String(order.delivery_city).trim();
+  if(typed)return typed;
+  return extractCityFromAddress(order.delivery_address);
+}
+function QuickCityEditor({order,onSaved}){
+  const[editing,setEditing]=useState(false);
+  const[cityInput,setCityInput]=useState("");
+  const[saving,setSaving]=useState(false);
+  const[allCities,setAllCities]=useState([]);
+  const inputRef=useRef(null);
+  const listId=`quick-cities-list-${order.id}`;
+  useEffect(()=>{
+    if(!editing||allCities.length)return;
+    if(cityRegionsListCache?.length){setAllCities(cityRegionsListCache);return;}
+    loadCityRegions().then(()=>setAllCities(cityRegionsListCache||[]));
+  },[editing,allCities.length]);
+  useEffect(()=>{
+    if(editing)setTimeout(()=>inputRef.current&&inputRef.current.focus(),50);
+  },[editing]);
+  const startEdit=e=>{e.stopPropagation();setEditing(true);setCityInput("");};
+  const cancelEdit=e=>{e.stopPropagation();setEditing(false);setCityInput("");};
+  const saveCity=async e=>{
+    e.stopPropagation();
+    if(!cityInput.trim()){setEditing(false);return;}
+    setSaving(true);
+    try{
+      await sb(`alut_orders?id=eq.${order.id}`,{method:"PATCH",body:JSON.stringify({delivery_city:cityInput.trim()})});
+      setEditing(false);
+      setCityInput("");
+      onSaved?.();
+    }catch(err){
+      window.alert("שגיאה בשמירה: "+(err.message||String(err)));
+    }finally{setSaving(false);}
+  };
+  const handleKeyDown=e=>{
+    if(e.key==="Enter"){e.preventDefault();saveCity(e);}
+    if(e.key==="Escape")cancelEdit(e);
+  };
+  if(!editing){
+    return<span className="quick-city-badge" onClick={e=>e.stopPropagation()}>
+      <span className="quick-city-unknown">❓ לא ידוע</span>
+      <button type="button" className="quick-city-edit-btn" onClick={startEdit} title="הגדר עיר">🖊️</button>
+    </span>;
+  }
+  return<div className="quick-city-editor" onClick={e=>e.stopPropagation()}>
+    <input ref={inputRef} type="text" value={cityInput} onChange={e=>setCityInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="שם עיר..." list={listId} disabled={saving} className="quick-city-input"/>
+    <datalist id={listId}>{allCities.map(city=><option key={city} value={city}/>)}</datalist>
+    <button type="button" className="quick-city-save" onClick={saveCity} disabled={saving||!cityInput.trim()} title="שמור">{saving?"⏳":"✓"}</button>
+    <button type="button" className="quick-city-cancel" onClick={cancelEdit} disabled={saving} title="ביטול">✕</button>
+  </div>;
+}
+function alutRenderRegionBadge(order,onSaved){
   if(!order)return null;
   if(order.is_pickup)return<span className="alut-region-badge pickup">🎒 איסוף עצמי</span>;
-  const region=getOrderRegion(order);
-  if(region)return<span className="alut-region-badge">🗺️ {region}</span>;
-  return<span className="alut-region-badge unknown">❓ לא ידוע</span>;
+  const city=getOrderCity(order);
+  if(city)return<span className="alut-region-badge">📍 {city}</span>;
+  return<QuickCityEditor order={order} onSaved={onSaved}/>;
 }
 
 function alutSubtractBusinessDays(date,days){
@@ -12005,7 +12072,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
         <div><strong>פרטי לקוח:</strong> {data.contact_name||"—"} {data.contact_phone?`| ${data.contact_phone}`:""}</div>
         {data.contact_email&&<div><strong>מייל:</strong> {data.contact_email}</div>}
         <div>{data.is_pickup?"✅ איסוף עצמי":`📍 ${data.delivery_address||"—"}`}</div>
-        <div style={{marginTop:4}}>{alutRenderRegionBadge(data)}{data.delivery_city&&!data.is_pickup?<span style={{fontSize:12,color:"var(--text3)",marginRight:8}}> · עיר: {data.delivery_city}</span>:null}</div>
+        <div style={{marginTop:4}}>{alutRenderRegionBadge(data,reload)}</div>
       </div>:<div style={{marginBottom:16}}>
         <input value={customerForm.company_name} onChange={e=>setCustomerForm(f=>({...f,company_name:e.target.value}))} placeholder="שם חברה" style={{...IS,marginBottom:6}}/>
         <input value={customerForm.contact_name} onChange={e=>setCustomerForm(f=>({...f,contact_name:e.target.value}))} placeholder="איש קשר" style={{...IS,marginBottom:6}}/>
@@ -12676,7 +12743,7 @@ function AlutDashboard(){
                 <td style={{...tdStyle,fontWeight:700}}>#{o.order_number}</td>
                 <td style={tdStyle}>
                   <div>{o.company_name}</div>
-                  {alutRenderRegionBadge(o)}
+                  {alutRenderRegionBadge(o,loadData)}
                 </td>
                 <td style={tdStyle}>{alutFormatItemsSummary(items)}</td>
                 <td style={tdStyle}>{alutTotalQuantity(items)}</td>
@@ -12699,7 +12766,7 @@ function AlutDashboard(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div>
                 <div style={{fontWeight:800,fontSize:16}}>#{o.order_number} — {o.company_name}</div>
-                <div style={{marginTop:4}}>{alutRenderRegionBadge(o)}</div>
+                <div style={{marginTop:4}}>{alutRenderRegionBadge(o,loadData)}</div>
                 <div style={{fontSize:13,color:"var(--text3)",marginTop:4}}>{alutFormatItemsSummary(items)} · {alutTotalQuantity(items)} יח׳</div>
               </div>
               <AlutOrderRowActions order={o} onDelete={handleDelete}/>

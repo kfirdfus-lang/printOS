@@ -101,6 +101,29 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 .email-field textarea{resize:vertical;min-height:100px}
 .alut-status-sent_to_natalie{background:#fed7aa!important;color:#9a3412!important}
 .alut-status-ready_for_pickup{background:#ddd6fe!important;color:#5b21b6!important}
+.alut-region-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;background:#f9fafb;border-radius:8px;margin-bottom:16px}
+.alut-region-label{font-weight:700;color:#0d9488;margin-left:8px}
+.alut-region-tab{background:#fff;border:2px solid #e5e7eb;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;color:#4b5563;transition:all .15s;white-space:nowrap;font-family:inherit}
+.alut-region-tab:hover{border-color:#0d9488;color:#0d9488}
+.alut-region-tab.active{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;border-color:#0d9488}
+.alut-region-pickup{background:#ddd6fe!important;color:#5b21b6!important;border-color:#c4b5fd!important}
+.alut-region-pickup.active{background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%)!important;color:#fff!important}
+.alut-region-unknown{background:#fef3c7!important;color:#92400e!important;border-color:#fcd34d!important}
+.alut-region-unknown.active{background:linear-gradient(135deg,#f59e0b 0%,#f97316 100%)!important;color:#fff!important}
+.alut-region-badge{display:inline-block;background:#f0fdfa;color:#0d9488;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;margin-top:4px}
+.alut-region-badge.pickup{background:#ddd6fe;color:#5b21b6}
+.alut-region-badge.unknown{background:#fef3c7;color:#92400e}
+.city-regions-manager{direction:rtl;max-width:960px}
+.city-regions-manager .add-city-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.city-regions-manager .add-city-form input,.city-regions-manager .add-city-form select,.city-regions-manager .city-search{padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-family:inherit;font-size:13px}
+.city-regions-manager .city-search{width:100%;max-width:320px;margin-bottom:12px}
+.city-regions-manager table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.city-regions-manager th,.city-regions-manager td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:right;font-size:13px}
+.city-regions-manager th{background:#f8fafa;font-weight:700;color:var(--text3)}
+@media (max-width:640px){
+  .alut-region-filters{padding:10px}
+  .alut-region-tab{padding:6px 10px;font-size:12px}
+}
 .alut-email-checkbox-row{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
 .alut-email-preview-btn{background:transparent;border:1px solid #0d9488;color:#0d9488;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;margin-top:8px;font-family:inherit}
 .alut-email-preview-box{margin-top:10px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff}
@@ -335,6 +358,7 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
   body.printing-alut-dashboard .bn,
   body.printing-alut-dashboard .alut-actions-bar,
   body.printing-alut-dashboard .alut-filters,
+  body.printing-alut-dashboard .alut-region-filters,
   body.printing-alut-dashboard .alut-kpi-grid,
   body.printing-alut-dashboard .alut-season-summary,
   body.printing-alut-dashboard .alut-cards-wrap,
@@ -10672,6 +10696,90 @@ function alutFilterStatusesForOrder(order){
   });
 }
 
+const ALUT_REGIONS=["צפון","חיפה","שרון","מרכז","ירושלים","שפלה","דרום"];
+let cityRegionsCache=null;
+let cityRegionsListCache=null;
+
+async function loadCityRegions(force){
+  if(cityRegionsCache&&!force)return cityRegionsCache;
+  try{
+    const{data,error}=await supabaseClient.from("city_regions").select("city_name, region, aliases");
+    if(error)throw error;
+    const mapping={};
+    const names=[];
+    (data||[]).forEach(entry=>{
+      const name=String(entry.city_name||"").trim();
+      if(!name)return;
+      names.push(name);
+      mapping[name]=entry.region;
+      (entry.aliases||[]).forEach(alias=>{
+        const a=String(alias||"").trim();
+        if(a)mapping[a]=entry.region;
+      });
+    });
+    cityRegionsCache=mapping;
+    cityRegionsListCache=names.sort((a,b)=>a.localeCompare(b,"he"));
+    return mapping;
+  }catch(e){
+    console.warn("loadCityRegions",e);
+    cityRegionsCache=cityRegionsCache||{};
+    cityRegionsListCache=cityRegionsListCache||[];
+    return cityRegionsCache;
+  }
+}
+function clearCityRegionsCache(){
+  cityRegionsCache=null;
+  cityRegionsListCache=null;
+}
+function extractCityFromAddress(address){
+  if(!address||typeof address!=="string")return null;
+  const mapping=cityRegionsCache||{};
+  const cityKeys=Object.keys(mapping).sort((a,b)=>b.length-a.length);
+  if(!cityKeys.length)return null;
+  const cleaned=address.replace(/\d+/g," ").replace(/[,\.\-\/\\]/g," ").replace(/\s+/g," ").trim();
+  const words=cleaned.split(/\s+/).filter(w=>w.length>1);
+  const hasKey=c=>Object.prototype.hasOwnProperty.call(mapping,c);
+  for(let i=0;i<words.length;i++){
+    for(let j=Math.min(i+4,words.length);j>i;j--){
+      const candidate=words.slice(i,j).join(" ");
+      if(hasKey(candidate))return candidate;
+    }
+  }
+  for(const word of words){
+    if(hasKey(word))return word;
+  }
+  for(const word of words){
+    if(word.length<3)continue;
+    for(const city of cityKeys){
+      if(city.length<3)continue;
+      if(city.includes(word)||word.includes(city))return city;
+    }
+  }
+  return null;
+}
+function getOrderRegion(order){
+  if(!order||order.is_pickup)return null;
+  const mapping=cityRegionsCache||{};
+  const raw=(order.delivery_city&&String(order.delivery_city).trim())||extractCityFromAddress(order.delivery_address);
+  if(!raw)return null;
+  if(mapping[raw])return mapping[raw];
+  const extracted=extractCityFromAddress(raw);
+  return extracted&&mapping[extracted]?mapping[extracted]:null;
+}
+function alutResolveDeliveryCity(explicitCity,address,isPickup){
+  if(isPickup)return null;
+  const typed=(explicitCity&&String(explicitCity).trim())||"";
+  if(typed)return typed;
+  return extractCityFromAddress(address)||null;
+}
+function alutRenderRegionBadge(order){
+  if(!order)return null;
+  if(order.is_pickup)return<span className="alut-region-badge pickup">🎒 איסוף עצמי</span>;
+  const region=getOrderRegion(order);
+  if(region)return<span className="alut-region-badge">🗺️ {region}</span>;
+  return<span className="alut-region-badge unknown">❓ לא ידוע</span>;
+}
+
 function alutSubtractBusinessDays(date,days){
   const result=new Date(date);
   let subtracted=0;
@@ -11337,11 +11445,14 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
   const [contactEmail,setContactEmail]=useState(initialData?.contact_email||"");
   const [isPickup,setIsPickup]=useState(!!initialData?.is_pickup);
   const [deliveryAddress,setDeliveryAddress]=useState(initialData?.delivery_address||"");
+  const [deliveryCity,setDeliveryCity]=useState(initialData?.delivery_city||"");
+  const [allCities,setAllCities]=useState(cityRegionsListCache||[]);
   const [notes,setNotes]=useState("");
   const [originalEmail,setOriginalEmail]=useState(initialData?.original_email||"");
   const [orderDupWarn,setOrderDupWarn]=useState(false);
   const [items,setItems]=useState(()=>alutItemsFromParsed(initialData?.items));
   const [saving,setSaving]=useState(false);
+  useEffect(()=>{loadCityRegions().then(()=>setAllCities(cityRegionsListCache||[]));},[]);
   useEffect(()=>{
     if(!initialData)return;
     if(initialData.company_name!=null)setCompanyName(initialData.company_name||"");
@@ -11349,6 +11460,7 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
     if(initialData.contact_phone!=null)setContactPhone(initialData.contact_phone||"");
     if(initialData.contact_email!=null)setContactEmail(initialData.contact_email||"");
     if(initialData.delivery_address!=null)setDeliveryAddress(initialData.delivery_address||"");
+    if(initialData.delivery_city!=null)setDeliveryCity(initialData.delivery_city||"");
     if(initialData.is_pickup!=null)setIsPickup(!!initialData.is_pickup);
     if(initialData.original_email)setOriginalEmail(initialData.original_email);
     if(initialData.items?.length)setItems(alutItemsFromParsed(initialData.items));
@@ -11375,7 +11487,9 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
     if(orderDupWarn&&!confirm(`⚠️ הזמנה #${orderNumber} כבר קיימת במערכת. האם להמשיך?`))return;
     setSaving(true);
     try{
-      const header={project_id:projectId,order_number:Number(orderNumber),company_name:companyName.trim(),contact_name:contactName.trim()||null,contact_phone:contactPhone.trim()||null,contact_email:contactEmail.trim()||null,delivery_address:deliveryAddress.trim()||null,is_pickup:isPickup,notes:notes.trim()||null,original_email:originalEmail.trim()||null};
+      await loadCityRegions();
+      const resolvedCity=alutResolveDeliveryCity(deliveryCity,deliveryAddress,isPickup);
+      const header={project_id:projectId,order_number:Number(orderNumber),company_name:companyName.trim(),contact_name:contactName.trim()||null,contact_phone:contactPhone.trim()||null,contact_email:contactEmail.trim()||null,delivery_address:deliveryAddress.trim()||null,delivery_city:resolvedCity,is_pickup:isPickup,notes:notes.trim()||null,original_email:originalEmail.trim()||null};
       const created=await sb("alut_orders",{method:"POST",body:JSON.stringify(header)});
       const orderId=(Array.isArray(created)?created[0]:created)?.id;
       if(!orderId)throw new Error("לא נוצרה הזמנה");
@@ -11407,7 +11521,13 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
       <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:13,cursor:"pointer"}}>
         <input type="checkbox" checked={isPickup} onChange={e=>setIsPickup(e.target.checked)}/> איסוף עצמי
       </label>
-      {!isPickup&&<input value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="כתובת" style={{...IS,marginBottom:12}}/>}
+      {!isPickup&&<>
+        <input value={deliveryAddress} onChange={e=>setDeliveryAddress(e.target.value)} placeholder="כתובת" style={{...IS,marginBottom:8}}/>
+        <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>עיר (אופציונלי, נחלץ אוטומטית מהכתובת)</label>
+        <input value={deliveryCity} onChange={e=>setDeliveryCity(e.target.value)} placeholder="למשל: תל אביב" list="alut-cities-list-new" style={{...IS,marginBottom:8}}/>
+        <datalist id="alut-cities-list-new">{allCities.map(c=><option key={c} value={c}/>)}</datalist>
+        {!deliveryCity&&deliveryAddress&&<div style={{fontSize:12,color:"#92400e",marginBottom:12}}>💡 המערכת תנסה לחלץ את העיר מהכתובת</div>}
+      </>}
       <div style={{fontWeight:700,color:"#0d9488",margin:"12px 0 10px"}}>📦 פריטי הזמנה</div>
       {pricingLoading?<div style={{padding:12,textAlign:"center",color:"var(--text3)",fontSize:13}}><Spinner sz={20} color="#0d9488"/> טוען מחירים...</div>:
       items.map((it,i)=><AlutItemFormCard key={i} item={it} index={i} pricing={pricing} calcItem={calc.items[i]} onChange={updateItem} onRemove={removeItem} canRemove={items.length>1}/>)}
@@ -11789,7 +11909,8 @@ function AlutTransferToShipmentsModal({order,onClose,onTransferred}){
 function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [data,setData]=useState(order);
   const [editingCustomer,setEditingCustomer]=useState(false);
-  const [customerForm,setCustomerForm]=useState({company_name:order.company_name,contact_name:order.contact_name||"",contact_phone:order.contact_phone||"",contact_email:order.contact_email||"",is_pickup:!!order.is_pickup,delivery_address:order.delivery_address||"",notes:order.notes||""});
+  const [customerForm,setCustomerForm]=useState({company_name:order.company_name,contact_name:order.contact_name||"",contact_phone:order.contact_phone||"",contact_email:order.contact_email||"",is_pickup:!!order.is_pickup,delivery_address:order.delivery_address||"",delivery_city:order.delivery_city||"",notes:order.notes||""});
+  const [allCities,setAllCities]=useState(cityRegionsListCache||[]);
   const [statusItem,setStatusItem]=useState(null);
   const [editItem,setEditItem]=useState(null);
   const [addItemOpen,setAddItemOpen]=useState(false);
@@ -11825,14 +11946,16 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     await loadWorkOrderRecords();
     onSaved?.();
   };
-  useEffect(()=>{reload();},[]);
+  useEffect(()=>{reload();loadCityRegions().then(()=>setAllCities(cityRegionsListCache||[]));},[]);
   const items=data.items||[];
   const calc=useMemo(()=>calculateAlutOrderTotals(items.map(i=>({...i,needs_design:!i.is_template_only})),pricing,data.is_pickup),[items,data.is_pickup,pricing]);
   const saveCustomer=async()=>{
+    await loadCityRegions();
+    const resolvedCity=alutResolveDeliveryCity(customerForm.delivery_city,customerForm.delivery_address,customerForm.is_pickup);
     await sb(`alut_orders?id=eq.${order.id}`,{method:"PATCH",body:JSON.stringify({
       company_name:customerForm.company_name.trim(),contact_name:customerForm.contact_name.trim()||null,
       contact_phone:customerForm.contact_phone.trim()||null,contact_email:customerForm.contact_email.trim()||null,
-      is_pickup:customerForm.is_pickup,delivery_address:customerForm.delivery_address.trim()||null,notes:customerForm.notes.trim()||null,
+      is_pickup:customerForm.is_pickup,delivery_address:customerForm.delivery_address.trim()||null,delivery_city:resolvedCity,notes:customerForm.notes.trim()||null,
     })});
     await alutTouchOrderRecalc(order.id);
     setEditingCustomer(false);reload();
@@ -11882,13 +12005,18 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
         <div><strong>פרטי לקוח:</strong> {data.contact_name||"—"} {data.contact_phone?`| ${data.contact_phone}`:""}</div>
         {data.contact_email&&<div><strong>מייל:</strong> {data.contact_email}</div>}
         <div>{data.is_pickup?"✅ איסוף עצמי":`📍 ${data.delivery_address||"—"}`}</div>
+        <div style={{marginTop:4}}>{alutRenderRegionBadge(data)}{data.delivery_city&&!data.is_pickup?<span style={{fontSize:12,color:"var(--text3)",marginRight:8}}> · עיר: {data.delivery_city}</span>:null}</div>
       </div>:<div style={{marginBottom:16}}>
         <input value={customerForm.company_name} onChange={e=>setCustomerForm(f=>({...f,company_name:e.target.value}))} placeholder="שם חברה" style={{...IS,marginBottom:6}}/>
         <input value={customerForm.contact_name} onChange={e=>setCustomerForm(f=>({...f,contact_name:e.target.value}))} placeholder="איש קשר" style={{...IS,marginBottom:6}}/>
         <input value={customerForm.contact_phone} onChange={e=>setCustomerForm(f=>({...f,contact_phone:e.target.value}))} placeholder="טלפון" style={{...IS,marginBottom:6,direction:"ltr",textAlign:"right"}}/>
         <input value={customerForm.contact_email} onChange={e=>setCustomerForm(f=>({...f,contact_email:e.target.value}))} placeholder="מייל" style={{...IS,marginBottom:6,direction:"ltr",textAlign:"right"}}/>
         <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,fontSize:13}}><input type="checkbox" checked={customerForm.is_pickup} onChange={e=>setCustomerForm(f=>({...f,is_pickup:e.target.checked}))}/> איסוף עצמי</label>
-        {!customerForm.is_pickup&&<input value={customerForm.delivery_address} onChange={e=>setCustomerForm(f=>({...f,delivery_address:e.target.value}))} placeholder="כתובת" style={{...IS,marginBottom:6}}/>}
+        {!customerForm.is_pickup&&<>
+          <input value={customerForm.delivery_address} onChange={e=>setCustomerForm(f=>({...f,delivery_address:e.target.value}))} placeholder="כתובת" style={{...IS,marginBottom:6}}/>
+          <input value={customerForm.delivery_city} onChange={e=>setCustomerForm(f=>({...f,delivery_city:e.target.value}))} placeholder="עיר (אופציונלי)" list="alut-cities-list-edit" style={{...IS,marginBottom:6}}/>
+          <datalist id="alut-cities-list-edit">{allCities.map(c=><option key={c} value={c}/>)}</datalist>
+        </>}
         <textarea value={customerForm.notes} onChange={e=>setCustomerForm(f=>({...f,notes:e.target.value}))} placeholder="הערות" style={{...IS,minHeight:50,marginBottom:8}}/>
         <button type="button" onClick={saveCustomer} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור פרטי לקוח</button>
       </div>}
@@ -12244,6 +12372,94 @@ function AlutSeasonalQuoteScreen({project,pricingRows,onClose}){
   </div>;
 }
 
+function CityRegionsManager(){
+  const [cities,setCities]=useState([]);
+  const [newCity,setNewCity]=useState("");
+  const [newRegion,setNewRegion]=useState("מרכז");
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [busy,setBusy]=useState(false);
+  const loadCities=async()=>{
+    setLoading(true);
+    try{
+      const{data,error}=await supabaseClient.from("city_regions").select("*").order("city_name",{ascending:true});
+      if(error)throw error;
+      setCities(data||[]);
+    }catch(e){
+      console.warn("city regions load",e);
+      window.alert("שגיאה בטעינת ערים: "+(e.message||String(e)));
+      setCities([]);
+    }finally{setLoading(false);}
+  };
+  useEffect(()=>{loadCities();},[]);
+  const addCity=async()=>{
+    if(!newCity.trim()||busy)return;
+    setBusy(true);
+    try{
+      const{error}=await supabaseClient.from("city_regions").insert({city_name:newCity.trim(),region:newRegion});
+      if(error)throw error;
+      setNewCity("");
+      clearCityRegionsCache();
+      await loadCityRegions(true);
+      await loadCities();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+    finally{setBusy(false);}
+  };
+  const updateRegion=async(cityId,region)=>{
+    try{
+      const{error}=await supabaseClient.from("city_regions").update({region,updated_at:new Date().toISOString()}).eq("id",cityId);
+      if(error)throw error;
+      clearCityRegionsCache();
+      await loadCityRegions(true);
+      await loadCities();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const deleteCity=async(cityId)=>{
+    if(!confirm("למחוק את העיר?"))return;
+    try{
+      const{error}=await supabaseClient.from("city_regions").delete().eq("id",cityId);
+      if(error)throw error;
+      clearCityRegionsCache();
+      await loadCityRegions(true);
+      await loadCities();
+    }catch(e){window.alert("שגיאה: "+(e.message||String(e)));}
+  };
+  const filtered=cities.filter(c=>!search||String(c.city_name||"").includes(search));
+  return<div className="city-regions-manager">
+    <h1 style={{fontSize:22,fontWeight:800,margin:"0 0 8px"}}>🗺️ ניהול ערים ואזורים</h1>
+    <p style={{color:"var(--text3)",fontSize:13,marginBottom:16}}>מיפוי ערים לאזורי משלוח של אלוט. שינויים משפיעים מיד על סינון האזורים בדשבורד.</p>
+    <div className="add-city-form">
+      <input type="text" value={newCity} onChange={e=>setNewCity(e.target.value)} placeholder="שם עיר חדשה" style={{flex:1,minWidth:160}}/>
+      <select value={newRegion} onChange={e=>setNewRegion(e.target.value)}>
+        {ALUT_REGIONS.map(r=><option key={r} value={r}>{r}</option>)}
+      </select>
+      <button type="button" onClick={addCity} disabled={busy||!newCity.trim()} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>{busy?"...":"➕ הוסף"}</button>
+    </div>
+    <input type="text" className="city-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="חיפוש עיר..."/>
+    {loading?<div style={{padding:24}}><Spinner sz={24} color="#0d9488"/> טוען...</div>:
+    <div style={{overflowX:"auto"}}>
+      <table>
+        <thead><tr><th>עיר</th><th>אזור</th><th>שמות חלופיים</th><th>פעולות</th></tr></thead>
+        <tbody>
+          {filtered.map(city=>(
+            <tr key={city.id}>
+              <td style={{fontWeight:600}}>{city.city_name}</td>
+              <td>
+                <select value={city.region} onChange={e=>updateRegion(city.id,e.target.value)} style={{padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",fontFamily:"inherit"}}>
+                  {ALUT_REGIONS.map(r=><option key={r} value={r}>{r}</option>)}
+                </select>
+              </td>
+              <td style={{color:"var(--text3)"}}>{(city.aliases&&city.aliases.length)?city.aliases.join(", "):"—"}</td>
+              <td><button type="button" onClick={()=>deleteCity(city.id)} style={{background:"#fee2e2",border:"none",borderRadius:8,padding:"6px 10px",cursor:"pointer",minHeight:36}} title="מחק">🗑️</button></td>
+            </tr>
+          ))}
+          {!filtered.length&&<tr><td colSpan={4} style={{textAlign:"center",color:"var(--text3)",padding:24}}>אין ערים להצגה</td></tr>}
+        </tbody>
+      </table>
+    </div>}
+  </div>;
+}
+
 function AlutDashboard(){
   const [project,setProject]=useState(null);
   const [pricingRows,setPricingRows]=useState([]);
@@ -12255,6 +12471,8 @@ function AlutDashboard(){
   const [filterType,setFilterType]=useState("all");
   const [urgentOnly,setUrgentOnly]=useState(false);
   const [sortByDeadline,setSortByDeadline]=useState(false);
+  const [selectedRegion,setSelectedRegion]=useState(null);
+  const [regionsReady,setRegionsReady]=useState(!!cityRegionsCache);
   const [showPricing,setShowPricing]=useState(false);
   const [showSeasonalQuote,setShowSeasonalQuote]=useState(false);
   const [pasteEmailOpen,setPasteEmailOpen]=useState(false);
@@ -12281,6 +12499,7 @@ function AlutDashboard(){
     setLoading(false);
   };
   useEffect(()=>{setLoading(true);loadData();const t=setInterval(loadData,30000);return()=>clearInterval(t);},[]);
+  useEffect(()=>{loadCityRegions().then(()=>setRegionsReady(true));},[]);
   const ordersRef=useRef([]);
   useEffect(()=>{
     ordersRef.current=orders;
@@ -12309,6 +12528,17 @@ function AlutDashboard(){
         const s=search.trim().toLowerCase();
         if(!String(o.order_number).includes(s)&&!(o.company_name||"").toLowerCase().includes(s)&&!(o.contact_name||"").toLowerCase().includes(s))return false;
       }
+      if(selectedRegion!==null){
+        if(selectedRegion==="pickup"){
+          if(!o.is_pickup)return false;
+        }else if(selectedRegion==="unknown"){
+          if(o.is_pickup)return false;
+          if(getOrderRegion(o))return false;
+        }else{
+          if(o.is_pickup)return false;
+          if(getOrderRegion(o)!==selectedRegion)return false;
+        }
+      }
       return true;
     });
     if(!sortByDeadline)return list;
@@ -12325,7 +12555,19 @@ function AlutDashboard(){
       if(da!==db)return da<db?-1:1;
       return(Number(b.order_number)||0)-(Number(a.order_number)||0);
     });
-  },[orders,filterStatus,filterType,urgentOnly,search,sortByDeadline]);
+  },[orders,filterStatus,filterType,urgentOnly,search,sortByDeadline,selectedRegion,regionsReady]);
+  const regionCounts=useMemo(()=>{
+    const counts={};
+    ALUT_REGIONS.forEach(r=>{counts[r]=0;});
+    let pickup=0,unknown=0;
+    orders.forEach(order=>{
+      if(order.is_pickup){pickup++;return;}
+      const region=getOrderRegion(order);
+      if(region&&counts[region]!==undefined)counts[region]++;
+      else unknown++;
+    });
+    return{...counts,pickup,unknown};
+  },[orders,regionsReady]);
   const kpis=useMemo(()=>{
     const sumItems=arr=>arr.reduce((a,x)=>a+Number(x.subtotal||0),0);
     const sumOrders=arr=>arr.reduce((a,x)=>a+Number(x.total_price||0),0);
@@ -12355,6 +12597,7 @@ function AlutDashboard(){
   const activeFilterLabel=[
     filterStatus!=="all"?`סטטוס: ${(ALUT_STATUS_CONFIG[filterStatus]||{}).label||filterStatus}`:null,
     filterType!=="all"?`סוג: ${(ALUT_CALENDAR_TYPES[filterType]||{}).label||filterType}`:null,
+    selectedRegion==="pickup"?"אזור: איסוף עצמי":selectedRegion==="unknown"?"אזור: לא ידוע":selectedRegion?`אזור: ${selectedRegion}`:null,
     urgentOnly?"דחוף בלבד":null,
     sortByDeadline?"מיון לפי תאריך אספקה":null,
     search.trim()?`חיפוש: ${search.trim()}`:null,
@@ -12406,6 +12649,15 @@ function AlutDashboard(){
         📅 הצג הזמנות לפי תאריך אספקה{sortByDeadline?" ✓":""}
       </button>
     </div>
+    <div className="alut-region-filters">
+      <div className="alut-region-label">🗺️ אזור:</div>
+      <button type="button" className={"alut-region-tab"+(selectedRegion===null?" active":"")} onClick={()=>setSelectedRegion(null)}>הכל ({orders.length})</button>
+      {ALUT_REGIONS.map(region=>(
+        <button type="button" key={region} className={"alut-region-tab"+(selectedRegion===region?" active":"")} onClick={()=>setSelectedRegion(region)}>🗺️ {region} ({regionCounts[region]||0})</button>
+      ))}
+      <button type="button" className={"alut-region-tab alut-region-pickup"+(selectedRegion==="pickup"?" active":"")} onClick={()=>setSelectedRegion("pickup")}>🎒 איסוף עצמי ({regionCounts.pickup||0})</button>
+      <button type="button" className={"alut-region-tab alut-region-unknown"+(selectedRegion==="unknown"?" active":"")} onClick={()=>setSelectedRegion("unknown")}>❓ לא ידוע ({regionCounts.unknown||0})</button>
+    </div>
     {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28} color="#0d9488"/> טוען...</div>:
     filtered.length===0?<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין הזמנות להצגה</div>:
     <>
@@ -12422,7 +12674,10 @@ function AlutDashboard(){
               const isUrgent=alutOrderIsUrgent(o);
               return<tr key={o.id} onClick={()=>openDetail(o)} className={isUrgent?"alut-item-urgent item-urgent":""} style={{background:isUrgent?"#fef3c7":"#fff",cursor:"pointer"}}>
                 <td style={{...tdStyle,fontWeight:700}}>#{o.order_number}</td>
-                <td style={tdStyle}>{o.company_name}</td>
+                <td style={tdStyle}>
+                  <div>{o.company_name}</div>
+                  {alutRenderRegionBadge(o)}
+                </td>
                 <td style={tdStyle}>{alutFormatItemsSummary(items)}</td>
                 <td style={tdStyle}>{alutTotalQuantity(items)}</td>
                 <td style={tdStyle}>{alutRenderStatusCell(stSum)}</td>
@@ -12444,6 +12699,7 @@ function AlutDashboard(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
               <div>
                 <div style={{fontWeight:800,fontSize:16}}>#{o.order_number} — {o.company_name}</div>
+                <div style={{marginTop:4}}>{alutRenderRegionBadge(o)}</div>
                 <div style={{fontSize:13,color:"var(--text3)",marginTop:4}}>{alutFormatItemsSummary(items)} · {alutTotalQuantity(items)} יח׳</div>
               </div>
               <AlutOrderRowActions order={o} onDelete={handleDelete}/>
@@ -13143,6 +13399,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="city-regions"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="user-passwords"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -13384,7 +13646,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -13517,6 +13779,8 @@ function App(){
       {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
 
       {tab==="alut-dashboard"&&isA&&<AlutDashboard/>}
+
+      {tab==="city-regions"&&isA&&<CityRegionsManager/>}
 
       {tab==="shipments"&&isA&&<ShipmentsDashboard clients={clients} user={user} onOpenDeliveryNote={t=>setDeliveryNoteModal({task:t})} refreshAll={refreshAll}/>}
       {tab==="dashboard"&&<div>

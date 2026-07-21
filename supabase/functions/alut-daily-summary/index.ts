@@ -77,14 +77,16 @@ serve(async (req) => {
     const totalUnits = (byType.hard?.units || 0) + (byType.duplex?.units || 0) + (byType.wall?.units || 0);
     const totalOrders = new Set(allItems?.map((i) => i.order_id)).size;
 
-    const statusCounts = { inPrint: 0, inBinding: 0, inShipment: 0, delivered: 0 };
+    const statusCounts = { inPrint: 0, inBinding: 0, readyToGo: 0, inTransit: 0, delivered: 0 };
     allItems?.forEach((item) => {
-      if (["new", "design_in_progress", "design_sent", "design_approved", "in_print"].includes(item.status)) {
+      if (["new", "design_in_progress", "design_sent", "design_approved", "sent_to_natalie", "in_print"].includes(item.status)) {
         statusCounts.inPrint++;
       } else if (["at_davach", "at_itzik"].includes(item.status)) {
         statusCounts.inBinding++;
-      } else if (["ready_to_ship", "shipped"].includes(item.status)) {
-        statusCounts.inShipment++;
+      } else if (["ready_to_ship", "ready_for_pickup"].includes(item.status)) {
+        statusCounts.readyToGo++;
+      } else if (item.status === "shipped") {
+        statusCounts.inTransit++;
       } else if (item.status === "delivered") {
         statusCounts.delivered++;
       }
@@ -249,16 +251,18 @@ function buildDailySummaryHtml(data: any): string {
     .type-label { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
     .type-units { font-size: 20px; font-weight: 900; color: #1f2937; }
     .type-orders { font-size: 11px; color: #9ca3af; margin-top: 4px; }
-    .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .status-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
     .status-card { background: #f9fafb; padding: 12px; border-radius: 8px; text-align: center; }
     .status-card.print { background: #fef3c7; }
     .status-card.binding { background: #f3e8ff; }
+    .status-card.ready { background: #ddd6fe; }
     .status-card.shipment { background: #dbeafe; }
     .status-card.done { background: #d1fae5; }
     .status-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
     .status-value { font-size: 20px; font-weight: 900; }
     .status-card.print .status-value { color: #d97706; }
     .status-card.binding .status-value { color: #7c3aed; }
+    .status-card.ready .status-value { color: #5b21b6; }
     .status-card.shipment .status-value { color: #2563eb; }
     .status-card.done .status-value { color: #059669; }
     .today-list { background: #f9fafb; border-radius: 10px; padding: 16px; }
@@ -332,9 +336,13 @@ function buildDailySummaryHtml(data: any): string {
           <div class="status-label">בכריכה</div>
           <div class="status-value">${statusCounts.inBinding}</div>
         </div>
+        <div class="status-card ready">
+          <div class="status-label">מוכן למשלוח/איסוף</div>
+          <div class="status-value">${statusCounts.readyToGo}</div>
+        </div>
         <div class="status-card shipment">
           <div class="status-label">במשלוח</div>
-          <div class="status-value">${statusCounts.inShipment}</div>
+          <div class="status-value">${statusCounts.inTransit}</div>
         </div>
         <div class="status-card done">
           <div class="status-label">הושלמו</div>

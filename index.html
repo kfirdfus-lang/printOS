@@ -12171,6 +12171,7 @@ function AlutDashboard(){
   const [filterStatus,setFilterStatus]=useState("all");
   const [filterType,setFilterType]=useState("all");
   const [urgentOnly,setUrgentOnly]=useState(false);
+  const [sortByDeadline,setSortByDeadline]=useState(false);
   const [showPricing,setShowPricing]=useState(false);
   const [showSeasonalQuote,setShowSeasonalQuote]=useState(false);
   const [pasteEmailOpen,setPasteEmailOpen]=useState(false);
@@ -12216,7 +12217,7 @@ function AlutDashboard(){
     return()=>window.removeEventListener("printos-open-alut",h);
   },[]);
   const filtered=useMemo(()=>{
-    return orders.filter(o=>{
+    const list=orders.filter(o=>{
       const items=o.items||[];
       if(filterType!=="all"&&!items.some(i=>i.calendar_type===filterType))return false;
       if(filterStatus!=="all"&&!items.some(i=>i.status===filterStatus))return false;
@@ -12227,7 +12228,21 @@ function AlutDashboard(){
       }
       return true;
     });
-  },[orders,filterStatus,filterType,urgentOnly,search]);
+    if(!sortByDeadline)return list;
+    const earliestDeadline=o=>{
+      const dates=(o.items||[]).map(i=>i.delivery_deadline).filter(Boolean).sort();
+      return dates[0]||null;
+    };
+    return[...list].sort((a,b)=>{
+      const da=earliestDeadline(a);
+      const db=earliestDeadline(b);
+      if(!da&&!db)return(Number(b.order_number)||0)-(Number(a.order_number)||0);
+      if(!da)return 1;
+      if(!db)return -1;
+      if(da!==db)return da<db?-1:1;
+      return(Number(b.order_number)||0)-(Number(a.order_number)||0);
+    });
+  },[orders,filterStatus,filterType,urgentOnly,search,sortByDeadline]);
   const kpis=useMemo(()=>{
     const sumItems=arr=>arr.reduce((a,x)=>a+Number(x.subtotal||0),0);
     const sumOrders=arr=>arr.reduce((a,x)=>a+Number(x.total_price||0),0);
@@ -12256,6 +12271,7 @@ function AlutDashboard(){
     filterStatus!=="all"?`סטטוס: ${(ALUT_STATUS_CONFIG[filterStatus]||{}).label||filterStatus}`:null,
     filterType!=="all"?`סוג: ${(ALUT_CALENDAR_TYPES[filterType]||{}).label||filterType}`:null,
     urgentOnly?"דחוף בלבד":null,
+    sortByDeadline?"מיון לפי תאריך אספקה":null,
     search.trim()?`חיפוש: ${search.trim()}`:null,
   ].filter(Boolean).join(" · ");
   const handlePrintDashboard=()=>alutHandleDashboardPrint();
@@ -12301,6 +12317,9 @@ function AlutDashboard(){
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,cursor:"pointer",padding:"8px 12px",borderRadius:10,border:urgentOnly?"2px solid #dc2626":"1px solid var(--border)",background:urgentOnly?"#fef2f2":"#fff"}}>
         <input type="checkbox" checked={urgentOnly} onChange={e=>setUrgentOnly(e.target.checked)}/> 🔴 דחוף
       </label>
+      <button type="button" onClick={()=>setSortByDeadline(v=>!v)} style={{padding:"8px 12px",borderRadius:10,border:sortByDeadline?"2px solid #0d9488":"1px solid var(--border)",background:sortByDeadline?"#f0fdfa":"#fff",color:sortByDeadline?"#0d9488":"var(--text)",fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>
+        📅 הצג הזמנות לפי תאריך אספקה{sortByDeadline?" ✓":""}
+      </button>
     </div>
     {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28} color="#0d9488"/> טוען...</div>:
     filtered.length===0?<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין הזמנות להצגה</div>:

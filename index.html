@@ -10876,10 +10876,21 @@ function alutNormalizeCalendarType(t){
   if(s==="hard"||s.includes("קשיח"))return"hard";
   return s==="duplex"||s==="wall"||s==="hard"?s:"hard";
 }
+function alutDefaultUnitPrice(calendarType,pricing){
+  const calType=alutNormalizeCalendarType(calendarType);
+  return Number({hard:pricing?.price_hard,duplex:pricing?.price_duplex,wall:pricing?.price_wall}[calType])||0;
+}
+function alutResolveUnitPrice(item,pricing){
+  const defaultPrice=alutDefaultUnitPrice(item?.calendar_type,pricing);
+  if(item?.unit_price===undefined||item?.unit_price===null||String(item.unit_price).trim()==="")return defaultPrice;
+  const n=Number(item.unit_price);
+  return Number.isFinite(n)?n:defaultPrice;
+}
 function calculateAlutOrderTotals(items,pricing,isPickup){
   const itemsWithCalc=(items||[]).map(item=>{
     const calType=alutNormalizeCalendarType(item.calendar_type);
-    const unitPrice={hard:pricing.price_hard,duplex:pricing.price_duplex,wall:pricing.price_wall}[calType]||0;
+    const defaultUnitPrice=alutDefaultUnitPrice(calType,pricing);
+    const unitPrice=alutResolveUnitPrice(item,pricing);
     const cartonSize=Math.max(1,Number({hard:pricing.carton_hard,duplex:pricing.carton_duplex,wall:pricing.carton_wall}[calType])||1);
     const qty=Number(item.quantity)||0;
     const cartonsCount=Math.ceil(qty/cartonSize);
@@ -10888,7 +10899,7 @@ function calculateAlutOrderTotals(items,pricing,isPickup){
     const designPrice=needsDesign?(pricing.price_design||0):0;
     const subtotal=boardsTotal+designPrice;
     const davachCost=["duplex","wall"].includes(calType)?qty*(pricing.cost_davach_per_unit||0):0;
-    return{...item,calendar_type:calType,needs_design:needsDesign,unit_price:unitPrice,design_price:designPrice,cartons_count:cartonsCount,subtotal,davach_cost:davachCost,boardsTotal};
+    return{...item,calendar_type:calType,needs_design:needsDesign,unit_price:unitPrice,default_unit_price:defaultUnitPrice,design_price:designPrice,cartons_count:cartonsCount,subtotal,davach_cost:davachCost,boardsTotal};
   });
   const totalCartons=itemsWithCalc.reduce((s,i)=>s+Number(i.cartons_count||0),0);
   const itemsTotal=itemsWithCalc.reduce((s,i)=>s+i.subtotal,0);
@@ -11414,7 +11425,11 @@ function AlutItemFormCard({item,index,pricing,calcItem,onChange,onRemove,canRemo
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
   const ci=calcItem||{};
   const templateOnly=!!item.is_template_only;
+  const defaultPrice=alutDefaultUnitPrice(item.calendar_type,pricing);
+  const priceValue=item.unit_price!==undefined&&item.unit_price!==null&&String(item.unit_price).trim()!==""?item.unit_price:defaultPrice;
+  const isCustomPrice=Math.abs(Number(priceValue)-Number(defaultPrice))>0.001;
   const update=(patch)=>onChange(index,{...item,...patch,needs_design:patch.is_template_only!==undefined?!patch.is_template_only:item.needs_design});
+  const setCalendarType=k=>update({calendar_type:k,unit_price:alutDefaultUnitPrice(k,pricing)});
   return<div style={{border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:12,background:"#fafafa"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
       <div style={{fontWeight:700,fontSize:13,color:"#0d9488"}}>פריט {index+1}</div>
@@ -11423,12 +11438,18 @@ function AlutItemFormCard({item,index,pricing,calcItem,onChange,onRemove,canRemo
     <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
       {Object.entries(ALUT_CALENDAR_TYPES).map(([k,v])=>
         <label key={k} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13}}>
-          <input type="radio" name={`calType-${index}`} checked={item.calendar_type===k} onChange={()=>update({calendar_type:k})}/>{v.icon} {v.label}
+          <input type="radio" name={`calType-${index}`} checked={item.calendar_type===k} onChange={()=>setCalendarType(k)}/>{v.icon} {v.label}
         </label>
       )}
     </div>
     <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>כמות *</label>
     <input type="number" min="1" value={item.quantity} onChange={e=>update({quantity:e.target.value})} style={{...IS,marginBottom:10,width:140,direction:"ltr"}}/>
+    <label style={{fontSize:11,fontWeight:700,color:"var(--text3)",display:"block",marginBottom:4}}>מחיר יחידה (₪ לפני מע״מ)</label>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+      <input type="number" min="0" step="0.01" value={priceValue} onChange={e=>update({unit_price:e.target.value})} style={{...IS,width:140,direction:"ltr",marginBottom:0,border:isCustomPrice?"2px solid #f59e0b":IS.border,background:isCustomPrice?"#fffbeb":IS.background}}/>
+      {isCustomPrice&&<span style={{fontSize:12,fontWeight:600,color:"#92400e",background:"#fef3c7",padding:"4px 10px",borderRadius:8}}>💡 מחיר מותאם אישית</span>}
+      {!isCustomPrice&&<span style={{fontSize:11,color:"var(--text3)"}}>ברירת מחדל: ₪{Number(defaultPrice).toLocaleString("he-IL",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+    </div>
     <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,fontSize:13,cursor:"pointer"}}>
       <input type="checkbox" checked={templateOnly} onChange={e=>update({is_template_only:e.target.checked,needs_design:!e.target.checked})}/> טמפלייט בלבד (בלי סקיצה)
     </label>
@@ -11621,7 +11642,7 @@ function AlutNewOrderModal({projectId,pricingRows,initialData,onClose,onSaved}){
 
 function AlutItemEditModal({item,order,pricingRows,onClose,onSaved}){
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
-  const [form,setForm]=useState({calendar_type:item.calendar_type,quantity:item.quantity,is_template_only:!!item.is_template_only,needs_design:!item.is_template_only});
+  const [form,setForm]=useState({calendar_type:item.calendar_type,quantity:item.quantity,unit_price:item.unit_price,is_template_only:!!item.is_template_only,needs_design:!item.is_template_only});
   const [saving,setSaving]=useState(false);
   const calc=useMemo(()=>calculateAlutOrderTotals([{...form,needs_design:!form.is_template_only}],pricing,order.is_pickup),[form,pricing,order.is_pickup]);
   const ci=calc.items[0];

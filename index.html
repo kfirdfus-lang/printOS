@@ -360,6 +360,36 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .carton-label-footer{background:#f9fafb;padding:8px 16px;text-align:center;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb}
 .carton-print-btn{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 20px;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-left:8px;font-family:inherit}
 .carton-close-btn{background:#f3f4f6;border:none;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:18px;font-family:inherit}
+.btn-delivery-pdf{background:linear-gradient(135deg,#0d9488 0%,#14b8a6 100%);color:#fff;padding:8px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;font-family:inherit;min-height:40px}
+.delivery-pdf-hidden,.delivery-pdf-content{display:none}
+.date-quick-select{display:flex;gap:10px;margin-bottom:15px}
+.date-quick-select button{flex:1;padding:10px;border:2px solid #e5e7eb;background:#fff;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit;font-size:13px}
+.date-quick-select button.active{background:#0d9488;color:#fff;border-color:#0d9488}
+.date-picker-wrap{padding:15px;background:#f9fafb;border-radius:8px}
+.date-picker-wrap label{display:block;margin-bottom:8px;font-weight:600;color:#4b5563;font-size:14px}
+.date-picker-wrap input[type="date"]{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:15px;font-family:inherit;box-sizing:border-box}
+.delivery-pdf-content{direction:rtl;font-family:'Heebo',Arial,sans-serif;color:#1f2937}
+.delivery-pdf-header{text-align:center;border-bottom:3px solid #0d9488;padding-bottom:12px;margin-bottom:18px}
+.delivery-pdf-logo{font-size:18px;color:#0d9488;font-weight:700;margin-bottom:4px}
+.delivery-pdf-title{font-size:22px;font-weight:900;color:#1f2937}
+.delivery-pdf-date{font-size:14px;color:#4b5563;margin-top:4px}
+.delivery-pdf-count{display:inline-block;background:#f0fdfa;color:#0d9488;padding:3px 12px;border-radius:12px;font-size:12px;font-weight:700;margin-top:6px}
+.delivery-group{margin-bottom:16px;page-break-inside:auto}
+.delivery-group-title{font-size:15px;font-weight:700;color:#0d9488;background:#f0fdfa;padding:8px 12px;border-right:4px solid #0d9488;border-radius:4px;margin-bottom:8px}
+.delivery-group-count{font-size:12px;color:#6b7280;font-weight:500}
+.delivery-card{border:1px solid #d1d5db;border-radius:6px;padding:10px 12px;margin-bottom:8px;page-break-inside:avoid}
+.delivery-header{display:flex;align-items:center;gap:10px;border-bottom:1px solid #f3f4f6;padding-bottom:6px;margin-bottom:6px}
+.delivery-number{background:#0d9488;color:#fff;padding:3px 8px;border-radius:4px;font-weight:700;font-size:12px}
+.delivery-company{font-size:15px;font-weight:700;color:#1f2937}
+.delivery-info{margin-bottom:8px}
+.delivery-row{display:flex;gap:6px;padding:3px 0;font-size:13px;color:#374151;align-items:flex-start}
+.delivery-icon{font-size:12px;min-width:18px}
+.delivery-signature{border-top:1px dashed #d1d5db;padding-top:8px;margin-top:6px;display:flex;gap:20px}
+.signature-line{display:flex;align-items:center;gap:8px;flex:1;font-size:12px;color:#6b7280}
+.signature-line span{white-space:nowrap;font-weight:600}
+.signature-empty{flex:1;border-bottom:1px solid #6b7280;height:16px}
+.signature-empty.small{max-width:100px;flex:none;width:100px}
+.delivery-pdf-footer{text-align:center;margin-top:20px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af}
 @media print{
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body.printing-alut-dashboard{
@@ -456,12 +486,19 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
   body.printing-carton-labels .carton-labels-modal{padding:0;background:#fff}
   body.printing-carton-labels .carton-labels-grid{grid-template-columns:repeat(2,1fr);gap:10px}
   body.printing-carton-labels .carton-label{box-shadow:none;page-break-inside:avoid}
+  body.printing-delivery-pdf *{visibility:hidden}
+  body.printing-delivery-pdf #delivery-pdf-container,
+  body.printing-delivery-pdf #delivery-pdf-container *{visibility:visible}
+  body.printing-delivery-pdf #delivery-pdf-container{display:block!important;position:absolute;left:0;top:0;width:100%;padding:0;margin:0}
+  body.printing-delivery-pdf .delivery-pdf-content{display:block!important;direction:rtl;font-family:'Heebo',Arial,sans-serif;color:#1f2937}
+  body.printing-delivery-pdf .delivery-card{page-break-inside:avoid}
   @page{margin:12mm}
 }
 </style>
 </head>
 <body>
 <div id="root"></div>
+<div id="delivery-pdf-container" class="delivery-pdf-hidden"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef,useMemo}=React;
 const LABEL_PRINT_BTN_STYLE={padding:"4px 8px",borderRadius:7,border:"1px solid var(--border)",background:"var(--bg2)",color:"var(--text2)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"};
@@ -4618,6 +4655,141 @@ function DayColumn({date,tasks,drivers,onDragStart,onDrop,onCopyDay,onSendWhatsA
   </div>;
 }
 
+function groupDeliveriesForPdf(deliveries,drivers){
+  const driverName=d=>{
+    const drv=(drivers||[]).find(x=>String(x.id)===String(d.assigned_driver_id));
+    return drv&&drv.name?String(drv.name).trim():"";
+  };
+  const hasDrivers=(deliveries||[]).length>0&&deliveries.every(d=>d.assigned_driver_id&&driverName(d));
+  const groups={};
+  if(hasDrivers){
+    deliveries.forEach(d=>{
+      const key=driverName(d)||"אחר";
+      if(!groups[key])groups[key]=[];
+      groups[key].push(d);
+    });
+    return{type:"driver",groups};
+  }
+  deliveries.forEach(d=>{
+    const city=extractCityFromAddress(d.delivery_address_snapshot);
+    const region=city&&cityRegionsCache&&cityRegionsCache[city]?cityRegionsCache[city]:"לא ידוע";
+    const key=region||"לא ידוע";
+    if(!groups[key])groups[key]=[];
+    groups[key].push(d);
+  });
+  return{type:"region",groups};
+}
+function renderDeliveryPdfContent(deliveries,grouped,dateStr){
+  const container=document.getElementById("delivery-pdf-container");
+  if(!container)return;
+  const date=new Date(dateStr+"T12:00:00");
+  const dayName=date.toLocaleDateString("he-IL",{weekday:"long"});
+  const dateFormatted=date.toLocaleDateString("he-IL");
+  const regionOrder=["צפון","חיפה","שרון","מרכז","ירושלים","שפלה","דרום","לא ידוע"];
+  const groupKeys=Object.keys(grouped.groups||{}).sort((a,b)=>{
+    if(grouped.type==="region"){
+      const ia=regionOrder.indexOf(a),ib=regionOrder.indexOf(b);
+      if(ia>=0||ib>=0)return(ia<0?999:ia)-(ib<0?999:ib);
+    }
+    return String(a).localeCompare(String(b),"he");
+  });
+  const groupsHtml=groupKeys.map(key=>{
+    const items=grouped.groups[key]||[];
+    const groupTitle=grouped.type==="driver"?`👤 נהג: ${escHtml(key)}`:`🗺️ אזור: ${escHtml(key)}`;
+    const deliveryCards=items.map((delivery,idx)=>{
+      const orderLabel=delivery.bina_order_id?`#${escHtml(delivery.bina_order_id)}`:`#${idx+1}`;
+      const contact=[delivery.delivery_contact_snapshot,delivery.delivery_phone_snapshot].filter(Boolean).join(" • ");
+      const itemsList=Array.isArray(delivery.items)?delivery.items:[];
+      const itemsHtml=itemsList.length?`<div class="delivery-row"><span class="delivery-icon">📦</span><span>${itemsList.map(it=>`${escHtml(it.description||"—")} ×${it.quantity??0}`).join(" · ")}</span></div>`:"";
+      return`<div class="delivery-card">
+        <div class="delivery-header">
+          <div class="delivery-number">${orderLabel}</div>
+          <div class="delivery-company">${escHtml(delivery.client_name||"ללא שם")}</div>
+        </div>
+        <div class="delivery-info">
+          ${contact?`<div class="delivery-row"><span class="delivery-icon">👤</span><span>${escHtml(contact)}</span></div>`:""}
+          ${delivery.delivery_address_snapshot?`<div class="delivery-row"><span class="delivery-icon">📍</span><span>${escHtml(delivery.delivery_address_snapshot)}</span></div>`:""}
+          ${itemsHtml}
+          ${delivery.delivery_special_notes?`<div class="delivery-row"><span class="delivery-icon">📝</span><span>${escHtml(delivery.delivery_special_notes)}</span></div>`:""}
+        </div>
+        <div class="delivery-signature">
+          <div class="signature-line"><span>חתימה:</span><div class="signature-empty"></div></div>
+          <div class="signature-line"><span>תאריך:</span><div class="signature-empty small"></div></div>
+        </div>
+      </div>`;
+    }).join("");
+    return`<div class="delivery-group"><div class="delivery-group-title">${groupTitle} <span class="delivery-group-count">(${items.length} משלוחים)</span></div>${deliveryCards}</div>`;
+  }).join("");
+  container.innerHTML=`<div class="delivery-pdf-content">
+    <div class="delivery-pdf-header">
+      <div class="delivery-pdf-logo">🖨️ נטלי פרינט</div>
+      <div class="delivery-pdf-title">📦 טופס משלוחים</div>
+      <div class="delivery-pdf-date">${escHtml(dayName)}, ${escHtml(dateFormatted)}</div>
+      <div class="delivery-pdf-count">${deliveries.length} משלוחים</div>
+    </div>
+    ${groupsHtml}
+    <div class="delivery-pdf-footer">🖨️ נטלי פרינט © ${new Date().getFullYear()}</div>
+  </div>`;
+}
+async function generateDeliveryPdf(dateStr){
+  await loadCityRegions();
+  const drivers=await sb("drivers?is_active=eq.true&order=name.asc");
+  const data=await sb(`tasks?scheduled_delivery_date=eq.${dateStr}&delivery_status=in.(ready,in_transit)&order=delivery_order.asc.nullslast`);
+  let deliveries=Array.isArray(data)?data:[];
+  if(!deliveries.length){
+    window.alert("אין משלוחים בתאריך שנבחר");
+    return;
+  }
+  const taskIds=deliveries.map(t=>t.id);
+  if(taskIds.length){
+    const itemsRows=await sb(`task_items?task_id=in.(${taskIds.join(",")})&order=id.asc`);
+    const allItems=Array.isArray(itemsRows)?itemsRows:[];
+    deliveries=deliveries.map(t=>({...t,items:allItems.filter(i=>String(i.task_id)===String(t.id))}));
+  }
+  const grouped=groupDeliveriesForPdf(deliveries,Array.isArray(drivers)?drivers:[]);
+  renderDeliveryPdfContent(deliveries,grouped,dateStr);
+  document.body.classList.add("printing-delivery-pdf");
+  setTimeout(()=>{
+    window.print();
+    setTimeout(()=>{
+      document.body.classList.remove("printing-delivery-pdf");
+      const pdfContainer=document.getElementById("delivery-pdf-container");
+      if(pdfContainer)pdfContainer.innerHTML="";
+    },500);
+  },100);
+}
+function DeliveryPdfDialog({onClose}){
+  const today=toLocalDateStr(new Date());
+  const[selectedDate,setSelectedDate]=useState(today);
+  const[loading,setLoading]=useState(false);
+  const tomorrowStr=(()=>{const d=new Date();d.setDate(d.getDate()+1);return toLocalDateStr(d);})();
+  const generatePdf=async()=>{
+    setLoading(true);
+    try{
+      await generateDeliveryPdf(selectedDate);
+      onClose();
+    }catch(err){
+      window.alert("שגיאה: "+(err.message||String(err)));
+    }finally{setLoading(false);}
+  };
+  return<Modal open={true} onClose={loading?()=>{}:onClose} title="🖨️ PDF משלוחים" maxWidth={440}>
+    <div style={{direction:"rtl"}}>
+      <div className="date-quick-select">
+        <button type="button" className={selectedDate===today?"active":""} onClick={()=>setSelectedDate(today)} disabled={loading}>📅 היום</button>
+        <button type="button" className={selectedDate===tomorrowStr?"active":""} onClick={()=>setSelectedDate(tomorrowStr)} disabled={loading}>📅 מחר</button>
+      </div>
+      <div className="date-picker-wrap">
+        <label>או בחר תאריך אחר:</label>
+        <input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} disabled={loading}/>
+      </div>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
+        <button type="button" onClick={onClose} disabled={loading} style={{padding:"10px 18px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:loading?"wait":"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" className="btn-delivery-pdf" onClick={generatePdf} disabled={loading||!selectedDate}>{loading?"⏳ מכין...":"🖨️ הפק PDF"}</button>
+      </div>
+    </div>
+  </Modal>;
+}
+
 function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
   const [tasks,setTasks]=useState([]);
   const [drivers,setDrivers]=useState([]);
@@ -4627,6 +4799,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
   const [showDriverManager,setShowDriverManager]=useState(false);
   const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
   const [showSplitByDriverModal,setShowSplitByDriverModal]=useState(null);
+  const [showDeliveryPdf,setShowDeliveryPdf]=useState(false);
   const navBtnStyle={padding:"8px 14px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:13};
   const loadData=async()=>{
     try{
@@ -4736,7 +4909,10 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
   return<div style={{direction:"rtl",padding:4}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
       <h1 style={{fontSize:22,fontWeight:800,margin:0}}>🚚 דשבורד משלוחים</h1>
-      <button type="button" onClick={()=>setShowDriverManager(true)} style={{...navBtnStyle,background:"#ecfeff",borderColor:"#0e7490",color:"#0e7490",fontWeight:600}}>🚛 ניהול נהגים</button>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" className="btn-delivery-pdf" onClick={()=>setShowDeliveryPdf(true)} title="הפקת PDF של משלוחים לפי תאריך">🖨️ PDF משלוחים</button>
+        <button type="button" onClick={()=>setShowDriverManager(true)} style={{...navBtnStyle,background:"#ecfeff",borderColor:"#0e7490",color:"#0e7490",fontWeight:600}}>🚛 ניהול נהגים</button>
+      </div>
     </div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fff",padding:12,borderRadius:10,marginBottom:15,border:"1px solid var(--border)"}}>
       <button type="button" onClick={prevWeek} style={navBtnStyle}>‹ שבוע קודם</button>
@@ -4780,6 +4956,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
     {showDriverManager&&<DriverManagerModal drivers={drivers} onClose={()=>setShowDriverManager(false)} onUpdate={loadData}/>}
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
     {showSplitByDriverModal&&<SplitByDriverModal date={showSplitByDriverModal.date} tasks={showSplitByDriverModal.tasks} drivers={drivers} onClose={()=>setShowSplitByDriverModal(null)}/>}
+    {showDeliveryPdf&&<DeliveryPdfDialog onClose={()=>setShowDeliveryPdf(false)}/>}
   </div>;
 }
 

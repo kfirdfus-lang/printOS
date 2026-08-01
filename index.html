@@ -636,10 +636,20 @@ function getCategoryById(id){
 const EMPLOYEE_DOC_CATEGORIES=[
   {id:"agreement",name:"הסכמים",icon:"📑",color:"#3b82f6",description:"הסכמי עבודה, נספחים, תוספות"},
   {id:"payslip",name:"תלושי שכר",icon:"💰",color:"#10b981",description:"תלושי שכר חודשיים",monthly:true},
+  {id:"vacation",name:"חופשות",icon:"📅",color:"#8b5cf6",description:"בקשות חופשה ואישורים"},
+  {id:"regulations",name:"טפסי תקנונים",icon:"📋",color:"#f59e0b",description:"טפסי אישור: בטיחות, הטרדה מינית, מחשוב"},
   {id:"general",name:"מסמכים כלליים",icon:"📁",color:"#6b7280",description:"ת.ז, אישורים, תעודות, וכו"},
 ];
 function getEmployeeCatById(id){
-  return EMPLOYEE_DOC_CATEGORIES.find(c=>c.id===id)||EMPLOYEE_DOC_CATEGORIES[2];
+  return EMPLOYEE_DOC_CATEGORIES.find(c=>c.id===id)||EMPLOYEE_DOC_CATEGORIES.find(c=>c.id==="general");
+}
+const SALARY_TYPE_LABELS={monthly:"חודשי רגיל",monthly_global:"חודשי גלובלי",hourly:"שעתי"};
+const EMPLOYMENT_TYPE_LABELS={employee:"עובד/ת",shareholder:"בעל/ת מניות",contractor:"קבלן/ית"};
+const SECTION_14_LABELS={yes_full:"כן - מלא",yes_cap:"כן - עד תקרה",no:"לא",pending:"ממתין"};
+// HR columns are added by migration 20260801221000_hr_upgrade_f1.sql.
+// Until it runs, forms fall back to the basic fields so saving doesn't break.
+function employeeHasHrFields(employee){
+  return !!employee&&typeof employee==="object"&&"role_title" in employee;
 }
 function calculateAge(birthDate){
   if(!birthDate)return null;
@@ -1806,17 +1816,48 @@ function DetailItem({icon,label,value,ltr,highlight}){
   </div>;
 }
 
+function EmployeeFormSectionTitle({children}){
+  return<h4 style={{color:"#0d9488",margin:"18px 0 10px",paddingBottom:6,borderBottom:"2px solid #f0fdfa",fontSize:15}}>{children}</h4>;
+}
+
 function EmployeeDetailsTab({employee,editing,setEditing,onUpdate,onDelete}){
+  const hasHr=employeeHasHrFields(employee);
   const [fullName,setFullName]=useState(employee.full_name);
   const [phone,setPhone]=useState(employee.phone||"");
   const [birthDate,setBirthDate]=useState(employee.birth_date||"");
   const [notes,setNotes]=useState(employee.notes||"");
+  const [idNumber,setIdNumber]=useState(employee.id_number||"");
+  const [email,setEmail]=useState(employee.email||"");
+  const [address,setAddress]=useState(employee.address||"");
+  const [roleTitle,setRoleTitle]=useState(employee.role_title||"");
+  const [workStartDate,setWorkStartDate]=useState(employee.work_start_date||"");
+  const [employmentType,setEmploymentType]=useState(employee.employment_type||"employee");
+  const [salaryType,setSalaryType]=useState(employee.salary_type||"monthly_global");
+  const [baseSalary,setBaseSalary]=useState(employee.base_salary!=null?String(employee.base_salary):"");
+  const [pensionProvider,setPensionProvider]=useState(employee.pension_provider||"");
+  const [section14Status,setSection14Status]=useState(employee.section_14_status||"");
+  const [showAmendment,setShowAmendment]=useState(false);
   const age=calculateAge(employee.birth_date);
   const daysUntil=employee.birth_date?daysUntilBirthday(employee.birth_date):null;
+  const inp={width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit",fontSize:14,boxSizing:"border-box"};
+  const grid2={display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:10};
   const handleSave=async()=>{
     if(!fullName.trim()){window.alert("יש למלא שם");return;}
     try{
-      await sb(`employees?id=eq.${employee.id}`,{method:"PATCH",body:JSON.stringify({full_name:fullName.trim(),phone:phone.trim()||null,birth_date:birthDate||null,notes:notes.trim()||null,updated_at:new Date().toISOString()})});
+      const payload={full_name:fullName.trim(),phone:phone.trim()||null,birth_date:birthDate||null,notes:notes.trim()||null,updated_at:new Date().toISOString()};
+      if(hasHr)Object.assign(payload,{
+        id_number:idNumber.trim()||null,
+        email:email.trim()||null,
+        address:address.trim()||null,
+        role_title:roleTitle.trim()||null,
+        work_start_date:workStartDate||null,
+        employment_type:employmentType||null,
+        salary_type:salaryType||null,
+        base_salary:baseSalary!==""&&!isNaN(Number(baseSalary))?Number(baseSalary):null,
+        pension_provider:pensionProvider.trim()||null,
+        section_14_status:section14Status||null,
+      });
+      await sb(`employees?id=eq.${employee.id}`,{method:"PATCH",body:JSON.stringify(payload)});
       onUpdate?.();
       setEditing(false);
     }catch(e){window.alert("שגיאה: "+e.message);}
@@ -1833,27 +1874,244 @@ function EmployeeDetailsTab({employee,editing,setEditing,onUpdate,onDelete}){
     }catch(e){window.alert("שגיאה: "+e.message);}
   };
   if(editing)return<div>
-    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מלא *:</label><input value={fullName} onChange={e=>setFullName(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
-    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>טלפון:</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="050-1234567" style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",direction:"ltr",fontFamily:"inherit"}}/></div>
-    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>תאריך לידה:</label><input type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/></div>
-    <div style={{marginBottom:15}}><label style={{fontWeight:600,fontSize:13}}>הערות:</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{width:"100%",padding:8,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",minHeight:60,fontFamily:"inherit"}}/></div>
+    <EmployeeFormSectionTitle>📋 פרטים אישיים</EmployeeFormSectionTitle>
+    <div style={grid2}>
+      <div><label style={{fontWeight:600,fontSize:13}}>שם מלא *:</label><input value={fullName} onChange={e=>setFullName(e.target.value)} style={inp}/></div>
+      {hasHr&&<div><label style={{fontWeight:600,fontSize:13}}>תעודת זהות:</label><input value={idNumber} onChange={e=>setIdNumber(e.target.value)} placeholder="9 ספרות" style={{...inp,direction:"ltr"}}/></div>}
+      <div><label style={{fontWeight:600,fontSize:13}}>טלפון:</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="050-1234567" style={{...inp,direction:"ltr"}}/></div>
+      {hasHr&&<div><label style={{fontWeight:600,fontSize:13}}>מייל:</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={{...inp,direction:"ltr"}}/></div>}
+      {hasHr&&<div style={{gridColumn:"1 / -1"}}><label style={{fontWeight:600,fontSize:13}}>כתובת מגורים:</label><input value={address} onChange={e=>setAddress(e.target.value)} placeholder="רחוב, מספר, עיר" style={inp}/></div>}
+      <div><label style={{fontWeight:600,fontSize:13}}>תאריך לידה:</label><input type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} style={inp}/></div>
+    </div>
+    {hasHr&&<>
+      <EmployeeFormSectionTitle>💼 תפקיד ותנאים</EmployeeFormSectionTitle>
+      <div style={grid2}>
+        <div><label style={{fontWeight:600,fontSize:13}}>תפקיד:</label><input value={roleTitle} onChange={e=>setRoleTitle(e.target.value)} style={inp}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>תאריך תחילת עבודה:</label><input type="date" value={workStartDate} onChange={e=>setWorkStartDate(e.target.value)} style={inp}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>סוג העסקה:</label><select value={employmentType} onChange={e=>setEmploymentType(e.target.value)} style={inp}>
+          <option value="employee">עובד/ת</option><option value="shareholder">בעל/ת מניות</option><option value="contractor">קבלן/ית</option>
+        </select></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>סוג שכר:</label><select value={salaryType} onChange={e=>setSalaryType(e.target.value)} style={inp}>
+          <option value="monthly">חודשי רגיל</option><option value="monthly_global">חודשי גלובלי</option><option value="hourly">שעתי</option>
+        </select></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>שכר בסיס ({salaryType==="hourly"?'ש"ח לשעה':'ש"ח לחודש'}):</label><input type="number" value={baseSalary} onChange={e=>setBaseSalary(e.target.value)} style={{...inp,direction:"ltr"}}/></div>
+      </div>
+      <EmployeeFormSectionTitle>🏦 פנסיה וסוציאלי</EmployeeFormSectionTitle>
+      <div style={grid2}>
+        <div><label style={{fontWeight:600,fontSize:13}}>קרן פנסיה / קופה:</label><input value={pensionProvider} onChange={e=>setPensionProvider(e.target.value)} placeholder="למשל: הפניקס" style={inp}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>מעמד סעיף 14:</label><select value={section14Status} onChange={e=>setSection14Status(e.target.value)} style={inp}>
+          <option value="">-- בחר --</option><option value="yes_full">כן - מלא</option><option value="yes_cap">כן - עד תקרה</option><option value="no">לא</option><option value="pending">ממתין</option>
+        </select></div>
+      </div>
+    </>}
+    {!hasHr&&<div style={{marginTop:12,padding:10,background:"#fef3c7",borderRadius:6,fontSize:12,color:"#92400e"}}>⚠️ שדות HR מורחבים (ת.ז, תפקיד, שכר, פנסיה) יופיעו אחרי הרצת מיגרציית ה-SQL של שדרוג העובדים.</div>}
+    <div style={{marginTop:12,marginBottom:15}}><label style={{fontWeight:600,fontSize:13}}>הערות:</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} style={{...inp,minHeight:60}}/></div>
     <div style={{display:"flex",gap:10}}>
       <button type="button" onClick={()=>setEditing(false)} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
       <button type="button" onClick={handleSave} style={{flex:2,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>💾 שמור</button>
     </div>
   </div>;
+  const seniority=employee.work_start_date?Math.floor((Date.now()-new Date(employee.work_start_date).getTime())/(365.25*24*3600*1000)):null;
   return<div>
     <div style={{display:"grid",gap:12,marginBottom:20}}>
+      {employee.role_title&&<DetailItem icon="💼" label="תפקיד" value={`${employee.role_title}${employee.employment_type?` · ${EMPLOYMENT_TYPE_LABELS[employee.employment_type]||employee.employment_type}`:""}`}/>}
+      {employee.id_number&&<DetailItem icon="🪪" label="תעודת זהות" value={employee.id_number} ltr/>}
       <DetailItem icon="📞" label="טלפון" value={employee.phone||"—"} ltr={!!employee.phone}/>
+      {employee.email&&<DetailItem icon="📧" label="מייל" value={employee.email} ltr/>}
+      {employee.address&&<DetailItem icon="🏠" label="כתובת" value={employee.address}/>}
       <DetailItem icon="🎂" label="תאריך לידה" value={employee.birth_date?`${new Date(employee.birth_date).toLocaleDateString("he-IL")} (גיל ${age})`:"—"}/>
       {daysUntil!==null&&<DetailItem icon="⭐" label="ימים עד יום הולדת הבא" value={daysUntil===0?"🎉 היום!":`${daysUntil} ימים`} highlight={daysUntil<=7}/>}
+      {employee.work_start_date&&<DetailItem icon="📅" label="תחילת עבודה" value={`${new Date(employee.work_start_date).toLocaleDateString("he-IL")}${seniority!==null?` (ותק ${seniority} שנים)`:""}`}/>}
+      {employee.base_salary!=null&&<DetailItem icon="💰" label="שכר בסיס" value={`${Number(employee.base_salary).toLocaleString("he-IL")} ₪ ${employee.salary_type==="hourly"?"לשעה":"לחודש"}${employee.salary_type?` · ${SALARY_TYPE_LABELS[employee.salary_type]||""}`:""}`}/>}
+      {employee.pension_provider&&<DetailItem icon="🏦" label="קרן פנסיה / קופה" value={employee.pension_provider}/>}
+      {employee.section_14_status&&<DetailItem icon="📜" label="מעמד סעיף 14" value={SECTION_14_LABELS[employee.section_14_status]||employee.section_14_status}/>}
+      {employee.last_contract_review_date&&<DetailItem icon="🔄" label="עדכון הסכם אחרון" value={new Date(employee.last_contract_review_date).toLocaleDateString("he-IL")}/>}
       {employee.notes&&<DetailItem icon="📝" label="הערות" value={employee.notes}/>}
     </div>
-    <div style={{display:"flex",gap:10}}>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
       <button type="button" onClick={handleDelete} style={{padding:10,background:"white",color:"#ef4444",border:"1px solid #ef4444",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>🗑️ מחק עובד</button>
+      {hasHr&&<button type="button" onClick={()=>setShowAmendment(true)} style={{padding:10,background:"linear-gradient(135deg, #f59e0b 0%, #f97316 100%)",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>📝 יצירת נספח עדכון</button>}
       <button type="button" onClick={()=>setEditing(true)} style={{flex:1,padding:10,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ ערוך פרטים</button>
     </div>
+    {showAmendment&&<ContractAmendmentModal employee={employee} onClose={()=>setShowAmendment(false)} onCreated={onUpdate}/>}
   </div>;
+}
+
+// חלק 5 (F1): טיוטת נספח עדכון תנאים.
+// התוכן המשפטי הוא טיוטה בסיסית בלבד עם placeholders — חובה להעביר לעו"ד דיני עבודה לפני החתמה.
+function buildContractAmendmentHtml(employee,amendmentDate,changes){
+  const heDate=d=>new Date(d).toLocaleDateString("he-IL");
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <title>נספח עדכון תנאים - ${employee.full_name}</title>
+  <style>
+    body { font-family: 'David', 'Times New Roman', serif; padding: 40px; direction: rtl; line-height: 1.8; color: #000; }
+    h1 { text-align: center; font-size: 20px; margin-bottom: 30px; }
+    .header-info { margin-bottom: 20px; }
+    .parties { margin: 20px 0; }
+    .clause { margin: 15px 0; }
+    .clause-num { font-weight: bold; }
+    .signature-block { margin-top: 60px; display: flex; justify-content: space-around; }
+    .signature-line { border-top: 1px solid #000; padding-top: 4px; text-align: center; width: 200px; }
+    .placeholder { color: #dc2626; font-style: italic; background: #fee2e2; padding: 2px 6px; }
+  </style>
+</head>
+<body>
+  <h1>נספח לעדכון תנאי העסקה</h1>
+  <div class="header-info">
+    <p>שנערך ונחתם ב-________ ביום ${heDate(amendmentDate)}</p>
+  </div>
+  <div class="parties">
+    <p><strong>בין:</strong> נטלי פתרונות הדפסה בע"מ, ח.פ. 517205332<br>
+    מרחוב שדרות הר ציון 104, תל אביב<br>
+    (להלן: "החברה")</p>
+    <p><strong>לבין:</strong> ${employee.full_name}, ת.ז. ${employee.id_number||"________"}<br>
+    ${employee.address?`מרחוב ${employee.address}`:""}<br>
+    (להלן: "העובד/ת")</p>
+  </div>
+  <div class="clause">
+    <p><span class="clause-num">1.</span> <strong>רקע</strong></p>
+    <p>העובד/ת מועסק/ת בחברה החל מיום ${employee.work_start_date?heDate(employee.work_start_date):"________"}
+    בתפקיד ${employee.role_title||"________"}, בהתאם להסכם עבודה שנחתם בין הצדדים.</p>
+  </div>
+  <div class="clause">
+    <p><span class="clause-num">2.</span> <strong>עדכון תנאים</strong></p>
+    <p>הצדדים מסכימים בזאת על עדכון תנאי ההעסקה כדלקמן, החל מיום ${heDate(amendmentDate)}:</p>
+    <ul style="padding-right: 25px;">
+      ${changes.salary.enabled?`
+        <li><strong>שכר:</strong>
+          שכר העובד/ת יעודכן ל-${changes.salary.new_amount} ש"ח
+          ${changes.salary.type==="hourly"?"לשעה":"לחודש"}
+          (${changes.salary.type==="monthly_global"?"שכר כולל וגלובלי":changes.salary.type==="monthly"?"שכר חודשי":"שכר שעתי"}).
+          <br><span class="placeholder">[עו"ד: להוסיף ניסוח משפטי מדויק]</span>
+        </li>`:""}
+      ${changes.role.enabled?`
+        <li><strong>תפקיד:</strong>
+          תפקידו/ה של העובד/ת יעודכן ל-${changes.role.new_role}.
+          <br><span class="placeholder">[עו"ד: להוסיף פירוט תפקיד וסמכויות]</span>
+        </li>`:""}
+      ${changes.scope.enabled?`
+        <li><strong>היקף משרה:</strong>
+          היקף המשרה יעודכן ל-${changes.scope.new_scope}.
+          <br><span class="placeholder">[עו"ד: להוסיף פירוט שעות ומתכונת עבודה]</span>
+        </li>`:""}
+      ${changes.other.enabled?`
+        <li><strong>שינויים נוספים:</strong> ${changes.other.description}
+          <br><span class="placeholder">[עו"ד: להוסיף ניסוח משפטי]</span>
+        </li>`:""}
+    </ul>
+  </div>
+  <div class="clause">
+    <p><span class="clause-num">3.</span> <strong>המשך תוקף ההסכם</strong></p>
+    <p>יתר תנאי הסכם ההעסקה, לרבות תנאיו הסוציאליים, ימשיכו לחול על הצדדים כמות שהם, למעט השינויים שפורטו לעיל.</p>
+  </div>
+  <div class="clause">
+    <p><span class="clause-num">4.</span> <strong>אישור העובד/ת</strong></p>
+    <p>העובד/ת מאשר/ת כי קרא/ה את הנספח, הבין/ה את תוכנו, וכי חתם/ה עליו מרצונו/ה החופשי.</p>
+  </div>
+  <p style="margin-top: 40px;"><strong>ולראיה באו הצדדים על החתום:</strong></p>
+  <div class="signature-block">
+    <div class="signature-line">${employee.full_name}</div>
+    <div class="signature-line">נטלי פתרונות הדפסה בע"מ</div>
+  </div>
+  <div style="margin-top: 60px; padding: 12px; background: #fef3c7; border-right: 4px solid #f59e0b;">
+    <strong>⚠️ הערה חשובה:</strong> טיוטת נספח זו נוצרה אוטומטית ע"י מערכת PrintOS.
+    יש להעביר את הטיוטה לעורך דין דיני עבודה לבדיקה והשלמת ניסוחים משפטיים לפני החתמה.
+  </div>
+</body>
+</html>`;
+}
+
+function ContractAmendmentModal({employee,onClose,onCreated}){
+  const [amendmentDate,setAmendmentDate]=useState(new Date().toISOString().split("T")[0]);
+  const [changes,setChanges]=useState({
+    salary:{enabled:false,new_amount:"",type:employee.salary_type||"monthly"},
+    role:{enabled:false,new_role:""},
+    scope:{enabled:false,new_scope:""},
+    other:{enabled:false,description:""},
+  });
+  const [generating,setGenerating]=useState(false);
+  const inp={flex:1,padding:"8px 10px",border:"1px solid #d1d5db",borderRadius:6,fontFamily:"inherit",fontSize:14};
+  const toggleChange=key=>setChanges({...changes,[key]:{...changes[key],enabled:!changes[key].enabled}});
+  const updateChange=(key,field,value)=>setChanges({...changes,[key]:{...changes[key],[field]:value}});
+  const generatePdf=()=>{
+    if(!Object.values(changes).some(c=>c.enabled)){window.alert("נא לבחור לפחות שינוי אחד");return;}
+    setGenerating(true);
+    try{
+      const html=buildContractAmendmentHtml(employee,amendmentDate,changes);
+      const printWindow=window.open("","_blank");
+      if(!printWindow){window.alert("הדפדפן חסם חלון קופץ - יש לאשר חלונות קופצים ולנסות שוב");return;}
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(()=>{
+        printWindow.print();
+        window.alert(
+          "💡 הנספח נוצר בהצלחה!\n\n"+
+          '1. לחץ "שמור כ-PDF" בחלון ההדפסה\n'+
+          "2. העבר את הקובץ לעו\"ד לבדיקה\n"+
+          "3. אחרי חתימה - העלה את הקובץ החתום לתיק ההסכמים של העובד"
+        );
+      },500);
+      onCreated?.();
+      onClose();
+    }catch(err){window.alert("שגיאה: "+err.message);}
+    finally{setGenerating(false);}
+  };
+  const changeBox={background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:12,marginBottom:10};
+  const changeHeader={display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontWeight:600,color:"#1f2937"};
+  const changeFields={marginTop:10,paddingRight:26,display:"flex",gap:8};
+  return<Modal open onClose={onClose} title="📝 יצירת נספח עדכון תנאים" maxWidth={600}>
+    <div style={{display:"flex",gap:12,padding:14,background:"#f0fdfa",borderRadius:10,marginBottom:20,alignItems:"center"}}>
+      <div style={{fontSize:32,width:50,height:50,display:"flex",alignItems:"center",justifyContent:"center",background:"white",borderRadius:"50%"}}>👤</div>
+      <div style={{flex:1}}>
+        <div style={{fontWeight:700,color:"#1f2937",fontSize:16}}>{employee.full_name}</div>
+        <div style={{fontSize:13,color:"#6b7280"}}>{employee.role_title||"—"}</div>
+        <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>ת.ז.: {employee.id_number||"—"}</div>
+      </div>
+    </div>
+    <div style={{marginBottom:15}}>
+      <label style={{fontWeight:600,fontSize:13}}>תאריך עדכון:</label>
+      <input type="date" value={amendmentDate} onChange={e=>setAmendmentDate(e.target.value)} style={{...inp,width:"100%",boxSizing:"border-box",marginTop:4}}/>
+    </div>
+    <h4 style={{margin:"0 0 12px",color:"#0d9488"}}>מה משתנה?</h4>
+    <div style={changeBox}>
+      <label style={changeHeader}><input type="checkbox" checked={changes.salary.enabled} onChange={()=>toggleChange("salary")}/> 💰 שכר</label>
+      {changes.salary.enabled&&<div style={changeFields}>
+        <input type="number" value={changes.salary.new_amount} onChange={e=>updateChange("salary","new_amount",e.target.value)} placeholder="סכום חדש" style={inp}/>
+        <select value={changes.salary.type} onChange={e=>updateChange("salary","type",e.target.value)} style={inp}>
+          <option value="monthly">חודשי רגיל</option><option value="monthly_global">חודשי גלובלי</option><option value="hourly">שעתי</option>
+        </select>
+      </div>}
+    </div>
+    <div style={changeBox}>
+      <label style={changeHeader}><input type="checkbox" checked={changes.role.enabled} onChange={()=>toggleChange("role")}/> 💼 תפקיד</label>
+      {changes.role.enabled&&<div style={changeFields}>
+        <input type="text" value={changes.role.new_role} onChange={e=>updateChange("role","new_role",e.target.value)} placeholder="תפקיד חדש" style={inp}/>
+      </div>}
+    </div>
+    <div style={changeBox}>
+      <label style={changeHeader}><input type="checkbox" checked={changes.scope.enabled} onChange={()=>toggleChange("scope")}/> ⏰ היקף משרה</label>
+      {changes.scope.enabled&&<div style={changeFields}>
+        <input type="text" value={changes.scope.new_scope} onChange={e=>updateChange("scope","new_scope",e.target.value)} placeholder="למשל: 80% משרה" style={inp}/>
+      </div>}
+    </div>
+    <div style={changeBox}>
+      <label style={changeHeader}><input type="checkbox" checked={changes.other.enabled} onChange={()=>toggleChange("other")}/> 📄 שינוי אחר</label>
+      {changes.other.enabled&&<div style={changeFields}>
+        <textarea value={changes.other.description} onChange={e=>updateChange("other","description",e.target.value)} placeholder="תאר את השינוי..." rows={3} style={inp}/>
+      </div>}
+    </div>
+    <div style={{padding:12,background:"#fef3c7",borderRight:"4px solid #f59e0b",borderRadius:6,color:"#92400e",fontSize:13,marginTop:15}}>
+      ⚠️ <strong>חשוב:</strong> הטיוטה תיווצר אוטומטית עם ניסוחים בסיסיים.
+      <br/>יש להעביר לעו"ד לבדיקה והשלמת ניסוחים משפטיים מדויקים לפני החתמה.
+    </div>
+    <div style={{display:"flex",gap:10,marginTop:20}}>
+      <button type="button" onClick={onClose} disabled={generating} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+      <button type="button" onClick={generatePdf} disabled={generating} style={{flex:2,padding:12,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:generating?"wait":"pointer",fontFamily:"inherit"}}>{generating?"⏳ יוצר...":"📄 צור טיוטת PDF"}</button>
+    </div>
+  </Modal>;
 }
 
 function EmployeeDocRow({doc,onUpdate,customLabel}){
@@ -1999,7 +2257,7 @@ function EmployeeFileModal({employee,onClose,onUpdate,user}){
   };
   useEffect(()=>{setLoadingDocs(true);loadDocs();},[employee.id]);
   const docsByCategory=useMemo(()=>{
-    const groups={agreement:[],payslip:[],general:[]};
+    const groups={agreement:[],payslip:[],vacation:[],regulations:[],general:[]};
     docs.forEach(d=>{if(groups[d.category]!==undefined)groups[d.category].push(d);});
     return groups;
   },[docs]);
@@ -2007,6 +2265,8 @@ function EmployeeFileModal({employee,onClose,onUpdate,user}){
     {id:"details",label:"👤 פרטים"},
     {id:"agreement",label:"📑 הסכמים",count:docsByCategory.agreement.length},
     {id:"payslip",label:"💰 תלושי שכר",count:docsByCategory.payslip.length},
+    {id:"vacation",label:"📅 חופשות",count:docsByCategory.vacation.length},
+    {id:"regulations",label:"📋 תקנונים",count:docsByCategory.regulations.length},
     {id:"general",label:"📁 כללי",count:docsByCategory.general.length},
   ];
   return<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
@@ -2032,6 +2292,8 @@ function EmployeeFileModal({employee,onClose,onUpdate,user}){
           {fileTab==="details"&&<EmployeeDetailsTab employee={employee} editing={editing} setEditing={setEditing} onUpdate={onUpdate} onDelete={onClose}/>}
           {fileTab==="agreement"&&<EmployeeDocsTab employee={employee} category="agreement" docs={docsByCategory.agreement} onUpdate={loadDocs} user={user}/>}
           {fileTab==="payslip"&&<PayslipsTab employee={employee} docs={docsByCategory.payslip} onUpdate={loadDocs} user={user}/>}
+          {fileTab==="vacation"&&<EmployeeDocsTab employee={employee} category="vacation" docs={docsByCategory.vacation} onUpdate={loadDocs} user={user}/>}
+          {fileTab==="regulations"&&<EmployeeDocsTab employee={employee} category="regulations" docs={docsByCategory.regulations} onUpdate={loadDocs} user={user}/>}
           {fileTab==="general"&&<EmployeeDocsTab employee={employee} category="general" docs={docsByCategory.general} onUpdate={loadDocs} user={user}/>}
         </>}
       </div>
@@ -2039,25 +2301,77 @@ function EmployeeFileModal({employee,onClose,onUpdate,user}){
   </div>;
 }
 
-function EditEmployeeModal({onClose,onSaved}){
+function EditEmployeeModal({onClose,onSaved,hasHrFields=true}){
   const [fullName,setFullName]=useState("");
   const [phone,setPhone]=useState("");
   const [birthDate,setBirthDate]=useState("");
+  const [idNumber,setIdNumber]=useState("");
+  const [email,setEmail]=useState("");
+  const [address,setAddress]=useState("");
+  const [roleTitle,setRoleTitle]=useState("");
+  const [workStartDate,setWorkStartDate]=useState("");
+  const [employmentType,setEmploymentType]=useState("employee");
+  const [salaryType,setSalaryType]=useState("monthly_global");
+  const [baseSalary,setBaseSalary]=useState("");
+  const [pensionProvider,setPensionProvider]=useState("");
+  const [section14Status,setSection14Status]=useState("");
   const [saving,setSaving]=useState(false);
+  const inp={width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit",fontSize:14,boxSizing:"border-box"};
+  const grid2={display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(180px, 1fr))",gap:10};
   const handleSave=async()=>{
     if(!fullName.trim()){window.alert("יש למלא שם");return;}
     setSaving(true);
     try{
-      await sb("employees",{method:"POST",body:JSON.stringify({full_name:fullName.trim(),phone:phone.trim()||null,birth_date:birthDate||null})});
+      const payload={full_name:fullName.trim(),phone:phone.trim()||null,birth_date:birthDate||null};
+      if(hasHrFields)Object.assign(payload,{
+        id_number:idNumber.trim()||null,
+        email:email.trim()||null,
+        address:address.trim()||null,
+        role_title:roleTitle.trim()||null,
+        work_start_date:workStartDate||null,
+        employment_type:employmentType||null,
+        salary_type:salaryType||null,
+        base_salary:baseSalary!==""&&!isNaN(Number(baseSalary))?Number(baseSalary):null,
+        pension_provider:pensionProvider.trim()||null,
+        section_14_status:section14Status||null,
+      });
+      await sb("employees",{method:"POST",body:JSON.stringify(payload)});
       onSaved?.();
     }catch(e){window.alert("שגיאה: "+e.message);}
     finally{setSaving(false);}
   };
-  return<Modal open onClose={onClose} title="➕ הוסף עובד חדש" maxWidth={450}>
-    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>שם מלא *:</label><input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="יוסי כהן" style={{width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}} autoFocus/></div>
-    <div style={{marginBottom:10}}><label style={{fontWeight:600,fontSize:13}}>טלפון:</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="050-1234567" style={{width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",direction:"ltr",fontFamily:"inherit"}}/></div>
-    <div style={{marginBottom:15}}><label style={{fontWeight:600,fontSize:13}}>תאריך לידה:</label><input type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} style={{width:"100%",padding:10,marginTop:4,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit"}}/><div style={{fontSize:11,color:"#6b7280",marginTop:4}}>💡 לקבלת תזכורות ליום הולדת</div></div>
-    <div style={{display:"flex",gap:10}}>
+  return<Modal open onClose={onClose} title="➕ הוסף עובד חדש" maxWidth={560}>
+    <EmployeeFormSectionTitle>📋 פרטים אישיים</EmployeeFormSectionTitle>
+    <div style={grid2}>
+      <div><label style={{fontWeight:600,fontSize:13}}>שם מלא *:</label><input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="יוסי כהן" style={inp} autoFocus/></div>
+      {hasHrFields&&<div><label style={{fontWeight:600,fontSize:13}}>תעודת זהות:</label><input value={idNumber} onChange={e=>setIdNumber(e.target.value)} placeholder="9 ספרות" style={{...inp,direction:"ltr"}}/></div>}
+      <div><label style={{fontWeight:600,fontSize:13}}>טלפון:</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="050-1234567" style={{...inp,direction:"ltr"}}/></div>
+      {hasHrFields&&<div><label style={{fontWeight:600,fontSize:13}}>מייל:</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} style={{...inp,direction:"ltr"}}/></div>}
+      {hasHrFields&&<div style={{gridColumn:"1 / -1"}}><label style={{fontWeight:600,fontSize:13}}>כתובת מגורים:</label><input value={address} onChange={e=>setAddress(e.target.value)} placeholder="רחוב, מספר, עיר" style={inp}/></div>}
+      <div><label style={{fontWeight:600,fontSize:13}}>תאריך לידה:</label><input type="date" value={birthDate} onChange={e=>setBirthDate(e.target.value)} style={inp}/></div>
+    </div>
+    {hasHrFields&&<>
+      <EmployeeFormSectionTitle>💼 תפקיד ותנאים</EmployeeFormSectionTitle>
+      <div style={grid2}>
+        <div><label style={{fontWeight:600,fontSize:13}}>תפקיד:</label><input value={roleTitle} onChange={e=>setRoleTitle(e.target.value)} style={inp}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>תאריך תחילת עבודה:</label><input type="date" value={workStartDate} onChange={e=>setWorkStartDate(e.target.value)} style={inp}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>סוג העסקה:</label><select value={employmentType} onChange={e=>setEmploymentType(e.target.value)} style={inp}>
+          <option value="employee">עובד/ת</option><option value="shareholder">בעל/ת מניות</option><option value="contractor">קבלן/ית</option>
+        </select></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>סוג שכר:</label><select value={salaryType} onChange={e=>setSalaryType(e.target.value)} style={inp}>
+          <option value="monthly">חודשי רגיל</option><option value="monthly_global">חודשי גלובלי</option><option value="hourly">שעתי</option>
+        </select></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>שכר בסיס ({salaryType==="hourly"?'ש"ח לשעה':'ש"ח לחודש'}):</label><input type="number" value={baseSalary} onChange={e=>setBaseSalary(e.target.value)} style={{...inp,direction:"ltr"}}/></div>
+      </div>
+      <EmployeeFormSectionTitle>🏦 פנסיה וסוציאלי</EmployeeFormSectionTitle>
+      <div style={grid2}>
+        <div><label style={{fontWeight:600,fontSize:13}}>קרן פנסיה / קופה:</label><input value={pensionProvider} onChange={e=>setPensionProvider(e.target.value)} placeholder="למשל: הפניקס" style={inp}/></div>
+        <div><label style={{fontWeight:600,fontSize:13}}>מעמד סעיף 14:</label><select value={section14Status} onChange={e=>setSection14Status(e.target.value)} style={inp}>
+          <option value="">-- בחר --</option><option value="yes_full">כן - מלא</option><option value="yes_cap">כן - עד תקרה</option><option value="no">לא</option><option value="pending">ממתין</option>
+        </select></div>
+      </div>
+    </>}
+    <div style={{display:"flex",gap:10,marginTop:20}}>
       <button type="button" onClick={onClose} style={{flex:1,padding:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
       <button type="button" onClick={handleSave} disabled={saving} style={{flex:2,padding:12,background:"#0d9488",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"⏳":"💾 שמור"}</button>
     </div>
@@ -2070,6 +2384,16 @@ function EmployeesDashboard({user}){
   const [loading,setLoading]=useState(true);
   const [selectedEmployee,setSelectedEmployee]=useState(null);
   const [showAddModal,setShowAddModal]=useState(false);
+  const [checkingHr,setCheckingHr]=useState(false);
+  const checkHrReminders=async()=>{
+    setCheckingHr(true);
+    try{
+      const {data,error}=await supabaseClient.functions.invoke("hr-reminders-check");
+      if(error)throw error;
+      window.alert("🔔 תוצאת בדיקת תזכורות HR:\n\n"+JSON.stringify(data,null,2));
+    }catch(e){window.alert("שגיאה בבדיקת תזכורות: "+(e.message||String(e)));}
+    finally{setCheckingHr(false);}
+  };
   const loadData=async()=>{
     try{
       const emps=await sb("employees?is_active=eq.true&order=full_name");
@@ -2094,7 +2418,10 @@ function EmployeesDashboard({user}){
         <h2 style={{margin:"0 0 5px"}}>👥 דשבורד עובדים</h2>
         <p style={{margin:0,color:"#6b7280",fontSize:14}}>ניהול עובדים, ימי הולדת, הסכמים ותלושי שכר</p>
       </div>
-      <button type="button" onClick={()=>setShowAddModal(true)} style={{padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ הוסף עובד</button>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <button type="button" onClick={checkHrReminders} disabled={checkingHr} style={{padding:"10px 18px",background:"white",color:"#0d9488",border:"1px solid #0d9488",borderRadius:8,fontWeight:600,cursor:checkingHr?"wait":"pointer",fontFamily:"inherit"}}>{checkingHr?"⏳ בודק...":"🔔 בדיקת תזכורות HR"}</button>
+        <button type="button" onClick={()=>setShowAddModal(true)} style={{padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ הוסף עובד</button>
+      </div>
     </div>
     {upcomingBirthdays.length>0&&<BirthdayBanner birthdays={upcomingBirthdays} onSelect={emp=>setSelectedEmployee(emp)}/>}
     {employees.length===0?<div style={{textAlign:"center",padding:40,color:"#9ca3af",background:"#f9fafb",borderRadius:10}}>
@@ -2107,7 +2434,7 @@ function EmployeesDashboard({user}){
         {employees.map(emp=><EmployeeCard key={emp.id} employee={emp} docCount={docCounts[emp.id]||0} onClick={()=>setSelectedEmployee(emp)}/>)}
       </div>
     </>}
-    {showAddModal&&<EditEmployeeModal onClose={()=>setShowAddModal(false)} onSaved={()=>{loadData();setShowAddModal(false);}}/>}
+    {showAddModal&&<EditEmployeeModal hasHrFields={employees.length===0||employeeHasHrFields(employees[0])} onClose={()=>setShowAddModal(false)} onSaved={()=>{loadData();setShowAddModal(false);}}/>}
     {selectedEmployee&&<EmployeeFileModal employee={selectedEmployee} user={user} onClose={()=>setSelectedEmployee(null)} onUpdate={loadData}/>}
   </div>;
 }
@@ -13115,10 +13442,105 @@ function VacationFormPage({slug}){
   </div>;
 }
 
+// חלק 3 (F1): תיוק אוטומטי של בקשת חופשה מאושרת בתיק העובד.
+// יוצר תמונת סיכום (PNG) עם פרטי הבקשה והחתימה ושומר בקטגוריית "חופשות".
+function buildVacationArchiveImage(request){
+  return new Promise((resolve,reject)=>{
+    const w=800,h=1040;
+    const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext("2d");
+    ctx.fillStyle="#ffffff";ctx.fillRect(0,0,w,h);
+    ctx.fillStyle="#0d9488";ctx.fillRect(0,0,w,110);
+    ctx.fillStyle="#ffffff";ctx.font="bold 28px Arial";ctx.textAlign="center";
+    ctx.fillText("בקשת חופשה / היעדרות — נטלי פתרונות הדפסה",w/2,65);
+    ctx.textAlign="right";
+    const trunc=v=>{const s=String(v==null?"":v);return s.length>45?s.slice(0,45)+"…":s;};
+    const lines=[
+      ["שם העובד/ת",request.employee_name],
+      ["ת.ז (4 אחרונות)","••••"+(request.employee_id_last4||"")],
+      ["מתאריך",new Date(request.start_date).toLocaleDateString("he-IL")],
+      ["עד תאריך",new Date(request.end_date).toLocaleDateString("he-IL")],
+      ['סה"כ ימים',request.total_days||""],
+      ["סיבה",(typeof VACATION_REASON_LABELS!=="undefined"&&VACATION_REASON_LABELS[request.reason_type])||request.reason_type||""],
+      ["פירוט",request.reason_notes||"—"],
+      ["הוגש בתאריך",request.submitted_at?new Date(request.submitted_at).toLocaleString("he-IL"):"—"],
+      ["סטטוס","אושר"+(request.reviewed_by?' ע"י '+request.reviewed_by:"")],
+    ];
+    let y=170;
+    for(const [label,value] of lines){
+      ctx.fillStyle="#6b7280";ctx.font="20px Arial";ctx.fillText(label+":",w-50,y);
+      ctx.fillStyle="#111827";ctx.font="bold 22px Arial";ctx.fillText(trunc(value),w-280,y);
+      y+=52;
+    }
+    y+=20;
+    ctx.fillStyle="#6b7280";ctx.font="20px Arial";ctx.fillText("חתימת העובד/ת:",w-50,y);
+    const done=()=>{
+      ctx.fillStyle="#9ca3af";ctx.font="14px Arial";ctx.textAlign="center";
+      ctx.fillText("תויק אוטומטית ע\"י PrintOS · "+new Date().toLocaleString("he-IL"),w/2,h-30);
+      canvas.toBlob(b=>b?resolve(b):reject(new Error("canvas toBlob failed")),"image/png");
+    };
+    if(request.signature_data){
+      const img=new Image();
+      img.onload=()=>{
+        try{
+          const maxW=420;
+          const sw=Math.min(maxW,img.width);
+          const sh=sw*(img.height/img.width);
+          ctx.strokeStyle="#d1d5db";ctx.strokeRect(w-50-(maxW+20),y+20,maxW+20,sh+20);
+          ctx.drawImage(img,w-50-(maxW+10),y+30,sw,sh);
+        }catch(e){console.warn("signature draw failed",e);}
+        done();
+      };
+      img.onerror=()=>done();
+      img.src=request.signature_data;
+    }else done();
+  });
+}
+
+async function archiveVacationToEmployeeDocs(request){
+  try{
+    // לא לתייק פעמיים את אותה בקשה
+    const existing=await sb(`documents?category=eq.vacation&metadata->>vacation_request_id=eq.${request.id}&select=id`);
+    if(existing&&existing.length)return;
+    const emps=await sb("employees?select=id,full_name,id_number&is_active=eq.true");
+    const name=(request.employee_name||"").trim();
+    // התאמה: שם מדויק -> 4 ספרות ת.ז -> הכלה חד-משמעית של השם
+    let emp=(emps||[]).find(e=>(e.full_name||"").trim()===name);
+    if(!emp&&request.employee_id_last4){
+      const byId=(emps||[]).filter(e=>e.id_number&&e.id_number.endsWith(request.employee_id_last4));
+      if(byId.length===1)emp=byId[0];
+    }
+    if(!emp&&name){
+      const byName=(emps||[]).filter(e=>{const f=(e.full_name||"").trim();return f&&(f.includes(name)||name.includes(f));});
+      if(byName.length===1)emp=byName[0];
+    }
+    if(!emp){console.warn("archiveVacation: לא נמצא עובד תואם לבקשה של",name);return;}
+    const blob=await buildVacationArchiveImage(request);
+    const path=`employees/${emp.id}/vacation/${Date.now()}_vacation_${request.start_date}_${request.end_date}.png`;
+    const {error:upErr}=await supabaseClient.storage.from(STORAGE_BUCKET).upload(path,blob,{contentType:"image/png",upsert:false});
+    if(upErr)throw upErr;
+    await sb("documents",{method:"POST",body:JSON.stringify({
+      employee_id:emp.id,
+      category:"vacation",
+      title:`בקשת חופשה ${new Date(request.start_date).toLocaleDateString("he-IL")} - ${new Date(request.end_date).toLocaleDateString("he-IL")}`,
+      file_path:path,
+      file_name:`vacation_${request.start_date}_${request.end_date}.png`,
+      file_size:blob.size,
+      file_type:"image/png",
+      document_date:request.start_date,
+      tags:["חופשה",request.start_date,request.end_date],
+      metadata:{source:"vacation_request",vacation_request_id:request.id,days:request.total_days,reason_type:request.reason_type},
+    })});
+    console.log("✅ בקשת החופשה תויקה בתיק העובד");
+  }catch(e){console.warn("archiveVacation failed (non-blocking):",e);}
+}
+
 function VacationReviewModal({request,user,onClose,onUpdate}){
   const [reviewNotes,setReviewNotes]=useState(request.reviewer_notes||"");
   const handleApprove=async()=>{
     await sb(`vacation_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify({status:"approved",reviewed_at:new Date().toISOString(),reviewed_by:user?.name||"unknown",reviewer_notes:reviewNotes.trim()||null})});
+    // תיוק אוטומטי בתיק העובד - לא חוסם את הזרימה גם אם נכשל
+    archiveVacationToEmployeeDocs({...request,reviewed_by:user?.name||"unknown"});
     onUpdate?.();onClose();
   };
   const handleReject=async()=>{

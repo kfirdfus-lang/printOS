@@ -13319,6 +13319,7 @@ function VacationFormPage({slug}){
   const [error,setError]=useState(null);
   const [employeeName,setEmployeeName]=useState("");
   const [idLast4,setIdLast4]=useState("");
+  const [employeeEmail,setEmployeeEmail]=useState("");
   const [history,setHistory]=useState([]);
   const [startDate,setStartDate]=useState("");
   const [endDate,setEndDate]=useState("");
@@ -13349,6 +13350,22 @@ function VacationFormPage({slug}){
     ensureSignaturePadLoaded(initPad);
     return()=>{padRef.current=null;};
   },[step]);
+  const lookupEmployeeEmail=async(name,last4)=>{
+    try{
+      const emps=await sb("employees?select=full_name,email,id_number&is_active=eq.true");
+      const trimmed=(name||"").trim();
+      let emp=(emps||[]).find(e=>(e.full_name||"").trim()===trimmed);
+      if(!emp&&last4){
+        const byId=(emps||[]).filter(e=>e.id_number&&String(e.id_number).endsWith(last4));
+        if(byId.length===1)emp=byId[0];
+      }
+      if(!emp&&trimmed){
+        const byName=(emps||[]).filter(e=>{const f=(e.full_name||"").trim();return f&&(f.includes(trimmed)||trimmed.includes(f));});
+        if(byName.length===1)emp=byName[0];
+      }
+      if(emp?.email)setEmployeeEmail(emp.email);
+    }catch(e){console.warn("employee email lookup failed",e);}
+  };
   const handleIdentify=async()=>{
     if(!employeeName.trim()){alert("יש למלא שם מלא");return;}
     if(!/^\d{4}$/.test(idLast4)){alert("יש להזין 4 ספרות אחרונות של ת.ז");return;}
@@ -13356,6 +13373,7 @@ function VacationFormPage({slug}){
       const r=await sb(`vacation_requests?employee_name=eq.${encodeURIComponent(employeeName.trim())}&employee_id_last4=eq.${idLast4}&order=submitted_at.desc&limit=10`);
       setHistory(r||[]);
     }catch{setHistory([]);}
+    await lookupEmployeeEmail(employeeName.trim(),idLast4);
     setStep("form");
   };
   const handleSubmit=async()=>{
@@ -13367,8 +13385,10 @@ function VacationFormPage({slug}){
     try{
       const signature=padRef.current.toDataURL("image/png");
       const days=calcVacationDays(startDate,endDate);
+      const emailVal=employeeEmail.trim()||null;
       await sb("vacation_requests",{method:"POST",body:JSON.stringify({
         employee_name:employeeName.trim(),employee_id_last4:idLast4,
+        employee_email:emailVal,
         start_date:startDate,end_date:endDate,total_days:days,
         reason_type:reasonType,reason_notes:reasonNotes.trim()||null,
         signature_data:signature,status:"pending",
@@ -13413,6 +13433,11 @@ function VacationFormPage({slug}){
               <div style={{color:"#6b7280",marginTop:4}}>{h.total_days} ימים · {VACATION_REASON_EMAIL[h.reason_type]}</div>
             </div>)}</div>
           </details>}
+          <div style={{marginBottom:15}}>
+            <label style={{display:"block",marginBottom:4,fontWeight:600,fontSize:14}}>📧 מייל לקבלת עדכונים (אופציונלי)</label>
+            <input type="email" value={employeeEmail} onChange={e=>setEmployeeEmail(e.target.value)} placeholder="example@email.com" style={{width:"100%",padding:10,borderRadius:6,border:"1px solid #d1d5db",direction:"ltr",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            <div style={{fontSize:12,color:"#64748b",marginTop:4}}>תקבל מייל כשהבקשה תאושר או תידחה</div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:15}}>
             <div><label style={{fontWeight:600,fontSize:14}}>מתאריך *</label><input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={{width:"100%",padding:10,borderRadius:6,border:"1px solid #d1d5db"}}/></div>
             <div><label style={{fontWeight:600,fontSize:14}}>עד תאריך *</label><input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)} min={startDate} style={{width:"100%",padding:10,borderRadius:6,border:"1px solid #d1d5db"}}/></div>
@@ -13434,7 +13459,7 @@ function VacationFormPage({slug}){
           <div style={{fontSize:64,marginBottom:15}}>✅</div>
           <h2 style={{color:"#0d9488"}}>הבקשה נשלחה!</h2>
           <p style={{color:"#64748b"}}>ההנהלה תקבל את הבקשה ותחזור אליך בהקדם.</p>
-          <button type="button" onClick={()=>{setStep("identify");setEmployeeName("");setIdLast4("");setStartDate("");setEndDate("");setReasonNotes("");setReasonType("vacation");padRef.current=null;}} style={{marginTop:20,padding:12,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📝 הגש בקשה נוספת</button>
+          <button type="button" onClick={()=>{setStep("identify");setEmployeeName("");setIdLast4("");setEmployeeEmail("");setStartDate("");setEndDate("");setReasonNotes("");setReasonType("vacation");padRef.current=null;}} style={{marginTop:20,padding:12,background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>📝 הגש בקשה נוספת</button>
         </div>}
       </div>
       <div style={{background:"#f8fafc",padding:15,textAlign:"center",fontSize:12,color:"#64748b"}}>natalie-print.com · 03-6815703</div>
@@ -13535,19 +13560,116 @@ async function archiveVacationToEmployeeDocs(request){
   }catch(e){console.warn("archiveVacation failed (non-blocking):",e);}
 }
 
+function buildVacationDecisionEmail(vacation,decision){
+  const isApproved=decision==="approved";
+  const color=isApproved?"#0d9488":"#dc2626";
+  const bgColor=isApproved?"#f0fdfa":"#fef2f2";
+  const icon=isApproved?"✅":"❌";
+  const title=isApproved?"בקשת החופשה שלך אושרה":"בקשת החופשה שלך נדחתה";
+  const startDate=new Date(vacation.start_date).toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  const endDate=new Date(vacation.end_date).toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  const reasonLabel=(typeof VACATION_REASON_LABELS!=="undefined"&&VACATION_REASON_LABELS[vacation.reason_type])||vacation.reason_type||"";
+  const rejectReason=vacation.reviewer_notes||vacation.rejection_reason||"";
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: 'Heebo', Arial, sans-serif; background: #f9fafb; padding: 20px; margin: 0; direction: rtl; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .header { padding: 30px; text-align: center; background: ${bgColor}; }
+    .header-icon { font-size: 48px; margin-bottom: 10px; }
+    .header h1 { margin: 0; color: ${color}; font-size: 22px; }
+    .content { padding: 25px 30px; }
+    .greeting { font-size: 16px; color: #1f2937; margin-bottom: 20px; }
+    .details-box { background: #f9fafb; border-radius: 10px; padding: 18px; margin: 20px 0; }
+    .detail-row { display: flex; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-label { font-weight: 700; color: #4b5563; min-width: 140px; }
+    .detail-value { color: #1f2937; }
+    .note { background: #fef3c7; border-right: 4px solid #f59e0b; padding: 12px; border-radius: 6px; margin-top: 20px; font-size: 13px; color: #92400e; }
+    .footer { background: #f9fafb; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; }
+    .reject-reason { background: #fee2e2; border-right: 4px solid #dc2626; padding: 12px; border-radius: 6px; margin-top: 15px; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-icon">${icon}</div>
+      <h1>${title}</h1>
+    </div>
+    <div class="content">
+      <div class="greeting">שלום ${vacation.employee_name},</div>
+      <p>${isApproved
+        ?"בקשת החופשה שהגשת אושרה. פרטי החופשה:"
+        :"לצערנו, בקשת החופשה שהגשת לא אושרה בשלב זה. פרטי הבקשה:"}</p>
+      <div class="details-box">
+        <div class="detail-row"><div class="detail-label">📅 תאריך התחלה:</div><div class="detail-value">${startDate}</div></div>
+        <div class="detail-row"><div class="detail-label">📅 תאריך סיום:</div><div class="detail-value">${endDate}</div></div>
+        <div class="detail-row"><div class="detail-label">⏰ מספר ימים:</div><div class="detail-value">${vacation.total_days} ימים</div></div>
+        ${reasonLabel?`<div class="detail-row"><div class="detail-label">📝 סיבה:</div><div class="detail-value">${reasonLabel}</div></div>`:""}
+      </div>
+      ${isApproved?`
+        <div class="note">💡 חופשה נעימה! זכור לתאם עם הצוות מראש כל משימה שדורשת תשומת לב בזמן היעדרותך.</div>
+      `:`
+        ${rejectReason?`<div class="reject-reason"><strong>סיבת דחייה:</strong> ${rejectReason}</div>`:""}
+        <p style="margin-top: 15px;">אם יש שאלות, אל תהסס לפנות להנהלה.</p>
+      `}
+    </div>
+    <div class="footer">🖨️ נטלי פרינט • הודעה אוטומטית</div>
+  </div>
+</body>
+</html>`;
+}
+
+async function sendVacationDecisionEmail(vacationRequest,decision){
+  if(!vacationRequest?.employee_email){
+    console.log("No email for employee - skipping notification");
+    return;
+  }
+  const isApproved=decision==="approved";
+  const startDate=new Date(vacationRequest.start_date).toLocaleDateString("he-IL");
+  const endDate=new Date(vacationRequest.end_date).toLocaleDateString("he-IL");
+  const subject=isApproved
+    ?`✅ בקשת החופשה שלך אושרה - ${startDate} עד ${endDate}`
+    :`❌ בקשת החופשה שלך נדחתה - ${startDate} עד ${endDate}`;
+  try{
+    await sendEmail({
+      to:vacationRequest.employee_email,
+      subject,
+      html:buildVacationDecisionEmail(vacationRequest,decision),
+      from:"נטלי פרינט - HR <orders@natalie-print.com>",
+    });
+    console.log("✅ Vacation decision email sent to employee");
+  }catch(err){
+    console.error("Failed to send vacation decision email:",err);
+  }
+}
+
 function VacationReviewModal({request,user,onClose,onUpdate}){
   const [reviewNotes,setReviewNotes]=useState(request.reviewer_notes||"");
+  const [sending,setSending]=useState(false);
   const handleApprove=async()=>{
-    await sb(`vacation_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify({status:"approved",reviewed_at:new Date().toISOString(),reviewed_by:user?.name||"unknown",reviewer_notes:reviewNotes.trim()||null})});
-    // תיוק אוטומטי בתיק העובד - לא חוסם את הזרימה גם אם נכשל
-    archiveVacationToEmployeeDocs({...request,reviewed_by:user?.name||"unknown"});
-    onUpdate?.();onClose();
+    setSending(true);
+    try{
+      await sb(`vacation_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify({status:"approved",reviewed_at:new Date().toISOString(),reviewed_by:user?.name||"unknown",reviewer_notes:reviewNotes.trim()||null})});
+      // תיוק אוטומטי בתיק העובד - לא חוסם את הזרימה גם אם נכשל
+      archiveVacationToEmployeeDocs({...request,reviewed_by:user?.name||"unknown"});
+      await sendVacationDecisionEmail({...request,reviewer_notes:reviewNotes.trim()||null},"approved");
+      onUpdate?.();onClose();
+    }catch(e){alert("שגיאה: "+(e.message||String(e)));}
+    finally{setSending(false);}
   };
   const handleReject=async()=>{
     if(!reviewNotes.trim()){alert("יש לכתוב סיבת דחייה בהערות");return;}
     if(!confirm("לדחות את הבקשה?"))return;
-    await sb(`vacation_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify({status:"rejected",reviewed_at:new Date().toISOString(),reviewed_by:user?.name||"unknown",reviewer_notes:reviewNotes.trim()})});
-    onUpdate?.();onClose();
+    setSending(true);
+    try{
+      await sb(`vacation_requests?id=eq.${request.id}`,{method:"PATCH",body:JSON.stringify({status:"rejected",reviewed_at:new Date().toISOString(),reviewed_by:user?.name||"unknown",reviewer_notes:reviewNotes.trim()})});
+      await sendVacationDecisionEmail({...request,reviewer_notes:reviewNotes.trim()},"rejected");
+      onUpdate?.();onClose();
+    }catch(e){alert("שגיאה: "+(e.message||String(e)));}
+    finally{setSending(false);}
   };
   return<div onClick={onClose} style={SIGNUP_MODAL_OVERLAY}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:24,width:"100%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",direction:"rtl"}}>
@@ -13555,12 +13677,17 @@ function VacationReviewModal({request,user,onClose,onUpdate}){
       <SignupDetailRow label="סוג" value={VACATION_REASON_LABELS[request.reason_type]}/>
       <SignupDetailRow label="תאריכים" value={`${new Date(request.start_date).toLocaleDateString("he-IL")} - ${new Date(request.end_date).toLocaleDateString("he-IL")} (${request.total_days} ימים)`}/>
       {request.reason_notes&&<SignupDetailRow label="פירוט" value={request.reason_notes}/>}
+      <div style={{padding:"10px 14px",borderRadius:8,margin:"12px 0",fontSize:13,background:request.employee_email?"#d1fae5":"#fef3c7",color:request.employee_email?"#065f46":"#92400e",borderRight:`3px solid ${request.employee_email?"#059669":"#f59e0b"}`}}>
+        {request.employee_email
+          ?<>✅ העובד יקבל מייל: <span style={{direction:"ltr",display:"inline-block"}}>{request.employee_email}</span></>
+          :<>⚠️ אין מייל בבקשה — העובד לא יקבל התראה.<br/>אפשר להוסיף מייל בכרטיס העובד לבקשות הבאות.</>}
+      </div>
       <img src={request.signature_data} alt="חתימה" style={{maxHeight:120,maxWidth:"100%",display:"block",margin:"12px auto"}}/>
       {request.status==="pending"?<>
         <textarea value={reviewNotes} onChange={e=>setReviewNotes(e.target.value)} placeholder="הערות מנהל..." style={{width:"100%",minHeight:60,padding:8,borderRadius:6,border:"1px solid #d1d5db",fontFamily:"inherit",margin:"12px 0"}}/>
         <div style={{display:"flex",gap:10}}>
-          <button type="button" onClick={handleReject} style={{flex:1,padding:12,background:"#ef4444",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>❌ דחה</button>
-          <button type="button" onClick={handleApprove} style={{flex:2,padding:12,background:"#10b981",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✅ אשר</button>
+          <button type="button" onClick={handleReject} disabled={sending} style={{flex:1,padding:12,background:"#ef4444",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:sending?"wait":"pointer",fontFamily:"inherit"}}>❌ דחה</button>
+          <button type="button" onClick={handleApprove} disabled={sending} style={{flex:2,padding:12,background:"#10b981",color:"white",border:"none",borderRadius:6,fontWeight:600,cursor:sending?"wait":"pointer",fontFamily:"inherit"}}>{sending?"⏳":"✅ אשר"}</button>
         </div>
       </>:<div style={{padding:12,background:request.status==="approved"?"#d1fae5":"#fee2e2",borderRadius:6,marginTop:12}}>{request.status==="approved"?"✅ אושר":"❌ נדחה"} {request.reviewer_notes&&" — "+request.reviewer_notes}</div>}
       <button type="button" onClick={onClose} style={{width:"100%",padding:10,marginTop:10,background:"#f3f4f6",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"}}>סגור</button>

@@ -494,6 +494,63 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
   body.printing-delivery-pdf .delivery-card{page-break-inside:avoid}
   @page{margin:12mm}
 }
+/* Package G — employee messages */
+.emp-messages-dashboard{padding:20px;max-width:1000px;margin:0 auto}
+.emp-messages-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.emp-messages-tabs{display:flex;gap:8px}
+.emp-messages-tabs button{padding:8px 16px;border:2px solid #e5e7eb;background:white;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit}
+.emp-messages-tabs button.active{background:#0d9488;color:white;border-color:#0d9488}
+.emp-msg-form{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.emp-msg-editor,.emp-msg-recipients{background:white;border-radius:12px;padding:20px;box-shadow:0 2px 6px rgba(0,0,0,0.05)}
+.emp-msg-editor h3,.emp-msg-recipients h3{color:#0d9488;margin:0 0 15px 0;font-size:16px}
+.emp-msg-form .form-field{margin-bottom:14px}
+.emp-msg-form .form-field label{display:block;font-weight:600;font-size:13px;margin-bottom:6px;color:#374151}
+.emp-msg-form .form-field input,.emp-msg-form .form-field textarea{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit;font-size:14px}
+.emp-msg-form .form-hint{font-size:12px;color:#6b7280;margin-top:6px}
+.recipient-modes{display:flex;flex-direction:column;gap:8px;margin-bottom:15px}
+.recipient-modes label{padding:10px 14px;border:2px solid #e5e7eb;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s}
+.recipient-modes label:hover{border-color:#0d9488}
+.recipient-modes label.active{background:#f0fdfa;border-color:#0d9488;color:#0d9488;font-weight:600}
+.recipient-filter-box{background:#f9fafb;border-radius:8px;padding:12px;max-height:250px;overflow-y:auto}
+.filter-label{font-weight:700;color:#6b7280;font-size:13px;margin-bottom:8px}
+.filter-checkbox{display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer}
+.filter-checkbox input[type="checkbox"]{width:16px;height:16px}
+.employee-check{padding:4px;border-radius:4px}
+.employee-check:hover{background:white}
+.emp-role{color:#6b7280;font-size:12px}
+.no-email{color:#dc2626;font-size:11px}
+.recipients-summary{background:#f0fdfa;border-radius:8px;padding:12px;margin-top:15px;border-right:4px solid #0d9488}
+.summary-count{font-size:15px;color:#0d9488}
+.summary-list{font-size:12px;color:#6b7280;margin-top:4px}
+.emp-msg-actions{grid-column:1/-1;display:flex;gap:12px;justify-content:flex-end;padding:20px;background:white;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,0.05);margin-top:0;flex-wrap:wrap}
+.emp-msg-actions .btn-secondary{padding:10px 18px;border:1px solid #0d9488;background:white;color:#0d9488;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit}
+.emp-msg-actions .btn-secondary:disabled{opacity:.5;cursor:not-allowed}
+.emp-msg-actions .btn-primary{padding:10px 18px;border:none;background:#0d9488;color:white;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit}
+.emp-msg-actions .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.msg-history-list{display:flex;flex-direction:column;gap:12px}
+.msg-history-item{background:white;border-radius:10px;padding:15px;box-shadow:0 2px 6px rgba(0,0,0,0.05)}
+.msg-history-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #f3f4f6;padding-bottom:10px;margin-bottom:10px;gap:12px}
+.msg-history-subject{font-weight:700;color:#1f2937;font-size:15px}
+.msg-history-meta{font-size:12px;color:#6b7280;margin-top:4px}
+.msg-history-status{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;white-space:nowrap}
+.status-sent{background:#d1fae5;color:#065f46}
+.status-failed{background:#fee2e2;color:#991b1b}
+.status-partial{background:#fef3c7;color:#92400e}
+.msg-history-body{color:#4b5563;font-size:13px;line-height:1.5;white-space:pre-wrap}
+.msg-history-recipients{margin-top:10px;padding-top:10px;border-top:1px dashed #e5e7eb}
+.msg-history-recipients summary{cursor:pointer;font-size:12px;color:#0d9488;font-weight:600}
+.recipients-list{padding:8px;background:#f9fafb;border-radius:6px;font-size:12px;color:#6b7280;margin-top:6px}
+.emp-msg-empty{text-align:center;padding:60px 20px;color:#9ca3af}
+.emp-msg-empty .empty-icon{font-size:48px;margin-bottom:10px}
+.emp-msg-preview-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.emp-msg-preview-modal{background:#fff;border-radius:14px;max-width:680px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.emp-msg-preview-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #e5e7eb}
+.emp-msg-preview-header h2{margin:0;font-size:16px}
+.emp-msg-preview-header button{border:none;background:transparent;font-size:18px;cursor:pointer}
+.emp-msg-preview-content{padding:12px;background:#f9fafb}
+.emp-msg-preview-actions{padding:12px 18px;border-top:1px solid #e5e7eb;text-align:left}
+.emp-msg-preview-actions button{padding:8px 16px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;cursor:pointer;font-family:inherit}
+@media(max-width:768px){.emp-msg-form{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -2385,6 +2442,7 @@ function EmployeesDashboard({user}){
   const [selectedEmployee,setSelectedEmployee]=useState(null);
   const [showAddModal,setShowAddModal]=useState(false);
   const [checkingHr,setCheckingHr]=useState(false);
+  const [checkingBday,setCheckingBday]=useState(false);
   const checkHrReminders=async()=>{
     setCheckingHr(true);
     try{
@@ -2393,6 +2451,15 @@ function EmployeesDashboard({user}){
       window.alert("🔔 תוצאת בדיקת תזכורות HR:\n\n"+JSON.stringify(data,null,2));
     }catch(e){window.alert("שגיאה בבדיקת תזכורות: "+(e.message||String(e)));}
     finally{setCheckingHr(false);}
+  };
+  const checkBirthdayGreetings=async()=>{
+    setCheckingBday(true);
+    try{
+      const {data,error}=await supabaseClient.functions.invoke("birthday-greetings");
+      if(error)throw error;
+      window.alert("🎂 תוצאת ברכות ימי הולדת:\n\n"+JSON.stringify(data,null,2));
+    }catch(e){window.alert("שגיאה בברכות יום הולדת: "+(e.message||String(e)));}
+    finally{setCheckingBday(false);}
   };
   const loadData=async()=>{
     try{
@@ -2420,6 +2487,7 @@ function EmployeesDashboard({user}){
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
         <button type="button" onClick={checkHrReminders} disabled={checkingHr} style={{padding:"10px 18px",background:"white",color:"#0d9488",border:"1px solid #0d9488",borderRadius:8,fontWeight:600,cursor:checkingHr?"wait":"pointer",fontFamily:"inherit"}}>{checkingHr?"⏳ בודק...":"🔔 בדיקת תזכורות HR"}</button>
+        <button type="button" onClick={checkBirthdayGreetings} disabled={checkingBday} style={{padding:"10px 18px",background:"white",color:"#db2777",border:"1px solid #db2777",borderRadius:8,fontWeight:600,cursor:checkingBday?"wait":"pointer",fontFamily:"inherit"}}>{checkingBday?"⏳ בודק...":"🎂 בדיקת ימי הולדת"}</button>
         <button type="button" onClick={()=>setShowAddModal(true)} style={{padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>➕ הוסף עובד</button>
       </div>
     </div>
@@ -2436,6 +2504,247 @@ function EmployeesDashboard({user}){
     </>}
     {showAddModal&&<EditEmployeeModal hasHrFields={employees.length===0||employeeHasHrFields(employees[0])} onClose={()=>setShowAddModal(false)} onSaved={()=>{loadData();setShowAddModal(false);}}/>}
     {selectedEmployee&&<EmployeeFileModal employee={selectedEmployee} user={user} onClose={()=>setSelectedEmployee(null)} onUpdate={loadData}/>}
+  </div>;
+}
+
+function buildEmployeeMessageHtml(subject,body){
+  const htmlBody=String(body||"").replace(/\n/g,"<br>");
+  const safeSubject=String(subject||"");
+  return`<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: 'Heebo', Arial, sans-serif; background: #f9fafb; padding: 20px; margin: 0; direction: rtl; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); color: white; padding: 25px 30px; text-align: center; }
+    .header h1 { margin: 0; font-size: 20px; }
+    .header p { margin: 6px 0 0 0; opacity: 0.9; font-size: 13px; }
+    .content { padding: 25px 30px; color: #1f2937; font-size: 15px; line-height: 1.7; }
+    .footer { background: #f9fafb; padding: 15px 30px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🖨️ נטלי פרינט</h1>
+      <p>${safeSubject}</p>
+    </div>
+    <div class="content">${htmlBody}</div>
+    <div class="footer">נטלי פרינט © ${new Date().getFullYear()} • הודעה פנימית</div>
+  </div>
+</body>
+</html>`;
+}
+
+function MessagePreview({subject,body,onClose}){
+  return<div className="emp-msg-preview-backdrop" onClick={onClose}>
+    <div className="emp-msg-preview-modal" onClick={e=>e.stopPropagation()}>
+      <div className="emp-msg-preview-header">
+        <h2>👁️ תצוגה מקדימה של המייל</h2>
+        <button type="button" onClick={onClose}>✕</button>
+      </div>
+      <div className="emp-msg-preview-content" dangerouslySetInnerHTML={{__html:buildEmployeeMessageHtml(subject,body)}}/>
+      <div className="emp-msg-preview-actions">
+        <button type="button" onClick={onClose}>סגור</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function MessageHistory({history,employees}){
+  const employeeMap=useMemo(()=>{
+    const m={};
+    (employees||[]).forEach(e=>{m[e.id]=e;});
+    return m;
+  },[employees]);
+  if(!history||history.length===0)return<div className="emp-msg-empty"><div className="empty-icon">📭</div><p>עוד לא נשלחו הודעות</p></div>;
+  return<div className="msg-history-list">
+    {history.map(msg=><div key={msg.id} className="msg-history-item">
+      <div className="msg-history-header">
+        <div>
+          <div className="msg-history-subject">{msg.subject}</div>
+          <div className="msg-history-meta">
+            {new Date(msg.sent_at).toLocaleString("he-IL")} • נשלח על ידי: {msg.sent_by_name||"—"} • {msg.recipient_employee_ids?.length||0} נמענים
+          </div>
+        </div>
+        <div className={`msg-history-status status-${msg.send_status||"sent"}`}>
+          {msg.send_status==="sent"?"✅ נשלח":msg.send_status==="failed"?"❌ נכשל":"⚠️ חלקי"}
+        </div>
+      </div>
+      <div className="msg-history-body">{(msg.body||"").substring(0,200)}{(msg.body||"").length>200?"...":""}</div>
+      {msg.recipient_employee_ids&&msg.recipient_employee_ids.length>0&&<details className="msg-history-recipients">
+        <summary>הצג נמענים ({msg.recipient_employee_ids.length})</summary>
+        <div className="recipients-list">
+          {msg.recipient_employee_ids.map(id=>employeeMap[id]?.full_name).filter(Boolean).join(", ")||(msg.recipient_emails||[]).join(", ")}
+        </div>
+      </details>}
+    </div>)}
+  </div>;
+}
+
+function NewMessageForm({employees,user,onSent}){
+  const [subject,setSubject]=useState("");
+  const [body,setBody]=useState("");
+  const [recipientMode,setRecipientMode]=useState("all");
+  const [selectedRoles,setSelectedRoles]=useState([]);
+  const [selectedTypes,setSelectedTypes]=useState([]);
+  const [selectedEmployeeIds,setSelectedEmployeeIds]=useState([]);
+  const [sending,setSending]=useState(false);
+  const [showPreview,setShowPreview]=useState(false);
+  const recipients=useMemo(()=>{
+    const withEmail=(employees||[]).filter(e=>e.email&&String(e.email).trim());
+    if(recipientMode==="all")return withEmail;
+    if(recipientMode==="by_role")return withEmail.filter(e=>selectedRoles.some(role=>(e.role_title||"").includes(role)));
+    if(recipientMode==="by_type")return withEmail.filter(e=>selectedTypes.includes(e.employment_type));
+    if(recipientMode==="manual")return withEmail.filter(e=>selectedEmployeeIds.includes(e.id));
+    return[];
+  },[employees,recipientMode,selectedRoles,selectedTypes,selectedEmployeeIds]);
+  const uniqueRoles=[...new Set((employees||[]).map(e=>e.role_title).filter(Boolean))];
+  const handleSend=async()=>{
+    if(!subject.trim()||!body.trim()){window.alert("נא למלא נושא ותוכן");return;}
+    if(recipients.length===0){window.alert("אין נמענים לשליחה");return;}
+    if(!window.confirm(`לשלוח לוודאי ל-${recipients.length} עובדים?`))return;
+    setSending(true);
+    try{
+      const html=buildEmployeeMessageHtml(subject,body);
+      const emails=recipients.map(r=>r.email);
+      let sendError=null;
+      try{
+        await sendEmail({to:emails,subject,html,from:"נטלי פרינט <orders@natalie-print.com>"});
+      }catch(e){sendError=e;}
+      try{
+        await sb("employee_messages",{method:"POST",body:JSON.stringify({
+          subject,
+          body,
+          recipient_type:recipientMode,
+          recipient_filter:JSON.stringify({roles:selectedRoles,types:selectedTypes,manual_ids:selectedEmployeeIds}),
+          recipient_employee_ids:recipients.map(r=>r.id),
+          recipient_emails:emails,
+          sent_by_name:user?.name||user?.full_name||"לא ידוע",
+          send_status:sendError?"failed":"sent",
+          error_details:sendError?(sendError.message||String(sendError)):null
+        })});
+      }catch(histErr){console.error("employee_messages history insert failed",histErr);}
+      if(sendError)throw sendError;
+      window.alert(`✅ נשלח בהצלחה ל-${recipients.length} עובדים`);
+      setSubject("");setBody("");setSelectedEmployeeIds([]);
+      onSent?.();
+    }catch(err){window.alert("שגיאה: "+(err.message||String(err)));}
+    finally{setSending(false);}
+  };
+  return<div className="emp-msg-form">
+    <div className="emp-msg-editor">
+      <h3>✏️ פרטי הודעה</h3>
+      <div className="form-field">
+        <label>נושא:</label>
+        <input type="text" value={subject} onChange={e=>setSubject(e.target.value)} placeholder="למשל: סגירת החברה מחר בגלל תקלה" maxLength={200}/>
+      </div>
+      <div className="form-field">
+        <label>תוכן ההודעה:</label>
+        <textarea value={body} onChange={e=>setBody(e.target.value)} placeholder={"שלום צוות,\n\nאני רוצה לעדכן אתכם ש..."} rows={10}/>
+        <div className="form-hint">💡 השורות יישברו אוטומטית במייל.</div>
+      </div>
+    </div>
+    <div className="emp-msg-recipients">
+      <h3>👥 נמענים</h3>
+      <div className="recipient-modes">
+        {[{id:"all",label:"🌍 כל העובדים"},{id:"by_role",label:"💼 לפי תפקיד"},{id:"by_type",label:"📋 לפי סוג העסקה"},{id:"manual",label:"✋ בחירה ידנית"}].map(m=>
+          <label key={m.id} className={recipientMode===m.id?"active":""}>
+            <input type="radio" checked={recipientMode===m.id} onChange={()=>setRecipientMode(m.id)}/>
+            {m.label}
+          </label>
+        )}
+      </div>
+      {recipientMode==="by_role"&&<div className="recipient-filter-box">
+        <div className="filter-label">בחר תפקידים:</div>
+        {uniqueRoles.length===0?<div style={{fontSize:12,color:"#9ca3af"}}>אין תפקידים מוגדרים לעובדים</div>:uniqueRoles.map(role=>
+          <label key={role} className="filter-checkbox">
+            <input type="checkbox" checked={selectedRoles.includes(role)} onChange={e=>{
+              if(e.target.checked)setSelectedRoles([...selectedRoles,role]);
+              else setSelectedRoles(selectedRoles.filter(r=>r!==role));
+            }}/>
+            {role}
+          </label>
+        )}
+      </div>}
+      {recipientMode==="by_type"&&<div className="recipient-filter-box">
+        <div className="filter-label">בחר סוגי העסקה:</div>
+        {[{id:"employee",label:"עובדים"},{id:"shareholder",label:"בעלי מניות"},{id:"contractor",label:"קבלנים"}].map(type=>
+          <label key={type.id} className="filter-checkbox">
+            <input type="checkbox" checked={selectedTypes.includes(type.id)} onChange={e=>{
+              if(e.target.checked)setSelectedTypes([...selectedTypes,type.id]);
+              else setSelectedTypes(selectedTypes.filter(t=>t!==type.id));
+            }}/>
+            {type.label}
+          </label>
+        )}
+      </div>}
+      {recipientMode==="manual"&&<div className="recipient-filter-box">
+        <div className="filter-label">בחר עובדים (סה״כ: {selectedEmployeeIds.length}):</div>
+        <div className="employee-checklist">
+          {(employees||[]).map(emp=>
+            <label key={emp.id} className="filter-checkbox employee-check">
+              <input type="checkbox" checked={selectedEmployeeIds.includes(emp.id)} disabled={!emp.email} onChange={e=>{
+                if(e.target.checked)setSelectedEmployeeIds([...selectedEmployeeIds,emp.id]);
+                else setSelectedEmployeeIds(selectedEmployeeIds.filter(id=>id!==emp.id));
+              }}/>
+              <span>
+                {emp.full_name}
+                {emp.role_title&&<span className="emp-role"> · {emp.role_title}</span>}
+                {!emp.email&&<span className="no-email"> ⚠️ אין מייל</span>}
+              </span>
+            </label>
+          )}
+        </div>
+      </div>}
+      <div className="recipients-summary">
+        <div className="summary-count"><strong>{recipients.length}</strong> עובדים יקבלו את ההודעה</div>
+        {recipients.length>0&&<div className="summary-list">
+          {recipients.slice(0,5).map(r=>r.full_name).join(", ")}
+          {recipients.length>5?` ועוד ${recipients.length-5}`:""}
+        </div>}
+      </div>
+    </div>
+    <div className="emp-msg-actions">
+      <button type="button" onClick={()=>setShowPreview(true)} disabled={!subject.trim()||!body.trim()} className="btn-secondary">👁️ תצוגה מקדימה</button>
+      <button type="button" onClick={handleSend} disabled={sending||!subject.trim()||!body.trim()||recipients.length===0} className="btn-primary">
+        {sending?"⏳ שולח...":`📤 שלח ל-${recipients.length} עובדים`}
+      </button>
+    </div>
+    {showPreview&&<MessagePreview subject={subject} body={body} onClose={()=>setShowPreview(false)}/>}
+  </div>;
+}
+
+function EmployeeMessagesDashboard({user}){
+  const [employees,setEmployees]=useState([]);
+  const [history,setHistory]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState("new");
+  const loadEmployees=async()=>{
+    try{
+      const data=await sb("employees?is_active=eq.true&order=full_name.asc");
+      setEmployees(data||[]);
+    }catch(e){console.error(e);setEmployees([]);}
+    finally{setLoading(false);}
+  };
+  const loadHistory=async()=>{
+    try{
+      const data=await sb("employee_messages?order=sent_at.desc&limit=50");
+      setHistory(data||[]);
+    }catch(e){console.error(e);setHistory([]);}
+  };
+  useEffect(()=>{loadEmployees();loadHistory();},[]);
+  if(loading)return<div style={{padding:30,textAlign:"center"}}>טוען...</div>;
+  return<div className="emp-messages-dashboard">
+    <div className="emp-messages-header">
+      <h1 style={{margin:0,fontSize:22}}>📧 הודעות לעובדים</h1>
+      <div className="emp-messages-tabs">
+        <button type="button" className={view==="new"?"active":""} onClick={()=>setView("new")}>✏️ הודעה חדשה</button>
+        <button type="button" className={view==="history"?"active":""} onClick={()=>setView("history")}>📁 היסטוריה ({history.length})</button>
+      </div>
+    </div>
+    {view==="new"?<NewMessageForm employees={employees} user={user} onSent={loadHistory}/>:<MessageHistory history={history} employees={employees}/>}
   </div>;
 }
 
@@ -14195,6 +14504,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="employee-messages"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="designer"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -14460,7 +14775,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -14803,6 +15118,8 @@ function App(){
       {tab==="documents"&&isA&&<DocumentsDashboard user={user}/>}
 
       {tab==="employees"&&isA&&<EmployeesDashboard user={user}/>}
+
+      {tab==="employee-messages"&&isA&&<EmployeeMessagesDashboard user={user}/>}
 
       {tab==="designer"&&isA&&<DesignerDashboard user={user}/>}
 

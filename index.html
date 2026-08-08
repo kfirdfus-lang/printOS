@@ -3165,6 +3165,8 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
   const saveMapping=async()=>{
     const code=String(mapCode||"").trim();
     if(!code){window.alert("נא להזין קוד ספק");return;}
+    const mapTaxDigits=String(form.supplier_tax_id||"").replace(/\D/g,"");
+    if(mapTaxDigits==="517205332"){window.alert("לא ניתן לשמור ספק עם הח.פ של נטלי");return;}
     try{
       const {data,error}=await supabaseClient.from("bina_suppliers").insert({
         bina_supplier_code:code,
@@ -3523,6 +3525,8 @@ function SupplierInvoicesTab({user}){
     const code=String(supForm.bina_supplier_code||"").trim();
     const name=String(supForm.supplier_name||"").trim();
     if(!code||!name){window.alert("קוד ספק ושם ספק הם שדות חובה");return;}
+    const taxDigits=String(supForm.supplier_tax_id||"").replace(/\D/g,"");
+    if(taxDigits==="517205332"){window.alert("לא ניתן לשמור ספק עם הח.פ של נטלי");return;}
     const payload={
       bina_supplier_code:code,
       supplier_name:name,

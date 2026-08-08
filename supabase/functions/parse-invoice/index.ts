@@ -14,6 +14,7 @@ const corsHeaders = {
 
 const MODEL = "claude-sonnet-5";
 const VAT_RATE = 0.18;
+const OWN_TAX_ID = "517205332"; // ח.פ של נטלי פתרונות הדפסה
 
 const SYSTEM_PROMPT = `אתה מפרסר חשבוניות ספקים ישראליות עבור מערכת הנהלת חשבונות.
 
@@ -35,9 +36,14 @@ const SYSTEM_PROMPT = `אתה מפרסר חשבוניות ספקים ישראל�
 הבהרות על שדות ספציפיים:
 - allocation_number = "מספר הקצאה" / "מס' הקצאה" — מספר מרשות המסים, בדרך כלל 9 ספרות.
   שדה חדש יחסית, לא תמיד קיים. אם אינו מופיע — null.
-- supplier_tax_id = ח.פ / ע.מ / עוסק מורשה של הספק, ספרות בלבד, בדרך כלל 9 ספרות.
-  שים לב: אל תבלבל בין ח.פ הספק לבין ח.פ של המקבל (נטלי פתרונות הדפסה בע"מ).
-  חלץ תמיד את של הספק המנפיק.
+- supplier_tax_id = ח.פ / ע.מ / עוסק מורשה של **הספק המנפיק**, ספרות בלבד, בדרך כלל 9 ספרות.
+  קריטי: בחשבונית ישראלית מופיעים לרוב שני מספרי ח.פ —
+  של הספק (בדרך כלל בראש המסמך, ליד הלוגו/שם המנפיק)
+  ושל הלקוח (ליד "לכבוד" / "לקוח").
+  חלץ אך ורק את של הספק המנפיק.
+  אם אתה לא בטוח איזה מהם שייך לספק — החזר null
+  והוסף את השדה ל-low_confidence_fields.
+  אל תנחש.
 - invoice_number = מספר החשבונית של הספק.
 - invoice_date = תאריך החשבונית. אם יש גם "ת. הדפסה" — היא אינה תאריך החשבונית.
 - vat_date = "תאריך מע\\"מ" אם מופיע בנפרד. אם לא — החזר את אותו ערך כמו invoice_date.
@@ -286,11 +292,17 @@ serve(async (req) => {
 
     if (parsed.supplier_tax_id) {
       const digits = String(parsed.supplier_tax_id).replace(/\D/g, "");
-      if (digits.length !== 9) {
+      if (digits === OWN_TAX_ID) {
+        parsed.supplier_tax_id = null;
         if (!lowConf.includes("supplier_tax_id")) lowConf.push("supplier_tax_id");
-        warn(`⚠️ ח.פ באורך חריג (${digits.length} ספרות)`);
+        warn("⚠️ חולץ הח.פ של נטלי במקום של הספק - נוקה");
+      } else {
+        if (digits.length !== 9) {
+          if (!lowConf.includes("supplier_tax_id")) lowConf.push("supplier_tax_id");
+          warn(`⚠️ ח.פ באורך חריג (${digits.length} ספרות)`);
+        }
+        parsed.supplier_tax_id = digits;
       }
-      parsed.supplier_tax_id = digits;
     }
 
     if (parsed.invoice_date) {

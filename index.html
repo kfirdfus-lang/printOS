@@ -2866,6 +2866,17 @@ function invFmtNum(n){
   if(isNaN(x))return String(n);
   return x.toFixed(2);
 }
+function invParseLowConfidence(v){
+  if(Array.isArray(v))return v.map(k=>String(k||"").trim()).filter(Boolean);
+  if(typeof v==="string"&&v.trim()){
+    try{
+      const p=JSON.parse(v);
+      if(Array.isArray(p))return p.map(k=>String(k||"").trim()).filter(Boolean);
+    }catch(_e){}
+  }
+  return[];
+}
+/* UI order matches Bina entry: header → line items → amounts */
 const INV_FIELD_ORDER=[
   {key:"bina_supplier_code",label:"קוד ספק",type:"text"},
   {key:"supplier_name",label:"שם ספק",type:"text"},
@@ -2876,11 +2887,12 @@ const INV_FIELD_ORDER=[
   {key:"invoice_date",label:"תאריך ח\"ן",type:"date"},
   {key:"vat_date",label:"תאריך מע\"מ",type:"date"},
   {key:"expense_type",label:"סוג הוצאה",type:"expense"},
-  {key:"amount_before_vat",label:"סה\"כ לפני מע\"מ",type:"number"},
+  {key:"__line_items__",type:"lines"},
+  {key:"amount_before_vat",label:"סה\"כ לפני מע\"מ",type:"money"},
   {key:"discount_percent",label:"הנחה %",type:"number"},
   {key:"vat_rate",label:"מע\"מ %",type:"number"},
-  {key:"vat_amount",label:"מע\"מ",type:"number"},
-  {key:"total_amount",label:"סה\"כ סופי",type:"number",bold:true},
+  {key:"vat_amount",label:"מע\"מ",type:"money"},
+  {key:"total_amount",label:"סה\"כ סופי",type:"money",bold:true},
   {key:"payment_terms",label:"תנאי תשלום",type:"text"},
   {key:"due_date",label:"תאריך פרעון (הצעה)",type:"date"},
 ];
@@ -2890,20 +2902,24 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
   const [mapCode,setMapCode]=useState("");
   const [saving,setSaving]=useState(false);
   const [qualityNotes,setQualityNotes]=useState(invoice.quality_notes||"");
-  const low=Array.isArray(form.low_confidence_fields)?form.low_confidence_fields:[];
-  const lines=Array.isArray(form.line_items)?form.line_items:[];
-  useEffect(()=>{setForm({...invoice});setQualityNotes(invoice.quality_notes||"");},[invoice.id]);
+  const low=invParseLowConfidence(form.low_confidence_fields??form.raw_response?.low_confidence_fields);
+  const lines=Array.isArray(form.line_items)?form.line_items:(Array.isArray(form.raw_response?.line_items)?form.raw_response.line_items:[]);
+  useEffect(()=>{
+    setForm({...invoice});
+    setQualityNotes(invoice.quality_notes||"");
+  },[invoice.id,invoice.parse_status,invoice.updated_at,invoice.low_confidence_fields,invoice.amount_before_vat,invoice.vat_amount,invoice.total_amount]);
 
   const displayVal=(key,type)=>{
     const v=form[key];
     if(type==="date")return invToBinaDate(v);
-    if(type==="number")return v===null||v===undefined?"":String(v);
+    if(type==="money")return invFmtNum(v);
+    if(type==="number")return v===null||v===undefined||v===""?"":String(v);
     return v??"";
   };
   const setField=(key,type,raw)=>{
     let val=raw;
     if(type==="date")val=invFromBinaDate(raw);
-    else if(type==="number")val=raw===""?null:Number(raw);
+    else if(type==="number"||type==="money")val=raw===""?null:Number(raw);
     setForm(f=>({...f,[key]:val}));
   };
   const buildCopyAll=()=>{
@@ -3039,6 +3055,29 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
 
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {INV_FIELD_ORDER.map(f=>{
+        if(f.type==="lines"){
+          return<div key="__line_items__" style={{marginTop:8,marginBottom:8}}>
+            <div style={{fontWeight:700,marginBottom:8}}>שורות פירוט</div>
+            {lines.length===0?<div style={{color:"#9ca3af",fontSize:13}}>לא זוהו שורות פירוט</div>:
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead><tr style={{background:"#f3f4f6"}}>
+                    <th style={{padding:8,textAlign:"right"}}>תאור</th><th style={{padding:8}}>כמות</th><th style={{padding:8}}>מחיר</th><th style={{padding:8}}>הנחה%</th><th style={{padding:8}}>סה״כ</th><th style={{padding:8}}></th>
+                  </tr></thead>
+                  <tbody>
+                    {lines.map((l,i)=><tr key={i} style={{borderTop:"1px solid #e5e7eb"}}>
+                      <td style={{padding:8}}>{l.description||"—"}</td>
+                      <td style={{padding:8,textAlign:"center"}}>{l.quantity??"—"}</td>
+                      <td style={{padding:8,textAlign:"center"}}>{invFmtNum(l.unit_price)}</td>
+                      <td style={{padding:8,textAlign:"center"}}>{l.discount_percent??"—"}</td>
+                      <td style={{padding:8,textAlign:"center"}}>{invFmtNum(l.total)}</td>
+                      <td style={{padding:8}}><button type="button" onClick={()=>{invCopyText(`${l.description||""}\t${l.quantity??""}\t${l.unit_price??""}\t${l.total??""}`);invToast(setToast,"📋 הועתק");}} style={{border:"1px solid #e5e7eb",background:"#fff",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋</button></td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>}
+          </div>;
+        }
         const unsure=low.includes(f.key);
         return<div key={f.key} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderRadius:8,background:unsure?"#fff7ed":"#f9fafb",border:unsure?"1px solid #fdba74":"1px solid #e5e7eb"}}>
           <div style={{width:140,fontWeight:f.bold?800:600,fontSize:13}}>{f.label}{unsure?" ⚠️":""}</div>
@@ -3047,29 +3086,8 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
             <option value="אחר">אחר</option>
           </select>:<input value={displayVal(f.key,f.type)} onChange={e=>setField(f.key,f.type,e.target.value)} style={{flex:1,minWidth:160,padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",fontWeight:f.bold?800:400,minHeight:44}}/>}
           <button type="button" title={unsure?"ה-AI לא היה בטוח בשדה הזה, כדאי לאמת":"העתק"} onClick={()=>{invCopyText(displayVal(f.key,f.type));invToast(setToast,"📋 הועתק");}} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋</button>
-        </div>;})}
-    </div>
-
-    <div style={{marginTop:16}}>
-      <div style={{fontWeight:700,marginBottom:8}}>שורות פירוט</div>
-      {lines.length===0?<div style={{color:"#9ca3af",fontSize:13}}>לא זוהו שורות פירוט</div>:
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{background:"#f3f4f6"}}>
-              <th style={{padding:8,textAlign:"right"}}>תאור</th><th style={{padding:8}}>כמות</th><th style={{padding:8}}>מחיר</th><th style={{padding:8}}>הנחה%</th><th style={{padding:8}}>סה״כ</th><th style={{padding:8}}></th>
-            </tr></thead>
-            <tbody>
-              {lines.map((l,i)=><tr key={i} style={{borderTop:"1px solid #e5e7eb"}}>
-                <td style={{padding:8}}>{l.description||"—"}</td>
-                <td style={{padding:8,textAlign:"center"}}>{l.quantity??"—"}</td>
-                <td style={{padding:8,textAlign:"center"}}>{invFmtNum(l.unit_price)}</td>
-                <td style={{padding:8,textAlign:"center"}}>{l.discount_percent??"—"}</td>
-                <td style={{padding:8,textAlign:"center"}}>{invFmtNum(l.total)}</td>
-                <td style={{padding:8}}><button type="button" onClick={()=>{invCopyText(`${l.description||""}\t${l.quantity??""}\t${l.unit_price??""}\t${l.total??""}`);invToast(setToast,"📋 הועתק");}} style={{border:"1px solid #e5e7eb",background:"#fff",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋</button></td>
-              </tr>)}
-            </tbody>
-          </table>
-        </div>}
+        </div>;
+      })}
     </div>
 
     {(form.ai_notes||form.notes)&&<div style={{marginTop:14,padding:12,background:"#fef3c7",borderRadius:10,borderRight:"4px solid #f59e0b",color:"#92400e",fontSize:13,whiteSpace:"pre-wrap"}}>

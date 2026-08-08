@@ -28,6 +28,9 @@ const SYSTEM_PROMPT = `אתה מפרסר חשבוניות ספקים ישראל�
 5. שים ב-low_confidence_fields את שמות כל השדות שלא היית בטוח בהם
    (טשטוש, חיתוך, כתב יד, חותמת מעל הטקסט, ספרה מעורפלת).
 6. אם המסמך אינו חשבונית ספק — החזר null בכל השדות ותכתוב הסבר ב-notes.
+7. אם ערך טקסט מכיל תו גרשיים (") — הברח אותו כ-\\" כנדרש
+   בתקן JSON. שים לב במיוחד לשמות חברות ישראליות
+   שנגמרות ב-בע"מ. ודא שהפלט עובר JSON.parse תקין.
 
 הבהרות על שדות ספציפיים:
 - allocation_number = "מספר הקצאה" / "מס' הקצאה" — מספר מרשות המסים, בדרך כלל 9 ספרות.
@@ -81,6 +84,69 @@ const SYSTEM_PROMPT = `אתה מפרסר חשבוניות ספקים ישראל�
   "notes": "הערה חופשית אם יש משהו חריג" או null
 }`;
 
+/** Escape bare " inside JSON string values (e.g. בע"מ). */
+function repairUnescapedQuotes(jsonStr: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < jsonStr.length; i++) {
+    const c = jsonStr[i];
+    if (!inString) {
+      out += c;
+      if (c === '"') inString = true;
+      continue;
+    }
+    if (c === "\\") {
+      out += c + (jsonStr[i + 1] ?? "");
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      const rest = jsonStr.slice(i + 1);
+      if (/^\s*[,:}\]]/.test(rest)) {
+        inString = false;
+        out += c;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+function tryParseAiJson(raw: string): { ok: true; value: Record<string, unknown> } | { ok: false; raw: string } {
+  const cleaned = String(raw || "")
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  const candidates: string[] = [cleaned];
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    const sliced = cleaned.slice(start, end + 1);
+    if (sliced !== cleaned) candidates.push(sliced);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return { ok: true, value: JSON.parse(candidate) as Record<string, unknown> };
+    } catch {
+      /* continue */
+    }
+    try {
+      return {
+        ok: true,
+        value: JSON.parse(repairUnescapedQuotes(candidate)) as Record<string, unknown>,
+      };
+    } catch {
+      /* continue */
+    }
+  }
+  return { ok: false, raw: cleaned };
+}
+
 serve(async (req) => {
   const originBlock = rejectDisallowedInternalOrigin(req);
   if (originBlock) return originBlock;
@@ -90,6 +156,7 @@ serve(async (req) => {
   }
 
   const started = Date.now();
+  let rawAiText: string | null = null;
 
   try {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
@@ -152,15 +219,27 @@ serve(async (req) => {
       .filter((b: { type: string }) => b.type === "text")
       .map((b: { text: string }) => b.text)
       .join("\n");
+    rawAiText = text;
 
-    const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      throw new Error(`תשובת ה-AI אינה JSON תקין: ${cleaned.slice(0, 500)}`);
+    const parseResult = tryParseAiJson(text);
+    if (!parseResult.ok) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "תשובת ה-AI אינה JSON תקין",
+          raw_text: parseResult.raw,
+          model_used: MODEL,
+          parse_duration_ms: Date.now() - started,
+          usage: data.usage || null,
+          file_name: file_name || null,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
+    const parsed = parseResult.value;
 
     const lowConf: string[] = Array.isArray(parsed.low_confidence_fields)
       ? [...(parsed.low_confidence_fields as string[])]
@@ -230,6 +309,7 @@ serve(async (req) => {
       JSON.stringify({
         success: false,
         error: String(err instanceof Error ? err.message : err),
+        raw_text: rawAiText,
         parse_duration_ms: Date.now() - started,
       }),
       {

@@ -3110,6 +3110,11 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
   const bannerBorder=matched?(partial?"#fdba74":"#6ee7b7"):"#fdba74";
 
   return<div style={{marginTop:16}}>
+    {invoice.parse_status==="failed"&&invoice.parse_error&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,padding:14,marginBottom:14,borderRight:"4px solid #dc2626"}}>
+      <div style={{fontWeight:800,color:"#991b1b",marginBottom:6}}>❌ פרסור נכשל</div>
+      <pre style={{whiteSpace:"pre-wrap",wordBreak:"break-word",fontSize:12,color:"#7f1d1d",maxHeight:180,overflow:"auto",margin:"0 0 10px",background:"#fff",padding:10,borderRadius:8}}>{invoice.parse_error}</pre>
+      <button type="button" onClick={()=>{invCopyText(invoice.parse_error);invToast(setToast,"📋 פרטי השגיאה הועתקו");}} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #dc2626",background:"#fff",color:"#991b1b",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋 העתק פרטי שגיאה</button>
+    </div>}
     <div style={{background:bannerBg,border:`1px solid ${bannerBorder}`,borderRadius:12,padding:14,marginBottom:14}}>
       {matched?<>
         <div style={{fontWeight:800,fontSize:15}}>{partial?"⚠️ ספק מזוהה (לפי שם חלקי — אמת)":"✅ ספק מזוהה"}: {form.supplier_name}</div>
@@ -3206,6 +3211,7 @@ function SupplierInvoicesTab({user}){
   const [file,setFile]=useState(null);
   const [previewUrl,setPreviewUrl]=useState(null);
   const [parsing,setParsing]=useState(false);
+  const [parseFail,setParseFail]=useState(null);
   const [current,setCurrent]=useState(null);
   const [histQ,setHistQ]=useState("");
   const [histQuality,setHistQuality]=useState("");
@@ -3253,6 +3259,7 @@ function SupplierInvoicesTab({user}){
     if(!file||parsing)return;
     setParsing(true);
     setCurrent(null);
+    setParseFail(null);
     const uuid=crypto.randomUUID();
     const safeName=String(file.name||"invoice").replace(/[^\w.\u0590-\u05FF-]+/g,"_");
     const year=new Date().getFullYear();
@@ -3285,14 +3292,28 @@ function SupplierInvoicesTab({user}){
       r.readAsDataURL(f);
     });
 
+    const markFailed=async(friendlyMsg,details,extra={})=>{
+      const parseError=[friendlyMsg,details].filter(Boolean).join("\n\n---\n\n").slice(0,50000);
+      await supabaseClient.from("supplier_invoices").update({
+        parse_status:"failed",
+        parse_error:parseError,
+        parse_duration_ms:extra.parse_duration_ms??null,
+        model_used:extra.model_used??null,
+      }).eq("id",uuid);
+      await loadAll();
+      setParseFail({message:friendlyMsg,details:parseError,invoiceId:uuid});
+    };
+
     try{
       const file_base64=await toBase64(file);
       const {data,error}=await supabaseClient.functions.invoke("parse-invoice",{body:{file_base64,media_type:file.type||"image/jpeg",file_name:file.name}});
-      if(error)throw error;
+      if(error){
+        await markFailed("הפרסור נכשל בגלל שגיאת רשת או שרת.",error.message||String(error));
+        return;
+      }
       if(!data?.success){
-        await supabaseClient.from("supplier_invoices").update({parse_status:"failed",parse_error:data?.error||"פרסור נכשל",parse_duration_ms:data?.parse_duration_ms||null,model_used:data?.model_used||null}).eq("id",uuid);
-        await loadAll();
-        window.alert("פרסור נכשל: "+(data?.error||"שגיאה"));
+        const details=[data?.error,data?.raw_text].filter(Boolean).join("\n\n");
+        await markFailed("הפרסור נכשל. הרשומה נשמרה בהיסטוריה עם פרטי השגיאה.",details||"פרסור נכשל",{parse_duration_ms:data?.parse_duration_ms,model_used:data?.model_used});
         return;
       }
       const parsed=data.parsed||{};
@@ -3337,9 +3358,7 @@ function SupplierInvoicesTab({user}){
       const {data:row}=await supabaseClient.from("supplier_invoices").select("*").eq("id",uuid).single();
       setCurrent(row);
     }catch(e){
-      await supabaseClient.from("supplier_invoices").update({parse_status:"failed",parse_error:e.message||String(e)}).eq("id",uuid);
-      await loadAll();
-      window.alert("שגיאה: "+(e.message||e));
+      await markFailed("הפרסור נכשל בגלל שגיאה בלתי צפויה.",e.message||String(e));
     }finally{setParsing(false);}
   };
 
@@ -3471,6 +3490,14 @@ function SupplierInvoicesTab({user}){
         <button type="button" disabled={!file||parsing} onClick={runParse} style={{padding:"12px 18px",borderRadius:10,border:"none",background:!file||parsing?"#94a3b8":"#0d9488",color:"#fff",fontWeight:700,cursor:!file||parsing?"not-allowed":"pointer",fontFamily:"inherit",minHeight:44}}>
           {parsing?"🔍 מפרסר... (בדרך כלל 5-15 שניות)":"🔍 פרסר חשבונית"}
         </button>
+        {parseFail&&<div style={{marginTop:14,padding:14,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,borderRight:"4px solid #dc2626"}}>
+          <div style={{fontWeight:800,color:"#991b1b",marginBottom:6}}>❌ {parseFail.message}</div>
+          <div style={{fontSize:13,color:"#7f1d1d",marginBottom:10}}>אפשר לפתוח את הרשומה מההיסטוריה או להעתיק את פרטי השגיאה לאבחון.</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button type="button" onClick={()=>{invCopyText(parseFail.details||parseFail.message);invToast(setToast,"📋 פרטי השגיאה הועתקו");}} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #dc2626",background:"#fff",color:"#991b1b",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋 העתק פרטי שגיאה</button>
+            <button type="button" onClick={()=>setParseFail(null)} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>סגור</button>
+          </div>
+        </div>}
       </div>
 
       {current&&<div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:16,marginBottom:16}}>

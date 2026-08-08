@@ -664,6 +664,72 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .tv-confetti-piece{position:absolute;width:12px;height:12px;top:-20px;animation:confettiFall linear forwards}
 @keyframes confettiFall{0%{transform:translateY(0) rotateZ(0deg);opacity:1}100%{transform:translateY(105vh) rotateZ(720deg);opacity:0}}
 .tv-hint{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.9);border:1px solid rgba(20,184,166,.4);padding:10px 18px;border-radius:999px;font-size:14px;color:#94a3b8;z-index:50}
+.tv-revenue-block{background:linear-gradient(135deg,rgba(13,148,136,.2) 0%,rgba(20,184,166,.1) 100%);border:2px solid rgba(20,184,166,.4);border-radius:24px;padding:30px 40px}
+.tv-revenue-main{text-align:center;margin-bottom:25px}
+.tv-revenue-label{font-size:18px;color:#94a3b8;margin-bottom:8px}
+.tv-revenue-value{font-size:84px;font-weight:900;color:#fff;line-height:1;text-shadow:0 4px 20px rgba(20,184,166,.5)}
+.tv-revenue-breakdown{font-size:16px;color:#cbd5e1;margin-top:12px}
+.tv-target-container{background:rgba(0,0,0,.3);border-radius:16px;padding:18px 24px}
+.tv-target-header{display:flex;justify-content:space-between;align-items:center;font-size:16px;color:#fff;margin-bottom:10px;font-weight:600}
+.tv-target-percent{font-size:20px;font-weight:900;color:#14b8a6}
+.tv-target-bar{height:24px;background:rgba(255,255,255,.1);border-radius:12px;overflow:hidden;position:relative}
+.tv-target-fill{height:100%;background:linear-gradient(90deg,#14b8a6 0%,#22c55e 100%);border-radius:12px;transition:width 1s ease;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:14px}
+.tv-target-fill.reached{background:linear-gradient(90deg,#f59e0b 0%,#ec4899 50%,#a855f7 100%);animation:reachedPulse 2s ease-in-out infinite}
+@keyframes reachedPulse{0%,100%{box-shadow:0 0 20px rgba(236,72,153,.5)}50%{box-shadow:0 0 40px rgba(236,72,153,.9)}}
+.tv-stat-icon{font-size:22px;margin-bottom:6px}
+.tv-agents-block{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.tv-agent-card{display:flex;align-items:center;gap:20px;padding:20px 25px;background:linear-gradient(135deg,rgba(245,158,11,.15) 0%,rgba(249,115,22,.05) 100%);border:1px solid rgba(245,158,11,.3);border-radius:16px}
+.tv-agent-icon{font-size:42px}
+.tv-agent-info{flex:1}
+.tv-agent-label{font-size:13px;color:#94a3b8;font-weight:600}
+.tv-agent-name{font-size:24px;font-weight:900;color:#fbbf24;margin:4px 0}
+.tv-agent-detail{font-size:13px;color:#cbd5e1}
+.tv-top-clients{background:rgba(255,255,255,.03);border-radius:16px;padding:20px 25px}
+.tv-top-clients-title{font-size:18px;font-weight:700;color:#14b8a6;margin-bottom:15px;text-align:center}
+.tv-top-clients-list{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.tv-top-client{background:rgba(255,255,255,.05);border-radius:12px;padding:15px;text-align:center}
+.tv-top-client-rank{font-size:24px;margin-bottom:6px}
+.tv-top-client-name{font-size:13px;font-weight:700;color:#fff;margin-bottom:4px}
+.tv-top-client-total{font-size:15px;color:#14b8a6;font-weight:700}
+.tv-screen-gallery{display:flex;flex-direction:column;gap:20px}
+.tv-screen-gallery-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px}
+.tv-empty-title{font-size:36px;font-weight:900;color:#14b8a6;margin:20px 0 10px}
+.tv-empty-subtitle{font-size:18px;color:#94a3b8;line-height:1.6}
+.tv-gallery-header{display:flex;justify-content:space-between;align-items:center}
+.tv-gallery-title{font-size:32px;font-weight:900;color:#14b8a6}
+.tv-gallery-counter{padding:8px 20px;background:rgba(255,255,255,.1);border-radius:20px;font-size:16px;font-weight:700;color:#fff}
+.tv-gallery-content{flex:1;display:flex;gap:30px;min-height:0}
+.tv-gallery-image-wrap{flex:2;background:#000;border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.tv-gallery-image{max-width:100%;max-height:100%;object-fit:contain;animation:galleryFadeIn .6s ease}
+@keyframes galleryFadeIn{from{opacity:0;transform:scale(1.05)}to{opacity:1;transform:scale(1)}}
+.tv-gallery-info{flex:1;display:flex;flex-direction:column;justify-content:center;gap:20px;padding:30px;background:linear-gradient(135deg,rgba(20,184,166,.15) 0%,rgba(13,148,136,.05) 100%);border-radius:20px}
+.tv-gallery-project-title{font-size:36px;font-weight:900;color:#fff;line-height:1.2}
+.tv-gallery-client,.tv-gallery-type{font-size:20px;color:#cbd5e1;display:flex;align-items:center;gap:12px}
+.tv-gallery-icon{font-size:24px}
+.tv-gallery-dots{display:flex;justify-content:center;gap:8px}
+.tv-gallery-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.2);transition:all .3s}
+.tv-gallery-dot.active{background:#14b8a6;width:32px;border-radius:4px}
+.tv-gallery-manager{padding:20px;max-width:1200px;margin:0 auto}
+.tv-gm-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;flex-wrap:wrap}
+.tv-gm-actions{display:flex;gap:10px;flex-wrap:wrap}
+.tv-gm-info{background:#f0fdfa;border-radius:10px;padding:15px;margin-bottom:20px}
+.info-item{padding:5px 0;color:#0d9488;font-size:14px}
+.info-item code{background:rgba(0,0,0,.05);padding:2px 8px;border-radius:4px;font-family:monospace}
+.tv-gm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.tv-gm-card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.tv-gm-card.inactive{opacity:.5}
+.tv-gm-image{position:relative;aspect-ratio:16/9;background:#f3f4f6;overflow:hidden}
+.tv-gm-image img{width:100%;height:100%;object-fit:cover}
+.tv-gm-inactive-badge{position:absolute;top:10px;right:10px;background:#f59e0b;color:#fff;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700}
+.tv-gm-content{padding:15px}
+.tv-gm-title{font-weight:700;color:#1f2937;margin-bottom:6px}
+.tv-gm-meta{font-size:13px;color:#6b7280;padding:2px 0}
+.tv-gm-order{margin-top:8px;font-size:12px;color:#9ca3af}
+.tv-gm-actions-row{display:flex;gap:6px;padding:12px 15px;border-top:1px solid #f3f4f6}
+.tv-gm-actions-row button{padding:6px 12px;font-size:12px;border:1px solid #e5e7eb;background:#fff;border-radius:6px;cursor:pointer;font-family:inherit}
+.tv-gm-actions-row .btn-danger{color:#dc2626;border-color:#fee2e2}
+.image-preview{margin-bottom:15px;border-radius:8px;overflow:hidden;background:#f3f4f6;aspect-ratio:16/9}
+.image-preview img{width:100%;height:100%;object-fit:contain}
 </style>
 </head>
 <body>
@@ -15202,7 +15268,7 @@ function tvTaskPrice(task){
   return parseFloat(task?.total_inc_vat)||parseFloat(task?.total_amount)||parseFloat(task?.total_price)||0;
 }
 function TvHeader({currentTime,currentScreen}){
-  const screenNames=["📊 סטטיסטיקות","📦 מבצעי","👥 צוות"];
+  const screenNames=["📊 סטטיסטיקות","📦 מבצעי","👥 צוות","🎨 עבודות שלנו"];
   return<div className="tv-header">
     <div className="tv-logo">🖨️ נטלי פרינט</div>
     <div className="tv-screen-name">{screenNames[currentScreen]}</div>
@@ -15213,19 +15279,60 @@ function TvHeader({currentTime,currentScreen}){
   </div>;
 }
 function TvScreenStats({stats}){
+  const fmt=n=>Number(n||0).toLocaleString("he-IL",{maximumFractionDigits:0});
   return<div className="tv-screen tv-screen-stats">
-    <div className="tv-stats-row">
-      <div className="tv-stat-card tv-stat-big">
-        <div className="tv-stat-label">💰 מחזור החודש (אלוט)</div>
-        <div className="tv-stat-value">₪{(stats.alutRevenue||0).toLocaleString("he-IL")}</div>
+    <div className="tv-revenue-block">
+      <div className="tv-revenue-main">
+        <div className="tv-revenue-label">💰 מחזור החודש</div>
+        <div className="tv-revenue-value">₪{fmt(stats.totalRevenue)}</div>
+        <div className="tv-revenue-breakdown">הזמנות רגילות: ₪{fmt(stats.binaRevenue)} • אלוט: ₪{fmt(stats.alutRevenue)}</div>
+      </div>
+      <div className="tv-target-container">
+        <div className="tv-target-header">
+          <span>🎯 יעד חודשי: ₪{fmt(stats.monthlyTarget)}</span>
+          <span className="tv-target-percent">{(stats.targetProgress||0).toFixed(1)}%</span>
+        </div>
+        <div className="tv-target-bar">
+          <div className={`tv-target-fill ${(stats.targetProgress||0)>=100?"reached":""}`} style={{width:Math.min(stats.targetProgress||0,100)+"%"}}>
+            {(stats.targetProgress||0)>=100&&"🎉 יעד הושג!"}
+          </div>
+        </div>
       </div>
     </div>
     <div className="tv-stats-grid">
-      <div className="tv-stat-card"><div className="tv-stat-label">📦 הזמנות היום</div><div className="tv-stat-value">{stats.todayOrders}</div></div>
-      <div className="tv-stat-card"><div className="tv-stat-label">📊 הזמנות החודש</div><div className="tv-stat-value">{stats.monthOrders}</div></div>
-      <div className="tv-stat-card"><div className="tv-stat-label">🚚 משלוחים היום</div><div className="tv-stat-value">{stats.todayShipped}</div></div>
-      <div className="tv-stat-card"><div className="tv-stat-label">🌟 לקוחות חדשים</div><div className="tv-stat-value">{stats.newClients}</div></div>
+      <div className="tv-stat-card"><div className="tv-stat-icon">📦</div><div className="tv-stat-value">{stats.todayOrders}</div><div className="tv-stat-label">הזמנות היום</div></div>
+      <div className="tv-stat-card"><div className="tv-stat-icon">📊</div><div className="tv-stat-value">{stats.monthOrders}</div><div className="tv-stat-label">הזמנות החודש</div></div>
+      <div className="tv-stat-card"><div className="tv-stat-icon">🚚</div><div className="tv-stat-value">{stats.todayShipped}</div><div className="tv-stat-label">משלוחים היום</div></div>
+      <div className="tv-stat-card"><div className="tv-stat-icon">🌟</div><div className="tv-stat-value">{stats.newClients}</div><div className="tv-stat-label">לקוחות חדשים</div></div>
     </div>
+    <div className="tv-agents-block">
+      {stats.topAgentToday&&<div className="tv-agent-card">
+        <div className="tv-agent-icon">🔥</div>
+        <div className="tv-agent-info">
+          <div className="tv-agent-label">כוכב היום</div>
+          <div className="tv-agent-name">{stats.topAgentToday.name}</div>
+          <div className="tv-agent-detail">{stats.topAgentToday.count} הזמנות • ₪{fmt(stats.topAgentToday.total)}</div>
+        </div>
+      </div>}
+      {stats.topAgentMonth&&<div className="tv-agent-card">
+        <div className="tv-agent-icon">🏆</div>
+        <div className="tv-agent-info">
+          <div className="tv-agent-label">מוכר החודש</div>
+          <div className="tv-agent-name">{stats.topAgentMonth.name}</div>
+          <div className="tv-agent-detail">{stats.topAgentMonth.count} הזמנות • ₪{fmt(stats.topAgentMonth.total)}</div>
+        </div>
+      </div>}
+    </div>
+    {stats.topClients&&stats.topClients.length>0&&<div className="tv-top-clients">
+      <div className="tv-top-clients-title">🏆 טופ 5 לקוחות החודש</div>
+      <div className="tv-top-clients-list">
+        {stats.topClients.map((client,idx)=><div key={idx} className="tv-top-client">
+          <div className="tv-top-client-rank">{idx===0?"🥇":idx===1?"🥈":idx===2?"🥉":`#${idx+1}`}</div>
+          <div className="tv-top-client-name">{client.name}</div>
+          <div className="tv-top-client-total">₪{fmt(client.total)}</div>
+        </div>)}
+      </div>
+    </div>}
   </div>;
 }
 function TvScreenOperational({operational}){
@@ -15281,11 +15388,47 @@ function TvToast({toast}){
     </div>
   </div>;
 }
+function TvScreenGallery({gallery}){
+  const [currentIdx,setCurrentIdx]=useState(0);
+  useEffect(()=>{
+    if(!gallery||gallery.length===0)return;
+    const t=setInterval(()=>setCurrentIdx(prev=>(prev+1)%gallery.length),5000);
+    return()=>clearInterval(t);
+  },[gallery]);
+  if(!gallery||gallery.length===0){
+    return<div className="tv-screen tv-screen-gallery-empty">
+      <div className="tv-empty-icon" style={{fontSize:100}}>🎨</div>
+      <div className="tv-empty-title">גלריית פרויקטים</div>
+      <div className="tv-empty-subtitle">עוד לא הועלו פרויקטים לגלריה.<br/>הוסף פרויקטים דרך טאב "🎨 גלריית TV" באדמין.</div>
+    </div>;
+  }
+  const current=gallery[currentIdx]||gallery[0];
+  return<div className="tv-screen tv-screen-gallery">
+    <div className="tv-gallery-header">
+      <div className="tv-gallery-title">🎨 העבודות שלנו</div>
+      <div className="tv-gallery-counter">{currentIdx+1} / {gallery.length}</div>
+    </div>
+    <div className="tv-gallery-content">
+      <div className="tv-gallery-image-wrap">
+        <img key={current.id} src={current.image_url} alt={current.title} className="tv-gallery-image"/>
+      </div>
+      <div className="tv-gallery-info">
+        <div className="tv-gallery-project-title">{current.title}</div>
+        {current.client_name&&<div className="tv-gallery-client"><span className="tv-gallery-icon">🏢</span>{current.client_name}</div>}
+        {current.work_type&&<div className="tv-gallery-type"><span className="tv-gallery-icon">📐</span>{current.work_type}</div>}
+      </div>
+    </div>
+    <div className="tv-gallery-dots">
+      {gallery.map((_,i)=><div key={i} className={`tv-gallery-dot ${i===currentIdx?"active":""}`}/>)}
+    </div>
+  </div>;
+}
 function TvDashboard(){
   const [currentScreen,setCurrentScreen]=useState(0);
   const [stats,setStats]=useState(null);
   const [operational,setOperational]=useState(null);
   const [team,setTeam]=useState(null);
+  const [gallery,setGallery]=useState([]);
   const [toasts,setToasts]=useState([]);
   const [currentTime,setCurrentTime]=useState(new Date());
   const [dataLoading,setDataLoading]=useState(true);
@@ -15297,7 +15440,7 @@ function TvDashboard(){
     return()=>clearInterval(t);
   },[]);
   useEffect(()=>{
-    const t=setInterval(()=>setCurrentScreen(prev=>(prev+1)%3),30000);
+    const t=setInterval(()=>setCurrentScreen(prev=>(prev+1)%4),30000);
     return()=>clearInterval(t);
   },[]);
   useEffect(()=>{
@@ -15325,33 +15468,79 @@ function TvDashboard(){
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"alut_orders"},payload=>handleNewAlutOrder(payload.new))
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"tasks"},payload=>handleTaskUpdate(payload.old,payload.new))
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"detected_payments"},payload=>handleNewPayment(payload.new))
+      .on("postgres_changes",{event:"*",schema:"public",table:"tv_gallery_projects"},()=>loadGallery())
       .subscribe();
     return()=>{supabaseClient.removeChannel(channel);};
   },[]);
 
   async function loadAllData(){
     try{
-      await Promise.all([loadStats(),loadOperational(),loadTeam()]);
+      await Promise.all([loadStats(),loadOperational(),loadTeam(),loadGallery()]);
     }catch(e){console.error("TV load error:",e);}
     finally{setDataLoading(false);}
+  }
+  async function loadGallery(){
+    const {data}=await supabaseClient.from("tv_gallery_projects").select("*").eq("is_active",true).order("display_order",{ascending:true});
+    setGallery(data||[]);
   }
   async function loadStats(){
     const today=new Date();today.setHours(0,0,0,0);
     const monthStart=new Date(today.getFullYear(),today.getMonth(),1);
-    const [{data:todayOrders},{data:monthOrders},{data:alutOrders},{data:todayShipped},{data:newClients}]=await Promise.all([
-      supabaseClient.from("tasks").select("id,created_at").gte("created_at",today.toISOString()).is("archived_at",null),
-      supabaseClient.from("tasks").select("id").gte("created_at",monthStart.toISOString()).is("archived_at",null),
+    const {data:settings}=await supabaseClient.from("tv_dashboard_settings").select("monthly_target").eq("id",1).maybeSingle();
+    const monthlyTarget=parseFloat(settings?.monthly_target)||400000;
+    const [{data:monthTasks},{data:alutOrders},{data:todayShipped},{data:newClients}]=await Promise.all([
+      supabaseClient.from("tasks").select("id,created_at,total_inc_vat,total_amount,sales_agent,client_name").gte("created_at",monthStart.toISOString()).is("archived_at",null),
       supabaseClient.from("alut_orders").select("id,total_price").gte("created_at",monthStart.toISOString()),
       supabaseClient.from("tasks").select("id").eq("delivery_status","in_transit").gte("updated_at",today.toISOString()),
       supabaseClient.from("clients").select("id").gte("created_at",monthStart.toISOString()),
     ]);
+    const todayTasks=(monthTasks||[]).filter(t=>new Date(t.created_at)>=today);
+    const binaRevenue=(monthTasks||[]).reduce((sum,t)=>sum+(parseFloat(t.total_inc_vat)||parseFloat(t.total_amount)||0),0);
     const alutRevenue=(alutOrders||[]).reduce((s,o)=>s+(parseFloat(o.total_price)||0),0);
+    const totalRevenue=binaRevenue+alutRevenue;
+    const targetProgress=monthlyTarget>0?(totalRevenue/monthlyTarget)*100:0;
+    const clientTotals={};
+    (monthTasks||[]).forEach(t=>{
+      const name=t.client_name||"לא ידוע";
+      const amount=parseFloat(t.total_inc_vat)||parseFloat(t.total_amount)||0;
+      if(!clientTotals[name])clientTotals[name]={name,total:0,count:0};
+      clientTotals[name].total+=amount;
+      clientTotals[name].count+=1;
+    });
+    const topClients=Object.values(clientTotals).filter(c=>c.total>0).sort((a,b)=>b.total-a.total).slice(0,5);
+    const agentTotals={};
+    (monthTasks||[]).forEach(t=>{
+      if(!t.sales_agent)return;
+      const firstName=String(t.sales_agent).trim().split(/\s+/)[0];
+      const amount=parseFloat(t.total_inc_vat)||parseFloat(t.total_amount)||0;
+      if(!agentTotals[firstName])agentTotals[firstName]={name:firstName,total:0,count:0};
+      agentTotals[firstName].total+=amount;
+      agentTotals[firstName].count+=1;
+    });
+    const topAgentMonth=Object.values(agentTotals).sort((a,b)=>b.total-a.total)[0]||null;
+    const todayAgentTotals={};
+    todayTasks.forEach(t=>{
+      if(!t.sales_agent)return;
+      const firstName=String(t.sales_agent).trim().split(/\s+/)[0];
+      const amount=parseFloat(t.total_inc_vat)||parseFloat(t.total_amount)||0;
+      if(!todayAgentTotals[firstName])todayAgentTotals[firstName]={name:firstName,total:0,count:0};
+      todayAgentTotals[firstName].total+=amount;
+      todayAgentTotals[firstName].count+=1;
+    });
+    const topAgentToday=Object.values(todayAgentTotals).sort((a,b)=>b.total-a.total)[0]||null;
     setStats({
-      todayOrders:todayOrders?.length||0,
-      monthOrders:monthOrders?.length||0,
+      todayOrders:todayTasks.length,
+      monthOrders:(monthTasks||[]).length,
+      binaRevenue,
       alutRevenue,
+      totalRevenue,
+      monthlyTarget,
+      targetProgress,
       todayShipped:todayShipped?.length||0,
-      newClients:newClients?.length||0
+      newClients:newClients?.length||0,
+      topClients,
+      topAgentMonth,
+      topAgentToday
     });
   }
   async function loadOperational(){
@@ -15424,11 +15613,176 @@ function TvDashboard(){
       {currentScreen===0&&stats&&<TvScreenStats stats={stats}/>}
       {currentScreen===1&&operational&&<TvScreenOperational operational={operational}/>}
       {currentScreen===2&&team&&<TvScreenTeam team={team}/>}
+      {currentScreen===3&&<TvScreenGallery gallery={gallery}/>}
       {dataLoading&&!stats&&!operational&&!team&&<div className="tv-loading">📊 טוען נתונים...</div>}
     </div>
     <div className="tv-toasts">{toasts.map(toast=><TvToast key={toast.id} toast={toast}/>)}</div>
-    <div className="tv-screen-indicators">{[0,1,2].map(i=><div key={i} className={`tv-dot ${i===currentScreen?"active":""}`}/>)}</div>
+    <div className="tv-screen-indicators">{[0,1,2,3].map(i=><div key={i} className={`tv-dot ${i===currentScreen?"active":""}`}/>)}</div>
     {showHint&&<div className="tv-hint">לחצו במסך או F11 למסך מלא</div>}
+  </div>;
+}
+
+function GalleryProjectModal({project,onClose,onSaved}){
+  const [title,setTitle]=useState(project?.title||"");
+  const [clientName,setClientName]=useState(project?.client_name||"");
+  const [workType,setWorkType]=useState(project?.work_type||"");
+  const [displayOrder,setDisplayOrder]=useState(project?.display_order??100);
+  const [isActive,setIsActive]=useState(project?.is_active??true);
+  const [imageFile,setImageFile]=useState(null);
+  const [existingImageUrl,setExistingImageUrl]=useState(project?.image_url||"");
+  const [uploading,setUploading]=useState(false);
+  const [preview,setPreview]=useState(project?.image_url||null);
+  const handleFileChange=e=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    if(!file.type.startsWith("image/")){window.alert("נא לבחור קובץ תמונה");return;}
+    setImageFile(file);
+    const reader=new FileReader();
+    reader.onload=()=>setPreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleSave=async()=>{
+    if(!title.trim()){window.alert("נא למלא כותרת");return;}
+    if(!imageFile&&!existingImageUrl){window.alert("נא להעלות תמונה");return;}
+    setUploading(true);
+    try{
+      let imageUrl=existingImageUrl;
+      if(imageFile){
+        const uploaded=await uploadFileToStorage(imageFile,"tv-gallery");
+        imageUrl=`${SU}/storage/v1/object/public/${STORAGE_BUCKET}/${uploaded.path}`;
+      }
+      const payload={
+        title:title.trim(),
+        client_name:clientName.trim()||null,
+        work_type:workType.trim()||null,
+        image_url:imageUrl,
+        display_order:parseInt(displayOrder,10)||100,
+        is_active:isActive,
+        updated_at:new Date().toISOString(),
+      };
+      if(project?.id){
+        const {error}=await supabaseClient.from("tv_gallery_projects").update(payload).eq("id",project.id);
+        if(error)throw error;
+      }else{
+        const {error}=await supabaseClient.from("tv_gallery_projects").insert(payload);
+        if(error)throw error;
+      }
+      onSaved();
+    }catch(err){window.alert("שגיאה: "+(err.message||err));}
+    finally{setUploading(false);}
+  };
+  return<Modal open={true} onClose={onClose} title={project?"✏️ ערוך פרויקט":"➕ הוסף פרויקט"} maxWidth={550}>
+    <div style={{display:"flex",flexDirection:"column",gap:12,direction:"rtl"}}>
+      {preview&&<div className="image-preview"><img src={preview} alt="preview"/></div>}
+      <label style={{fontSize:13,fontWeight:600}}>📷 תמונה {!project&&"*"}
+        <input type="file" accept="image/*" onChange={handleFileChange} disabled={uploading} style={{display:"block",marginTop:6}}/>
+      </label>
+      <label style={{fontSize:13,fontWeight:600}}>כותרת הפרויקט *
+        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="למשל: לוח שנה קיר 2026" style={{display:"block",width:"100%",marginTop:4,padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit"}}/>
+      </label>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <label style={{fontSize:13,fontWeight:600}}>שם לקוח
+          <input value={clientName} onChange={e=>setClientName(e.target.value)} placeholder="למשל: בנק לאומי" style={{display:"block",width:"100%",marginTop:4,padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit"}}/>
+        </label>
+        <label style={{fontSize:13,fontWeight:600}}>סוג עבודה
+          <input value={workType} onChange={e=>setWorkType(e.target.value)} placeholder="למשל: פלייר A4" style={{display:"block",width:"100%",marginTop:4,padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit"}}/>
+        </label>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <label style={{fontSize:13,fontWeight:600}}>סדר תצוגה
+          <input type="number" value={displayOrder} onChange={e=>setDisplayOrder(e.target.value)} style={{display:"block",width:"100%",marginTop:4,padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit"}}/>
+        </label>
+        <label style={{fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:8,marginTop:22}}>
+          <input type="checkbox" checked={isActive} onChange={e=>setIsActive(e.target.checked)}/>
+          {isActive?"👁️ מוצג בגלריה":"🚫 מוסתר"}
+        </label>
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
+        <button type="button" onClick={onClose} disabled={uploading} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" onClick={handleSave} disabled={uploading} style={{padding:"10px 14px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:uploading?"wait":"pointer",fontFamily:"inherit"}}>{uploading?"⏳ שומר...":"💾 שמור"}</button>
+      </div>
+    </div>
+  </Modal>;
+}
+
+function TvGalleryManager(){
+  const [projects,setProjects]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [monthlyTarget,setMonthlyTarget]=useState(400000);
+  const [showAddModal,setShowAddModal]=useState(false);
+  const [editingProject,setEditingProject]=useState(null);
+  useEffect(()=>{loadProjects();loadSettings();},[]);
+  const loadProjects=async()=>{
+    setLoading(true);
+    const {data}=await supabaseClient.from("tv_gallery_projects").select("*").order("display_order",{ascending:true});
+    setProjects(data||[]);
+    setLoading(false);
+  };
+  const loadSettings=async()=>{
+    const {data}=await supabaseClient.from("tv_dashboard_settings").select("monthly_target").eq("id",1).maybeSingle();
+    if(data?.monthly_target)setMonthlyTarget(Number(data.monthly_target));
+  };
+  const updateMonthlyTarget=async()=>{
+    const raw=window.prompt("יעד חודשי חדש (₪):",String(monthlyTarget));
+    if(raw===null)return;
+    const newTarget=parseFloat(raw);
+    if(!newTarget||newTarget<=0)return;
+    const {error}=await supabaseClient.from("tv_dashboard_settings").update({monthly_target:newTarget,updated_at:new Date().toISOString()}).eq("id",1);
+    if(error){window.alert(error.message);return;}
+    setMonthlyTarget(newTarget);
+    window.alert("✅ יעד עודכן");
+  };
+  const deleteProject=async(id)=>{
+    if(!window.confirm("למחוק את הפרויקט מהגלריה?"))return;
+    const {error}=await supabaseClient.from("tv_gallery_projects").delete().eq("id",id);
+    if(error){window.alert(error.message);return;}
+    loadProjects();
+  };
+  const toggleActive=async(project)=>{
+    const {error}=await supabaseClient.from("tv_gallery_projects").update({is_active:!project.is_active}).eq("id",project.id);
+    if(error){window.alert(error.message);return;}
+    loadProjects();
+  };
+  return<div className="tv-gallery-manager">
+    <div className="tv-gm-header">
+      <h1 style={{margin:0,fontSize:22}}>🎨 ניהול גלריית TV Dashboard</h1>
+      <div className="tv-gm-actions">
+        <button type="button" onClick={updateMonthlyTarget} className="btn-secondary" style={{padding:"10px 14px",borderRadius:8,border:"1px solid #0d9488",background:"#fff",color:"#0d9488",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🎯 עדכן יעד: ₪{Number(monthlyTarget).toLocaleString("he-IL")}</button>
+        <button type="button" onClick={()=>setShowAddModal(true)} style={{padding:"10px 14px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>➕ הוסף פרויקט</button>
+      </div>
+    </div>
+    <div className="tv-gm-info">
+      <div className="info-item"><strong>💡 טיפ:</strong> הפרויקטים מוצגים במסך ה-TV לפי סדר תצוגה (הכי נמוך ראשון).</div>
+      <div className="info-item"><strong>🔗 URL של ה-TV:</strong> <code>{window.location.origin}{window.location.pathname||"/"}#tv</code></div>
+    </div>
+    {loading?<div>טוען...</div>:projects.length===0?<div className="empty-state" style={{textAlign:"center",padding:40}}>
+      <div style={{fontSize:48}}>🎨</div>
+      <p>עוד לא הועלו פרויקטים</p>
+      <button type="button" onClick={()=>setShowAddModal(true)} style={{padding:"10px 14px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>הוסף את הפרויקט הראשון</button>
+    </div>:<div className="tv-gm-grid">
+      {projects.map(project=><div key={project.id} className={`tv-gm-card ${!project.is_active?"inactive":""}`}>
+        <div className="tv-gm-image">
+          <img src={project.image_url} alt={project.title}/>
+          {!project.is_active&&<div className="tv-gm-inactive-badge">מוסתר</div>}
+        </div>
+        <div className="tv-gm-content">
+          <div className="tv-gm-title">{project.title}</div>
+          {project.client_name&&<div className="tv-gm-meta">🏢 {project.client_name}</div>}
+          {project.work_type&&<div className="tv-gm-meta">📐 {project.work_type}</div>}
+          <div className="tv-gm-order">סדר: {project.display_order}</div>
+        </div>
+        <div className="tv-gm-actions-row">
+          <button type="button" onClick={()=>setEditingProject(project)}>✏️ ערוך</button>
+          <button type="button" onClick={()=>toggleActive(project)}>{project.is_active?"👁️ הסתר":"👁️ הצג"}</button>
+          <button type="button" onClick={()=>deleteProject(project.id)} className="btn-danger">🗑️</button>
+        </div>
+      </div>)}
+    </div>}
+    {(showAddModal||editingProject)&&<GalleryProjectModal
+      project={editingProject}
+      onClose={()=>{setShowAddModal(false);setEditingProject(null);}}
+      onSaved={()=>{loadProjects();setShowAddModal(false);setEditingProject(null);}}
+    />}
   </div>;
 }
 
@@ -15771,6 +16125,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="tv-gallery"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="designer"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -16040,7 +16400,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -16387,6 +16747,8 @@ function App(){
       {tab==="employee-messages"&&isA&&<EmployeeMessagesDashboard user={user}/>}
 
       {tab==="supplier_invoices"&&isA&&<SupplierInvoicesTab user={user}/>}
+
+      {tab==="tv-gallery"&&isA&&<TvGalleryManager/>}
 
       {tab==="designer"&&isA&&<DesignerDashboard user={user}/>}
 

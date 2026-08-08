@@ -40,6 +40,11 @@ const SYSTEM_PROMPT = `אתה מפרסר חשבוניות ספקים ישראל�
 - vat_date = "תאריך מע\\"מ" אם מופיע בנפרד. אם לא — החזר את אותו ערך כמו invoice_date.
 - vat_rate = שיעור המע"מ באחוזים כמספר. 18% → 18
 - payment_terms = תנאי תשלום כפי שמופיעים ("שוטף+30", "מזומן", "שוטף+60" וכו').
+- due_date = תאריך התשלום אם מופיע במסמך במפורש.
+  מילות מפתח: "לתשלום עד", "תאריך פרעון", "יש לשלם עד",
+  "מועד תשלום", "לתשלום ב-".
+  פורמט YYYY-MM-DD. אם לא מופיע במסמך — null.
+  אל תחשב אותו מתנאי תשלום, רק חלץ אם כתוב.
 - discount_percent / discount_amount = הנחה כללית על החשבונית (לא ברמת שורה).
 
 מבנה ה-JSON המדויק:
@@ -54,6 +59,7 @@ const SYSTEM_PROMPT = `אתה מפרסר חשבוניות ספקים ישראל�
   "invoice_date": "YYYY-MM-DD" או null,
   "vat_date": "YYYY-MM-DD" או null,
   "payment_terms": "תנאי תשלום" או null,
+  "due_date": "YYYY-MM-DD" או null,
   "currency": "ILS",
   "amount_before_vat": מספר או null,
   "discount_percent": מספר או null,

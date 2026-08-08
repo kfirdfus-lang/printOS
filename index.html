@@ -2896,6 +2896,17 @@ const INV_FIELD_ORDER=[
   {key:"payment_terms",label:"תנאי תשלום",type:"text"},
   {key:"due_date",label:"תאריך פרעון (הצעה)",type:"date"},
 ];
+function invDueDateSource(inv){
+  if(!inv)return null;
+  const due=inv.due_date?String(inv.due_date).slice(0,10):"";
+  if(!due)return null;
+  const doc=inv.raw_response?.due_date?String(inv.raw_response.due_date).slice(0,10):"";
+  if(doc&&doc===due)return"document";
+  return"calculated";
+}
+function invDueDateLabel(source){
+  return source==="document"?"תאריך פרעון":"תאריך פרעון (הצעה)";
+}
 
 function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
   const [form,setForm]=useState(()=>({...invoice}));
@@ -2904,10 +2915,11 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
   const [qualityNotes,setQualityNotes]=useState(invoice.quality_notes||"");
   const low=invParseLowConfidence(form.low_confidence_fields??form.raw_response?.low_confidence_fields);
   const lines=Array.isArray(form.line_items)?form.line_items:(Array.isArray(form.raw_response?.line_items)?form.raw_response.line_items:[]);
+  const dueDateSource=invDueDateSource(form);
   useEffect(()=>{
     setForm({...invoice});
     setQualityNotes(invoice.quality_notes||"");
-  },[invoice.id,invoice.parse_status,invoice.updated_at,invoice.low_confidence_fields,invoice.amount_before_vat,invoice.vat_amount,invoice.total_amount]);
+  },[invoice.id,invoice.parse_status,invoice.updated_at,invoice.low_confidence_fields,invoice.amount_before_vat,invoice.vat_amount,invoice.total_amount,invoice.due_date]);
 
   const displayVal=(key,type)=>{
     const v=form[key];
@@ -3079,8 +3091,9 @@ function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
           </div>;
         }
         const unsure=low.includes(f.key);
+        const fieldLabel=f.key==="due_date"?invDueDateLabel(dueDateSource):f.label;
         return<div key={f.key} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderRadius:8,background:unsure?"#fff7ed":"#f9fafb",border:unsure?"1px solid #fdba74":"1px solid #e5e7eb"}}>
-          <div style={{width:140,fontWeight:f.bold?800:600,fontSize:13}}>{f.label}{unsure?" ⚠️":""}</div>
+          <div style={{width:140,fontWeight:f.bold?800:600,fontSize:13}}>{fieldLabel}{unsure?" ⚠️":""}</div>
           {f.type==="expense"?<select value={form.expense_type||"עסקי"} onChange={e=>setField("expense_type","text",e.target.value)} style={{flex:1,minWidth:160,padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",minHeight:44}}>
             <option value="עסקי">עסקי</option>
             <option value="אחר">אחר</option>
@@ -3214,7 +3227,8 @@ function SupplierInvoicesTab({user}){
       }
       const parsed=data.parsed||{};
       const match=invMatchSupplier(parsed.supplier_tax_id,parsed.supplier_name,suppliers);
-      const due=invCalcDueDate(parsed.invoice_date,parsed.payment_terms)||null;
+      const docDue=parsed.due_date&&/^\d{4}-\d{2}-\d{2}/.test(String(parsed.due_date))?String(parsed.due_date).slice(0,10):null;
+      const due=docDue||invCalcDueDate(parsed.invoice_date,parsed.payment_terms)||null;
       const update={
         parse_status:"success",
         parse_error:null,

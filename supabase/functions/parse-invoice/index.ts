@@ -191,7 +191,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 4000,
+        max_tokens: 8000,
         system: SYSTEM_PROMPT,
         messages: [
           {
@@ -214,6 +214,7 @@ serve(async (req) => {
     }
 
     const data = await res.json();
+    const stopReason = data.stop_reason || null;
 
     const text = (data.content || [])
       .filter((b: { type: string }) => b.type === "text")
@@ -221,13 +222,28 @@ serve(async (req) => {
       .join("\n");
     rawAiText = text;
 
+    console.error("parse-invoice AI response meta", {
+      stop_reason: stopReason,
+      usage: data.usage || null,
+      text_length: text.length,
+    });
+    console.error("parse-invoice AI raw text FULL:\n" + text);
+
     const parseResult = tryParseAiJson(text);
     if (!parseResult.ok) {
+      const errMsg = stopReason === "max_tokens"
+        ? "תשובת ה-AI אינה JSON תקין (התשובה נחתכה — stop_reason=max_tokens)"
+        : "תשובת ה-AI אינה JSON תקין";
+      console.error("parse-invoice JSON parse failed", {
+        stop_reason: stopReason,
+        raw_length: parseResult.raw.length,
+      });
       return new Response(
         JSON.stringify({
           success: false,
-          error: "תשובת ה-AI אינה JSON תקין",
+          error: errMsg,
           raw_text: parseResult.raw,
+          stop_reason: stopReason,
           model_used: MODEL,
           parse_duration_ms: Date.now() - started,
           usage: data.usage || null,
@@ -297,6 +313,7 @@ serve(async (req) => {
         success: true,
         parsed,
         model_used: MODEL,
+        stop_reason: stopReason,
         parse_duration_ms: Date.now() - started,
         usage: data.usage || null,
         file_name: file_name || null,
@@ -305,6 +322,7 @@ serve(async (req) => {
     );
   } catch (err) {
     console.error("parse-invoice error:", err);
+    console.error("parse-invoice rawAiText on error FULL:\n" + (rawAiText || ""));
     return new Response(
       JSON.stringify({
         success: false,

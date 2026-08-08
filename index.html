@@ -3293,7 +3293,13 @@ function SupplierInvoicesTab({user}){
     });
 
     const markFailed=async(friendlyMsg,details,extra={})=>{
-      const parseError=[friendlyMsg,details].filter(Boolean).join("\n\n---\n\n").slice(0,50000);
+      const parts=[
+        friendlyMsg,
+        extra.stop_reason?`stop_reason: ${extra.stop_reason}`:null,
+        details,
+      ].filter(Boolean);
+      const parseError=parts.join("\n\n---\n\n").slice(0,100000);
+      console.error("parse-invoice FAILED — saving parse_error + showing banner",{friendlyMsg,stop_reason:extra.stop_reason,detailsLen:(details||"").length,parseError});
       await supabaseClient.from("supplier_invoices").update({
         parse_status:"failed",
         parse_error:parseError,
@@ -3301,30 +3307,55 @@ function SupplierInvoicesTab({user}){
         model_used:extra.model_used??null,
       }).eq("id",uuid);
       await loadAll();
-      setParseFail({message:friendlyMsg,details:parseError,invoiceId:uuid});
+      setParseFail({message:friendlyMsg,details:parseError,invoiceId:uuid,stop_reason:extra.stop_reason||null});
+    };
+
+    const readInvokePayload=async(data,error)=>{
+      if(data&&typeof data==="object")return data;
+      if(!error)return null;
+      try{
+        const ctx=error.context;
+        if(ctx&&typeof ctx.json==="function")return await ctx.json();
+        if(typeof Response!=="undefined"&&ctx instanceof Response)return await ctx.clone().json();
+      }catch(e){console.error("parse-invoice could not read error.context body",e);}
+      return null;
     };
 
     try{
       const file_base64=await toBase64(file);
-      const {data,error}=await supabaseClient.functions.invoke("parse-invoice",{body:{file_base64,media_type:file.type||"image/jpeg",file_name:file.name}});
-      if(error){
+      const invokeResult=await supabaseClient.functions.invoke("parse-invoice",{body:{file_base64,media_type:file.type||"image/jpeg",file_name:file.name}});
+      console.error("parse-invoice invoke raw result",invokeResult);
+      const {data,error}=invokeResult;
+      const payload=await readInvokePayload(data,error);
+      console.error("parse-invoice payload",payload);
+      if(payload?.raw_text)console.error("parse-invoice raw_text FULL:\n"+payload.raw_text);
+
+      if(payload&&payload.success===false){
+        const details=[payload.error,payload.raw_text].filter(Boolean).join("\n\n");
+        await markFailed(
+          "הפרסור נכשל. הרשומה נשמרה בהיסטוריה — אפשר להעתיק את פרטי השגיאה.",
+          details||"פרסור נכשל ללא פרטים",
+          {parse_duration_ms:payload.parse_duration_ms,model_used:payload.model_used,stop_reason:payload.stop_reason}
+        );
+        return;
+      }
+      if(error&&!payload){
         await markFailed("הפרסור נכשל בגלל שגיאת רשת או שרת.",error.message||String(error));
         return;
       }
-      if(!data?.success){
-        const details=[data?.error,data?.raw_text].filter(Boolean).join("\n\n");
-        await markFailed("הפרסור נכשל. הרשומה נשמרה בהיסטוריה עם פרטי השגיאה.",details||"פרסור נכשל",{parse_duration_ms:data?.parse_duration_ms,model_used:data?.model_used});
+      if(!payload?.success){
+        await markFailed("הפרסור נכשל. תשובה לא תקינה מהשרת.",JSON.stringify(payload||{error:error?.message},null,2));
         return;
       }
-      const parsed=data.parsed||{};
+      const parsed=payload.parsed||{};
       const match=invMatchSupplier(parsed.supplier_tax_id,parsed.supplier_name,suppliers);
       const docDue=parsed.due_date&&/^\d{4}-\d{2}-\d{2}/.test(String(parsed.due_date))?String(parsed.due_date).slice(0,10):null;
       const due=docDue||invCalcDueDate(parsed.invoice_date,parsed.payment_terms)||null;
       const update={
         parse_status:"success",
         parse_error:null,
-        model_used:data.model_used||null,
-        parse_duration_ms:data.parse_duration_ms||null,
+        model_used:payload.model_used||null,
+        parse_duration_ms:payload.parse_duration_ms||null,
         raw_response:parsed,
         supplier_name:parsed.supplier_name||null,
         supplier_tax_id:parsed.supplier_tax_id||null,
@@ -3358,6 +3389,7 @@ function SupplierInvoicesTab({user}){
       const {data:row}=await supabaseClient.from("supplier_invoices").select("*").eq("id",uuid).single();
       setCurrent(row);
     }catch(e){
+      console.error("parse-invoice unexpected exception",e);
       await markFailed("הפרסור נכשל בגלל שגיאה בלתי צפויה.",e.message||String(e));
     }finally{setParsing(false);}
   };
@@ -3492,7 +3524,10 @@ function SupplierInvoicesTab({user}){
         </button>
         {parseFail&&<div style={{marginTop:14,padding:14,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,borderRight:"4px solid #dc2626"}}>
           <div style={{fontWeight:800,color:"#991b1b",marginBottom:6}}>❌ {parseFail.message}</div>
-          <div style={{fontSize:13,color:"#7f1d1d",marginBottom:10}}>אפשר לפתוח את הרשומה מההיסטוריה או להעתיק את פרטי השגיאה לאבחון.</div>
+          {parseFail.stop_reason&&<div style={{fontSize:13,color:"#7f1d1d",marginBottom:6}}>stop_reason: <code>{parseFail.stop_reason}</code></div>}
+          <div style={{fontSize:12,color:"#9f1239",marginBottom:8}}>אבחון v2 — אם אתה עדיין רואה alert במקום הבאנר הזה, רענן קשיח (Ctrl+Shift+R).</div>
+          <div style={{fontSize:13,color:"#7f1d1d",marginBottom:10}}>הרשומה בהיסטוריה עם parse_error מלא. אפשר גם להעתיק מכאן.</div>
+          <pre style={{whiteSpace:"pre-wrap",wordBreak:"break-word",fontSize:11,color:"#7f1d1d",maxHeight:160,overflow:"auto",margin:"0 0 10px",background:"#fff",padding:10,borderRadius:8}}>{(parseFail.details||"").slice(0,4000)}</pre>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button type="button" onClick={()=>{invCopyText(parseFail.details||parseFail.message);invToast(setToast,"📋 פרטי השגיאה הועתקו");}} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #dc2626",background:"#fff",color:"#991b1b",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋 העתק פרטי שגיאה</button>
             <button type="button" onClick={()=>setParseFail(null)} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>סגור</button>

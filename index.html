@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8"/>
@@ -2788,6 +2788,690 @@ function EmployeeMessagesDashboard({user}){
       </div>
     </div>
     {view==="new"?<NewMessageForm employees={employees} user={user} onSent={loadHistory}/>:<MessageHistory history={history} employees={employees}/>}
+  </div>;
+}
+
+
+function invToBinaDate(iso){
+  if(!iso)return"";
+  const s=String(iso).slice(0,10);
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m)return s;
+  return`${m[3]}/${m[2]}/${m[1]}`;
+}
+function invFromBinaDate(ddmmyyyy){
+  if(!ddmmyyyy)return null;
+  const s=String(ddmmyyyy).trim();
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+    return null;
+  }
+  return`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+}
+function invNormalizeSupplierName(name){
+  return String(name||"")
+    .replace(/[\"'״׳]/g,"")
+    .replace(/\s+/g," ")
+    .trim()
+    .replace(/\s*(בע\"מ|בעמ)\s*$/i,"")
+    .trim()
+    .toLowerCase();
+}
+function invMatchSupplier(taxId,name,suppliersList){
+  const list=(suppliersList||[]).filter(s=>s.is_active!==false);
+  const digits=String(taxId||"").replace(/\D/g,"");
+  if(digits){
+    const byTax=list.find(s=>String(s.supplier_tax_id||"").replace(/\D/g,"")===digits);
+    if(byTax)return{supplier:byTax,match_method:"tax_id"};
+  }
+  const norm=invNormalizeSupplierName(name);
+  if(norm){
+    const exact=list.filter(s=>invNormalizeSupplierName(s.supplier_name)===norm);
+    if(exact.length===1)return{supplier:exact[0],match_method:"name_exact"};
+    const partial=list.filter(s=>{
+      const n=invNormalizeSupplierName(s.supplier_name);
+      return n&&(n.includes(norm)||norm.includes(n));
+    });
+    if(partial.length===1)return{supplier:partial[0],match_method:"name_partial"};
+  }
+  return null;
+}
+function invCalcDueDate(invoiceDate,paymentTerms){
+  if(!invoiceDate)return null;
+  const d=new Date(String(invoiceDate).slice(0,10)+"T12:00:00");
+  if(isNaN(d.getTime()))return null;
+  const terms=String(paymentTerms||"");
+  const t=terms.trim();
+  if(/מזומן|שוטף\s*$/i.test(t)||t==="שוטף"){
+    return d.toISOString().slice(0,10);
+  }
+  const m=terms.match(/שוטף\s*\+?\s*(\d+)/);
+  if(!m)return null;
+  const days=Number(m[1]);
+  const end=new Date(d.getFullYear(),d.getMonth()+1,0);
+  end.setDate(end.getDate()+days);
+  return end.toISOString().slice(0,10);
+}
+function invCopyText(text){
+  return navigator.clipboard.writeText(String(text??""));
+}
+function invToast(setToast,msg){
+  setToast(msg);
+  setTimeout(()=>setToast(null),2000);
+}
+function invFmtNum(n){
+  if(n===null||n===undefined||n==="")return"";
+  const x=Number(n);
+  if(isNaN(x))return String(n);
+  return x.toFixed(2);
+}
+const INV_FIELD_ORDER=[
+  {key:"bina_supplier_code",label:"קוד ספק",type:"text"},
+  {key:"supplier_name",label:"שם ספק",type:"text"},
+  {key:"supplier_address",label:"כתובת",type:"text"},
+  {key:"supplier_city",label:"עיר",type:"text"},
+  {key:"allocation_number",label:"מס.הקצאה",type:"text"},
+  {key:"invoice_number",label:"מספר",type:"text"},
+  {key:"invoice_date",label:"תאריך ח\"ן",type:"date"},
+  {key:"vat_date",label:"תאריך מע\"מ",type:"date"},
+  {key:"expense_type",label:"סוג הוצאה",type:"expense"},
+  {key:"amount_before_vat",label:"סה\"כ לפני מע\"מ",type:"number"},
+  {key:"discount_percent",label:"הנחה %",type:"number"},
+  {key:"vat_rate",label:"מע\"מ %",type:"number"},
+  {key:"vat_amount",label:"מע\"מ",type:"number"},
+  {key:"total_amount",label:"סה\"כ סופי",type:"number",bold:true},
+  {key:"payment_terms",label:"תנאי תשלום",type:"text"},
+  {key:"due_date",label:"תאריך פרעון (הצעה)",type:"date"},
+];
+
+function SupplierInvoiceResult({invoice,suppliers,onUpdated,setToast}){
+  const [form,setForm]=useState(()=>({...invoice}));
+  const [mapCode,setMapCode]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [qualityNotes,setQualityNotes]=useState(invoice.quality_notes||"");
+  const low=Array.isArray(form.low_confidence_fields)?form.low_confidence_fields:[];
+  const lines=Array.isArray(form.line_items)?form.line_items:[];
+  useEffect(()=>{setForm({...invoice});setQualityNotes(invoice.quality_notes||"");},[invoice.id]);
+
+  const displayVal=(key,type)=>{
+    const v=form[key];
+    if(type==="date")return invToBinaDate(v);
+    if(type==="number")return v===null||v===undefined?"":String(v);
+    return v??"";
+  };
+  const setField=(key,type,raw)=>{
+    let val=raw;
+    if(type==="date")val=invFromBinaDate(raw);
+    else if(type==="number")val=raw===""?null:Number(raw);
+    setForm(f=>({...f,[key]:val}));
+  };
+  const buildCopyAll=()=>{
+    const linesTxt=lines.map(l=>`תאור: ${l.description||""} | כמות: ${l.quantity??""} | מחיר: ${invFmtNum(l.unit_price)} | סה"כ: ${invFmtNum(l.total)}`).join("\n");
+    return[
+      `קוד ספק: ${form.bina_supplier_code||""}`,
+      `שם ספק: ${form.supplier_name||""}`,
+      `כתובת: ${form.supplier_address||""}`,
+      `עיר: ${form.supplier_city||""}`,
+      `מס.הקצאה: ${form.allocation_number||""}`,
+      `מספר: ${form.invoice_number||""}`,
+      `תאריך ח"ן: ${invToBinaDate(form.invoice_date)}`,
+      `תאריך מע"מ: ${invToBinaDate(form.vat_date)}`,
+      `סוג הוצאה: ${form.expense_type||"עסקי"}`,
+      "---",
+      linesTxt||"תאור: ",
+      "---",
+      `סה"כ לפני מע"מ: ${invFmtNum(form.amount_before_vat)}`,
+      `הנחה: ${form.discount_percent??0}%`,
+      `מע"מ ${form.vat_rate??18}%: ${invFmtNum(form.vat_amount)}`,
+      `סה"כ סופי: ${invFmtNum(form.total_amount)}`,
+      `תנאי תשלום: ${form.payment_terms||""}`,
+      `תאריך פרעון: ${invToBinaDate(form.due_date)}`,
+    ].join("\n");
+  };
+  const saveEdits=async()=>{
+    setSaving(true);
+    try{
+      const payload={
+        bina_supplier_code:form.bina_supplier_code||null,
+        supplier_name:form.supplier_name||null,
+        supplier_address:form.supplier_address||null,
+        supplier_city:form.supplier_city||null,
+        supplier_phone:form.supplier_phone||null,
+        supplier_tax_id:form.supplier_tax_id||null,
+        allocation_number:form.allocation_number||null,
+        invoice_number:form.invoice_number||null,
+        invoice_date:form.invoice_date||null,
+        vat_date:form.vat_date||null,
+        expense_type:form.expense_type||"עסקי",
+        amount_before_vat:form.amount_before_vat,
+        discount_percent:form.discount_percent,
+        discount_amount:form.discount_amount,
+        vat_rate:form.vat_rate,
+        vat_amount:form.vat_amount,
+        total_amount:form.total_amount,
+        payment_terms:form.payment_terms||null,
+        due_date:form.due_date||null,
+        line_items:form.line_items||[],
+      };
+      const {error}=await supabaseClient.from("supplier_invoices").update(payload).eq("id",invoice.id);
+      if(error)throw error;
+      invToast(setToast,"✅ נשמר");
+      onUpdated?.();
+    }catch(e){window.alert("שגיאה בשמירה: "+(e.message||e));}
+    finally{setSaving(false);}
+  };
+  const setQuality=async(q)=>{
+    const payload={parse_quality:q,reviewed_at:new Date().toISOString(),quality_notes:(q==="perfect"?null:(qualityNotes||null))};
+    const {error}=await supabaseClient.from("supplier_invoices").update(payload).eq("id",invoice.id);
+    if(error){window.alert(error.message);return;}
+    setForm(f=>({...f,...payload}));
+    onUpdated?.();
+  };
+  const toggleEntered=async(checked)=>{
+    const payload={entered_in_bina:checked,entered_in_bina_at:checked?new Date().toISOString():null};
+    const {error}=await supabaseClient.from("supplier_invoices").update(payload).eq("id",invoice.id);
+    if(error){window.alert(error.message);return;}
+    setForm(f=>({...f,...payload}));
+    onUpdated?.();
+  };
+  const saveMapping=async()=>{
+    const code=String(mapCode||"").trim();
+    if(!code){window.alert("נא להזין קוד ספק");return;}
+    try{
+      const {data,error}=await supabaseClient.from("bina_suppliers").insert({
+        bina_supplier_code:code,
+        supplier_name:form.supplier_name||"ספק",
+        supplier_tax_id:form.supplier_tax_id||null,
+        address:form.supplier_address||null,
+        city:form.supplier_city||null,
+        phone:form.supplier_phone||null,
+        default_expense_type:form.expense_type||"עסקי",
+        default_payment_terms:form.payment_terms||null,
+      }).select().single();
+      if(error){
+        if(String(error.message||"").includes("duplicate")||error.code==="23505"){
+          window.alert(`קוד ספק ${code} כבר משויך לספק אחר`);
+          return;
+        }
+        throw error;
+      }
+      await supabaseClient.from("supplier_invoices").update({
+        matched_supplier_id:data.id,
+        bina_supplier_code:code,
+        match_method:"manual",
+      }).eq("id",invoice.id);
+      setForm(f=>({...f,matched_supplier_id:data.id,bina_supplier_code:code,match_method:"manual"}));
+      invToast(setToast,"✅ מיפוי נשמר");
+      onUpdated?.();
+    }catch(e){window.alert(e.message||String(e));}
+  };
+  const matched=!!form.bina_supplier_code;
+  const partial=form.match_method==="name_partial";
+  const bannerBg=matched?(partial?"#fff7ed":"#ecfdf5"):"#fff7ed";
+  const bannerBorder=matched?(partial?"#fdba74":"#6ee7b7"):"#fdba74";
+
+  return<div style={{marginTop:16}}>
+    <div style={{background:bannerBg,border:`1px solid ${bannerBorder}`,borderRadius:12,padding:14,marginBottom:14}}>
+      {matched?<>
+        <div style={{fontWeight:800,fontSize:15}}>{partial?"⚠️ ספק מזוהה (לפי שם חלקי — אמת)":"✅ ספק מזוהה"}: {form.supplier_name}</div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,color:"#6b7280"}}>קוד ספק:</span>
+          <span style={{fontSize:28,fontWeight:900,color:"#0d9488"}}>{form.bina_supplier_code}</span>
+          <button type="button" onClick={()=>{invCopyText(form.bina_supplier_code);invToast(setToast,"📋 הועתק");}} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #0d9488",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋</button>
+          <span style={{fontSize:12,color:"#6b7280"}}>(זוהה לפי {form.match_method==="tax_id"?"ח.פ":form.match_method==="name_exact"?"שם":form.match_method==="name_partial"?"שם חלקי":form.match_method||"—"})</span>
+        </div>
+      </>:<>
+        <div style={{fontWeight:800}}>⚠️ ספק לא מזוהה במיפוי</div>
+        <div style={{marginTop:6,fontSize:14}}>{form.supplier_name||"—"} | ח.פ {form.supplier_tax_id||"—"}</div>
+        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:13}}>מה קוד הספק בבינה?</span>
+          <input value={mapCode} onChange={e=>setMapCode(e.target.value)} style={{padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",width:100,fontFamily:"inherit",minHeight:44}}/>
+          <button type="button" onClick={saveMapping} style={{padding:"10px 14px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>💾 שמור מיפוי</button>
+        </div>
+        <details style={{marginTop:10}}>
+          <summary style={{cursor:"pointer",fontWeight:600,color:"#0d9488"}}>➕ ספק חדש בבינה (העתקה)</summary>
+          <pre style={{background:"#fff",padding:10,borderRadius:8,fontSize:12,whiteSpace:"pre-wrap",marginTop:8}}>{`שם: ${form.supplier_name||""}\nח.פ: ${form.supplier_tax_id||""}\nכתובת: ${form.supplier_address||""}\nעיר: ${form.supplier_city||""}\nטלפון: ${form.supplier_phone||""}`}</pre>
+          <button type="button" onClick={()=>{invCopyText(`שם: ${form.supplier_name||""}\nח.פ: ${form.supplier_tax_id||""}\nכתובת: ${form.supplier_address||""}\nעיר: ${form.supplier_city||""}\nטלפון: ${form.supplier_phone||""}`);invToast(setToast,"📋 הועתק");}} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋 העתק פרטי ספק</button>
+        </details>
+      </>}
+    </div>
+
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {INV_FIELD_ORDER.map(f=>{
+        const unsure=low.includes(f.key);
+        return<div key={f.key} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderRadius:8,background:unsure?"#fff7ed":"#f9fafb",border:unsure?"1px solid #fdba74":"1px solid #e5e7eb"}}>
+          <div style={{width:140,fontWeight:f.bold?800:600,fontSize:13}}>{f.label}{unsure?" ⚠️":""}</div>
+          {f.type==="expense"?<select value={form.expense_type||"עסקי"} onChange={e=>setField("expense_type","text",e.target.value)} style={{flex:1,minWidth:160,padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",minHeight:44}}>
+            <option value="עסקי">עסקי</option>
+            <option value="אחר">אחר</option>
+          </select>:<input value={displayVal(f.key,f.type)} onChange={e=>setField(f.key,f.type,e.target.value)} style={{flex:1,minWidth:160,padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",fontWeight:f.bold?800:400,minHeight:44}}/>}
+          <button type="button" title={unsure?"ה-AI לא היה בטוח בשדה הזה, כדאי לאמת":"העתק"} onClick={()=>{invCopyText(displayVal(f.key,f.type));invToast(setToast,"📋 הועתק");}} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋</button>
+        </div>;})}
+    </div>
+
+    <div style={{marginTop:16}}>
+      <div style={{fontWeight:700,marginBottom:8}}>שורות פירוט</div>
+      {lines.length===0?<div style={{color:"#9ca3af",fontSize:13}}>לא זוהו שורות פירוט</div>:
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{background:"#f3f4f6"}}>
+              <th style={{padding:8,textAlign:"right"}}>תאור</th><th style={{padding:8}}>כמות</th><th style={{padding:8}}>מחיר</th><th style={{padding:8}}>הנחה%</th><th style={{padding:8}}>סה״כ</th><th style={{padding:8}}></th>
+            </tr></thead>
+            <tbody>
+              {lines.map((l,i)=><tr key={i} style={{borderTop:"1px solid #e5e7eb"}}>
+                <td style={{padding:8}}>{l.description||"—"}</td>
+                <td style={{padding:8,textAlign:"center"}}>{l.quantity??"—"}</td>
+                <td style={{padding:8,textAlign:"center"}}>{invFmtNum(l.unit_price)}</td>
+                <td style={{padding:8,textAlign:"center"}}>{l.discount_percent??"—"}</td>
+                <td style={{padding:8,textAlign:"center"}}>{invFmtNum(l.total)}</td>
+                <td style={{padding:8}}><button type="button" onClick={()=>{invCopyText(`${l.description||""}\t${l.quantity??""}\t${l.unit_price??""}\t${l.total??""}`);invToast(setToast,"📋 הועתק");}} style={{border:"1px solid #e5e7eb",background:"#fff",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋</button></td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+    </div>
+
+    {(form.ai_notes||form.notes)&&<div style={{marginTop:14,padding:12,background:"#fef3c7",borderRadius:10,borderRight:"4px solid #f59e0b",color:"#92400e",fontSize:13,whiteSpace:"pre-wrap"}}>
+      {(form.ai_notes||form.notes)}
+    </div>}
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
+      <button type="button" onClick={()=>{invCopyText(buildCopyAll());invToast(setToast,"✅ הועתק");}} style={{padding:"12px 16px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📋 העתק הכל</button>
+      <button type="button" onClick={saveEdits} disabled={saving} style={{padding:"12px 16px",borderRadius:10,border:"1px solid #0d9488",background:"#fff",color:"#0d9488",fontWeight:700,cursor:saving?"wait":"pointer",fontFamily:"inherit",minHeight:44}}>💾 שמור תיקונים</button>
+    </div>
+
+    <div style={{marginTop:18,padding:14,background:"#f9fafb",borderRadius:12}}>
+      <div style={{fontWeight:700,marginBottom:10}}>איך היה הפרסור?</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" onClick={()=>setQuality("perfect")} style={{padding:"10px 14px",borderRadius:8,border:form.parse_quality==="perfect"?"2px solid #16a34a":"1px solid #e5e7eb",background:form.parse_quality==="perfect"?"#dcfce7":"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>✅ מושלם</button>
+        <button type="button" onClick={()=>setQuality("minor_errors")} style={{padding:"10px 14px",borderRadius:8,border:form.parse_quality==="minor_errors"?"2px solid #d97706":"1px solid #e5e7eb",background:form.parse_quality==="minor_errors"?"#ffedd5":"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>⚠️ שגיאות קלות</button>
+        <button type="button" onClick={()=>setQuality("major_errors")} style={{padding:"10px 14px",borderRadius:8,border:form.parse_quality==="major_errors"?"2px solid #dc2626":"1px solid #e5e7eb",background:form.parse_quality==="major_errors"?"#fee2e2":"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>❌ שגיאות חמורות</button>
+      </div>
+      {(form.parse_quality==="minor_errors"||form.parse_quality==="major_errors"||qualityNotes)&&<textarea value={qualityNotes} onChange={e=>setQualityNotes(e.target.value)} onBlur={()=>{if(form.parse_quality&&form.parse_quality!=="perfect")setQuality(form.parse_quality);}} placeholder="מה היה שגוי?" style={{width:"100%",marginTop:10,padding:10,borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",minHeight:70}}/>}
+      <label style={{display:"flex",alignItems:"center",gap:8,marginTop:12,cursor:"pointer",fontSize:14}}>
+        <input type="checkbox" checked={!!form.entered_in_bina} onChange={e=>toggleEntered(e.target.checked)}/> הוזן בבינה
+      </label>
+    </div>
+  </div>;
+}
+
+function SupplierInvoicesTab({user}){
+  const [sub,setSub]=useState("parse");
+  const [toast,setToast]=useState(null);
+  const [suppliers,setSuppliers]=useState([]);
+  const [invoices,setInvoices]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [file,setFile]=useState(null);
+  const [previewUrl,setPreviewUrl]=useState(null);
+  const [parsing,setParsing]=useState(false);
+  const [current,setCurrent]=useState(null);
+  const [histQ,setHistQ]=useState("");
+  const [histQuality,setHistQuality]=useState("");
+  const [histOnlyPending,setHistOnlyPending]=useState(false);
+  const [histPage,setHistPage]=useState(0);
+  const [viewModal,setViewModal]=useState(null);
+  const [supForm,setSupForm]=useState(null);
+  const [supSearch,setSupSearch]=useState("");
+  const fileRef=useRef(null);
+  const camRef=useRef(null);
+
+  const loadAll=async()=>{
+    try{
+      const [s,inv]=await Promise.all([
+        sb("bina_suppliers?order=supplier_name.asc"),
+        sb("supplier_invoices?order=created_at.desc&limit=200"),
+      ]);
+      setSuppliers(s||[]);
+      setInvoices(inv||[]);
+    }catch(e){console.error(e);}
+    finally{setLoading(false);}
+  };
+  useEffect(()=>{loadAll();},[]);
+
+  const stats=useMemo(()=>{
+    const success=invoices.filter(i=>i.parse_status==="success");
+    const reviewed=invoices.filter(i=>i.parse_quality);
+    const perfect=invoices.filter(i=>i.parse_quality==="perfect");
+    const minor=invoices.filter(i=>i.parse_quality==="minor_errors").length;
+    const major=invoices.filter(i=>i.parse_quality==="major_errors").length;
+    const failed=invoices.filter(i=>i.parse_status==="failed").length;
+    const pct=reviewed.length?Math.round(perfect.length/reviewed.length*100):null;
+    return{success:success.length,reviewed:reviewed.length,perfect:perfect.length,minor,major,failed,pct};
+  },[invoices]);
+
+  const onPickFile=(f)=>{
+    if(!f)return;
+    if(f.size>5*1024*1024)window.alert("הקובץ גדול, הפרסור עלול להיכשל. מומלץ לצלם מחדש באיכות נמוכה יותר.");
+    setFile(f);
+    if(previewUrl)URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(f.type.startsWith("image/")?URL.createObjectURL(f):null);
+  };
+
+  const runParse=async()=>{
+    if(!file||parsing)return;
+    setParsing(true);
+    setCurrent(null);
+    const uuid=crypto.randomUUID();
+    const safeName=String(file.name||"invoice").replace(/[^\w.\u0590-\u05FF-]+/g,"_");
+    const year=new Date().getFullYear();
+    const path=`supplier-invoices/${year}/${uuid}_${safeName}`;
+    let filePath=null;
+    let notesExtra=null;
+    try{
+      const {error:upErr}=await supabaseClient.storage.from(STORAGE_BUCKET).upload(path,file,{cacheControl:"3600",upsert:false});
+      if(upErr){notesExtra="העלאה ל-storage נכשלה: "+upErr.message;console.warn(upErr);}
+      else filePath=path;
+    }catch(e){notesExtra="העלאה ל-storage נכשלה: "+(e.message||e);}
+
+    try{
+      await supabaseClient.from("supplier_invoices").insert({
+        id:uuid,
+        created_by_name:user?.name||user?.full_name||null,
+        file_path:filePath,
+        file_name:file.name,
+        file_type:file.type,
+        file_size_kb:Math.round(file.size/1024),
+        parse_status:"pending",
+        notes:notesExtra,
+      });
+    }catch(e){window.alert("שגיאה ביצירת רשומה: "+(e.message||e));setParsing(false);return;}
+
+    const toBase64=(f)=>new Promise((resolve,reject)=>{
+      const r=new FileReader();
+      r.onload=()=>resolve(String(r.result).split(",")[1]);
+      r.onerror=reject;
+      r.readAsDataURL(f);
+    });
+
+    try{
+      const file_base64=await toBase64(file);
+      const {data,error}=await supabaseClient.functions.invoke("parse-invoice",{body:{file_base64,media_type:file.type||"image/jpeg",file_name:file.name}});
+      if(error)throw error;
+      if(!data?.success){
+        await supabaseClient.from("supplier_invoices").update({parse_status:"failed",parse_error:data?.error||"פרסור נכשל",parse_duration_ms:data?.parse_duration_ms||null,model_used:data?.model_used||null}).eq("id",uuid);
+        await loadAll();
+        window.alert("פרסור נכשל: "+(data?.error||"שגיאה"));
+        return;
+      }
+      const parsed=data.parsed||{};
+      const match=invMatchSupplier(parsed.supplier_tax_id,parsed.supplier_name,suppliers);
+      const due=invCalcDueDate(parsed.invoice_date,parsed.payment_terms)||null;
+      const update={
+        parse_status:"success",
+        parse_error:null,
+        model_used:data.model_used||null,
+        parse_duration_ms:data.parse_duration_ms||null,
+        raw_response:parsed,
+        supplier_name:parsed.supplier_name||null,
+        supplier_tax_id:parsed.supplier_tax_id||null,
+        supplier_address:parsed.supplier_address||null,
+        supplier_city:parsed.supplier_city||null,
+        supplier_phone:parsed.supplier_phone||null,
+        matched_supplier_id:match?.supplier?.id||null,
+        bina_supplier_code:match?.supplier?.bina_supplier_code||null,
+        match_method:match?.match_method||null,
+        allocation_number:parsed.allocation_number||null,
+        invoice_number:parsed.invoice_number||null,
+        invoice_date:parsed.invoice_date||null,
+        vat_date:parsed.vat_date||parsed.invoice_date||null,
+        payment_terms:parsed.payment_terms||null,
+        due_date:due,
+        expense_type:"עסקי",
+        currency:parsed.currency||"ILS",
+        amount_before_vat:parsed.amount_before_vat??null,
+        discount_percent:parsed.discount_percent??null,
+        discount_amount:parsed.discount_amount??null,
+        amount_after_discount:parsed.amount_after_discount??null,
+        vat_rate:parsed.vat_rate??null,
+        vat_amount:parsed.vat_amount??null,
+        total_amount:parsed.total_amount??null,
+        line_items:parsed.line_items||[],
+        low_confidence_fields:parsed.low_confidence_fields||[],
+        ai_notes:parsed.notes||null,
+      };
+      await supabaseClient.from("supplier_invoices").update(update).eq("id",uuid);
+      await loadAll();
+      const {data:row}=await supabaseClient.from("supplier_invoices").select("*").eq("id",uuid).single();
+      setCurrent(row);
+    }catch(e){
+      await supabaseClient.from("supplier_invoices").update({parse_status:"failed",parse_error:e.message||String(e)}).eq("id",uuid);
+      await loadAll();
+      window.alert("שגיאה: "+(e.message||e));
+    }finally{setParsing(false);}
+  };
+
+  const filteredHist=useMemo(()=>{
+    let list=invoices;
+    const q=histQ.trim().toLowerCase();
+    if(q)list=list.filter(i=>[i.supplier_name,i.invoice_number,i.supplier_tax_id,i.bina_supplier_code].some(x=>String(x||"").toLowerCase().includes(q)));
+    if(histQuality)list=list.filter(i=>(histQuality==="unreviewed"?!i.parse_quality:i.parse_quality===histQuality));
+    if(histOnlyPending)list=list.filter(i=>!i.entered_in_bina);
+    return list;
+  },[invoices,histQ,histQuality,histOnlyPending]);
+  const pageSize=25;
+  const pageItems=filteredHist.slice(histPage*pageSize,(histPage+1)*pageSize);
+
+  const openFile=async(inv)=>{
+    if(!inv.file_path){window.alert("אין קובץ מקור");return;}
+    try{
+      const {data,error}=await supabaseClient.storage.from(STORAGE_BUCKET).createSignedUrl(inv.file_path,3600);
+      if(error)throw error;
+      window.open(data.signedUrl,"_blank");
+    }catch(e){window.alert(e.message||String(e));}
+  };
+  const deleteInv=async(inv)=>{
+    if(!window.confirm("למחוק חשבונית זו?"))return;
+    try{
+      if(inv.file_path)await supabaseClient.storage.from(STORAGE_BUCKET).remove([inv.file_path]);
+      await supabaseClient.from("supplier_invoices").delete().eq("id",inv.id);
+      if(current?.id===inv.id)setCurrent(null);
+      await loadAll();
+    }catch(e){window.alert(e.message||String(e));}
+  };
+
+  const filteredSup=useMemo(()=>{
+    const q=supSearch.trim().toLowerCase();
+    if(!q)return suppliers;
+    return suppliers.filter(s=>[s.supplier_name,s.bina_supplier_code,s.supplier_tax_id].some(x=>String(x||"").toLowerCase().includes(q)));
+  },[suppliers,supSearch]);
+
+  const saveSupplier=async()=>{
+    if(!supForm)return;
+    const code=String(supForm.bina_supplier_code||"").trim();
+    const name=String(supForm.supplier_name||"").trim();
+    if(!code||!name){window.alert("קוד ספק ושם ספק הם שדות חובה");return;}
+    const payload={
+      bina_supplier_code:code,
+      supplier_name:name,
+      supplier_tax_id:supForm.supplier_tax_id||null,
+      address:supForm.address||null,
+      city:supForm.city||null,
+      phone:supForm.phone||null,
+      fax:supForm.fax||null,
+      email:supForm.email||null,
+      default_expense_type:supForm.default_expense_type||"עסקי",
+      default_payment_terms:supForm.default_payment_terms||null,
+      is_active:supForm.is_active!==false,
+      notes:supForm.notes||null,
+      updated_at:new Date().toISOString(),
+    };
+    try{
+      if(supForm.id){
+        const {error}=await supabaseClient.from("bina_suppliers").update(payload).eq("id",supForm.id);
+        if(error)throw error;
+      }else{
+        const {error}=await supabaseClient.from("bina_suppliers").insert(payload);
+        if(error){
+          if(error.code==="23505"||String(error.message||"").includes("duplicate")){
+            const exist=suppliers.find(s=>s.bina_supplier_code===code);
+            window.alert(`קוד ספק ${code} כבר משויך ל־${exist?.supplier_name||"ספק אחר"}`);
+            return;
+          }
+          throw error;
+        }
+      }
+      setSupForm(null);
+      await loadAll();
+    }catch(e){window.alert(e.message||String(e));}
+  };
+  const deleteSupplier=async(s)=>{
+    if(!window.confirm(`למחוק את הספק ${s.supplier_name}?`))return;
+    try{
+      const {error}=await supabaseClient.from("bina_suppliers").delete().eq("id",s.id);
+      if(error)throw error;
+      await loadAll();
+    }catch(e){window.alert(e.message||String(e));}
+  };
+
+  const pctColor=stats.pct==null?"#6b7280":stats.pct>=90?"#16a34a":stats.pct>=75?"#d97706":"#dc2626";
+  const qualityBadge=(q,status)=>{
+    if(status==="failed")return{t:"💥 נכשל",c:"#6b7280",bg:"#f3f4f6"};
+    if(!q)return{t:"⏳ לא נבדק",c:"#6b7280",bg:"#f3f4f6"};
+    if(q==="perfect")return{t:"✅ מושלם",c:"#166534",bg:"#dcfce7"};
+    if(q==="minor_errors")return{t:"⚠️ קלות",c:"#92400e",bg:"#ffedd5"};
+    return{t:"❌ חמורות",c:"#991b1b",bg:"#fee2e2"};
+  };
+
+  if(loading)return<div style={{padding:30,textAlign:"center"}}>טוען...</div>;
+
+  return<div style={{padding:20,maxWidth:1100,margin:"0 auto",direction:"rtl"}}>
+    {toast&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#0f172a",color:"#fff",padding:"10px 18px",borderRadius:999,zIndex:2000,fontWeight:700}}>{toast}</div>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <h1 style={{margin:0,fontSize:22}}>🧾 חשבוניות ספקים</h1>
+      <div style={{display:"flex",gap:8}}>
+        <button type="button" onClick={()=>setSub("parse")} style={{padding:"10px 14px",borderRadius:8,border:sub==="parse"?"2px solid #0d9488":"1px solid #e5e7eb",background:sub==="parse"?"#0d9488":"#fff",color:sub==="parse"?"#fff":"#374151",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📸 פרסור</button>
+        <button type="button" onClick={()=>setSub("suppliers")} style={{padding:"10px 14px",borderRadius:8,border:sub==="suppliers"?"2px solid #0d9488":"1px solid #e5e7eb",background:sub==="suppliers"?"#0d9488":"#fff",color:sub==="suppliers"?"#fff":"#374151",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>🗂️ ספקים</button>
+      </div>
+    </div>
+
+    {sub==="parse"&&<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:16}}>
+        <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:14}}><div style={{fontSize:12,color:"#6b7280"}}>סה״כ פורסרו</div><div style={{fontSize:24,fontWeight:900}}>{stats.success}</div></div>
+        <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:14}}><div style={{fontSize:12,color:"#6b7280"}}>נבדקו</div><div style={{fontSize:24,fontWeight:900}}>{stats.reviewed}</div></div>
+        <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:14}}><div style={{fontSize:12,color:"#6b7280"}}>✅ מושלם</div><div style={{fontSize:24,fontWeight:900}}>{stats.perfect}</div></div>
+        <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:14}}><div style={{fontSize:12,color:"#6b7280"}}>📊 אחוז הצלחה</div><div style={{fontSize:24,fontWeight:900,color:pctColor}}>{stats.pct==null?"—":stats.pct+"%"}</div></div>
+      </div>
+      <div style={{fontSize:12,color:"#6b7280",marginBottom:16}}>⚠️ שגיאות קלות: {stats.minor} | ❌ שגיאות חמורות: {stats.major} | 💥 פרסור נכשל: {stats.failed}</div>
+
+      <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:16,marginBottom:16}}>
+        <div style={{fontWeight:700,marginBottom:10}}>העלאה ופרסור</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          <button type="button" onClick={()=>fileRef.current?.click()} style={{padding:"12px 16px",borderRadius:10,border:"1px dashed #0d9488",background:"#f0fdfa",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📎 בחר קובץ (תמונה/PDF)</button>
+          <button type="button" onClick={()=>camRef.current?.click()} style={{padding:"12px 16px",borderRadius:10,border:"1px solid #0d9488",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📷 צלם חשבונית</button>
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={e=>onPickFile(e.target.files?.[0])}/>
+          <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>onPickFile(e.target.files?.[0])}/>
+        </div>
+        {file&&<div style={{marginBottom:12,fontSize:13}}>
+          {previewUrl?<img src={previewUrl} alt="preview" style={{maxWidth:220,borderRadius:8,display:"block",marginBottom:8}}/>:<div style={{fontSize:32}}>📄</div>}
+          {file.name} · {Math.round(file.size/1024)}KB
+        </div>}
+        <button type="button" disabled={!file||parsing} onClick={runParse} style={{padding:"12px 18px",borderRadius:10,border:"none",background:!file||parsing?"#94a3b8":"#0d9488",color:"#fff",fontWeight:700,cursor:!file||parsing?"not-allowed":"pointer",fontFamily:"inherit",minHeight:44}}>
+          {parsing?"🔍 מפרסר... (בדרך כלל 5-15 שניות)":"🔍 פרסר חשבונית"}
+        </button>
+      </div>
+
+      {current&&<div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:16,marginBottom:16}}>
+        <div style={{fontWeight:800,marginBottom:8}}>תוצאת הפרסור</div>
+        <SupplierInvoiceResult invoice={current} suppliers={suppliers} setToast={setToast} onUpdated={async()=>{await loadAll();const {data}=await supabaseClient.from("supplier_invoices").select("*").eq("id",current.id).single();if(data)setCurrent(data);}}/>
+      </div>}
+
+      <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:16}}>
+        <div style={{fontWeight:800,marginBottom:10}}>היסטוריה</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          <input value={histQ} onChange={e=>{setHistQ(e.target.value);setHistPage(0);}} placeholder="חיפוש ספק / מספר / ח.פ" style={{padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",flex:1,minWidth:180,fontFamily:"inherit",minHeight:44}}/>
+          <select value={histQuality} onChange={e=>{setHistQuality(e.target.value);setHistPage(0);}} style={{padding:"10px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",minHeight:44}}>
+            <option value="">כל האיכויות</option>
+            <option value="perfect">מושלם</option>
+            <option value="minor_errors">קלות</option>
+            <option value="major_errors">חמורות</option>
+            <option value="unreviewed">לא נבדק</option>
+          </select>
+          <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13}}><input type="checkbox" checked={histOnlyPending} onChange={e=>{setHistOnlyPending(e.target.checked);setHistPage(0);}}/> רק שלא הוזנו בבינה</label>
+        </div>
+        <div style={{display:"none"}} className="inv-hist-desktop"/>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:720}}>
+            <thead><tr style={{background:"#f3f4f6"}}>
+              <th style={{padding:8,textAlign:"right"}}>תאריך</th><th style={{padding:8,textAlign:"right"}}>ספק</th><th style={{padding:8}}>קוד</th><th style={{padding:8}}>מספר</th><th style={{padding:8}}>תאריך חש׳</th><th style={{padding:8}}>סה״כ</th><th style={{padding:8}}>איכות</th><th style={{padding:8}}>בבינה</th><th style={{padding:8}}>פעולות</th>
+            </tr></thead>
+            <tbody>
+              {pageItems.map(inv=>{
+                const b=qualityBadge(inv.parse_quality,inv.parse_status);
+                return<tr key={inv.id} style={{borderTop:"1px solid #e5e7eb"}}>
+                  <td style={{padding:8}}>{new Date(inv.created_at).toLocaleString("he-IL")}</td>
+                  <td style={{padding:8}}>{inv.supplier_name||"—"}</td>
+                  <td style={{padding:8,textAlign:"center"}}>{inv.bina_supplier_code||"—"}</td>
+                  <td style={{padding:8,textAlign:"center"}}>{inv.invoice_number||"—"}</td>
+                  <td style={{padding:8,textAlign:"center"}}>{invToBinaDate(inv.invoice_date)||"—"}</td>
+                  <td style={{padding:8,textAlign:"center"}}>{invFmtNum(inv.total_amount)||"—"}</td>
+                  <td style={{padding:8}}><span style={{padding:"3px 8px",borderRadius:999,background:b.bg,color:b.c,fontSize:12,fontWeight:700}}>{b.t}</span></td>
+                  <td style={{padding:8,textAlign:"center"}}>{inv.entered_in_bina?"✅":"—"}</td>
+                  <td style={{padding:8}}>
+                    <div style={{display:"flex",gap:4}}>
+                      <button type="button" onClick={()=>setViewModal(inv)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>👁️</button>
+                      <button type="button" onClick={()=>openFile(inv)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📄</button>
+                      <button type="button" onClick={()=>deleteInv(inv)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>🗑️</button>
+                    </div>
+                  </td>
+                </tr>;})}
+            </tbody>
+          </table>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:12,alignItems:"center"}}>
+          <button type="button" disabled={histPage===0} onClick={()=>setHistPage(p=>p-1)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>הקודם</button>
+          <span style={{fontSize:12,color:"#6b7280"}}>עמוד {histPage+1} / {Math.max(1,Math.ceil(filteredHist.length/pageSize))}</span>
+          <button type="button" disabled={(histPage+1)*pageSize>=filteredHist.length} onClick={()=>setHistPage(p=>p+1)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>הבא</button>
+        </div>
+      </div>
+    </>}
+
+    {sub==="suppliers"&&<div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:12,padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}>
+        <input value={supSearch} onChange={e=>setSupSearch(e.target.value)} placeholder="חיפוש שם / קוד / ח.פ" style={{padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",flex:1,minWidth:180,fontFamily:"inherit",minHeight:44}}/>
+        <button type="button" onClick={()=>setSupForm({bina_supplier_code:"",supplier_name:"",supplier_tax_id:"",address:"",city:"",phone:"",fax:"",email:"",default_expense_type:"עסקי",default_payment_terms:"",is_active:true,notes:""})} style={{padding:"10px 14px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>➕ ספק חדש</button>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{background:"#f3f4f6"}}>
+            <th style={{padding:8,textAlign:"right"}}>קוד</th><th style={{padding:8,textAlign:"right"}}>שם</th><th style={{padding:8}}>ח.פ</th><th style={{padding:8}}>עיר</th><th style={{padding:8}}>טלפון</th><th style={{padding:8}}>פעיל</th><th style={{padding:8}}>פעולות</th>
+          </tr></thead>
+          <tbody>
+            {filteredSup.map(s=><tr key={s.id} style={{borderTop:"1px solid #e5e7eb"}}>
+              <td style={{padding:8,fontWeight:800}}>{s.bina_supplier_code}</td>
+              <td style={{padding:8}}>{s.supplier_name}</td>
+              <td style={{padding:8,textAlign:"center"}}>{s.supplier_tax_id||"—"}</td>
+              <td style={{padding:8,textAlign:"center"}}>{s.city||"—"}</td>
+              <td style={{padding:8,textAlign:"center"}}>{s.phone||"—"}</td>
+              <td style={{padding:8,textAlign:"center"}}>{s.is_active?"✅":"—"}</td>
+              <td style={{padding:8}}>
+                <button type="button" onClick={()=>setSupForm({...s})} style={{padding:"6px 10px",marginLeft:4,borderRadius:6,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>✏️</button>
+                <button type="button" onClick={()=>deleteSupplier(s)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>🗑️</button>
+              </td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </div>}
+
+    {viewModal&&<Modal open={true} onClose={()=>setViewModal(null)} title={`חשבונית ${viewModal.invoice_number||""}`} maxWidth={720}>
+      <SupplierInvoiceResult invoice={viewModal} suppliers={suppliers} setToast={setToast} onUpdated={async()=>{await loadAll();const {data}=await supabaseClient.from("supplier_invoices").select("*").eq("id",viewModal.id).single();if(data)setViewModal(data);}}/>
+    </Modal>}
+
+    {supForm&&<Modal open={true} onClose={()=>setSupForm(null)} title={supForm.id?"עריכת ספק":"ספק חדש"} maxWidth={520}>
+      <div style={{display:"flex",flexDirection:"column",gap:10,direction:"rtl"}}>
+        {[["bina_supplier_code","קוד ספק *"],["supplier_name","שם ספק *"],["supplier_tax_id","ח.פ"],["address","כתובת"],["city","עיר"],["phone","טלפון"],["fax","פקס"],["email","מייל"],["default_expense_type","סוג הוצאה"],["default_payment_terms","תנאי תשלום"],["notes","הערות"]].map(([k,lab])=>
+          <label key={k} style={{fontSize:13,fontWeight:600}}>{lab}
+            <input value={supForm[k]||""} onChange={e=>setSupForm(f=>({...f,[k]:e.target.value}))} style={{display:"block",width:"100%",marginTop:4,padding:"10px 12px",borderRadius:8,border:"1px solid #e5e7eb",fontFamily:"inherit",minHeight:44}}/>
+          </label>
+        )}
+        <label style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" checked={supForm.is_active!==false} onChange={e=>setSupForm(f=>({...f,is_active:e.target.checked}))}/> פעיל</label>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button type="button" onClick={()=>setSupForm(null)} style={{padding:"10px 14px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
+          <button type="button" onClick={saveSupplier} style={{padding:"10px 14px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>💾 שמור</button>
+        </div>
+      </div>
+    </Modal>}
   </div>;
 }
 
@@ -14651,6 +15335,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="supplier_invoices"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="designer"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -14916,7 +15606,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -15261,6 +15951,8 @@ function App(){
       {tab==="employees"&&isA&&<EmployeesDashboard user={user}/>}
 
       {tab==="employee-messages"&&isA&&<EmployeeMessagesDashboard user={user}/>}
+
+      {tab==="supplier_invoices"&&isA&&<SupplierInvoicesTab user={user}/>}
 
       {tab==="designer"&&isA&&<DesignerDashboard user={user}/>}
 

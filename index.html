@@ -492,8 +492,51 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
   body.printing-delivery-pdf #delivery-pdf-container{display:block!important;position:absolute;left:0;top:0;width:100%;padding:0;margin:0}
   body.printing-delivery-pdf .delivery-pdf-content{display:block!important;direction:rtl;font-family:'Heebo',Arial,sans-serif;color:#1f2937}
   body.printing-delivery-pdf .delivery-card{page-break-inside:avoid}
+  body.printing-binding-order *{visibility:hidden}
+  body.printing-binding-order .binding-order-modal-backdrop,
+  body.printing-binding-order .binding-order-modal-backdrop *{visibility:visible}
+  body.printing-binding-order .binding-order-modal-backdrop{position:absolute;left:0;top:0;width:100%;background:#fff;padding:0}
+  body.printing-binding-order .binding-order-modal{box-shadow:none;max-width:100%;max-height:none;overflow:visible;border-radius:0}
+  body.printing-binding-order .no-print{display:none!important}
+  body.printing-binding-order .binding-order-content{padding:0}
+  body.printing-binding-order .binding-section{page-break-inside:avoid}
   @page{margin:12mm}
 }
+/* Binding work-order print (Davach / Itzik) */
+.binding-order-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1100;display:flex;align-items:center;justify-content:center;padding:16px}
+.binding-order-modal{background:#fff;border-radius:16px;max-width:800px;width:100%;max-height:90vh;overflow:auto;box-shadow:var(--shadow-lg);padding:0}
+.binding-order-actions{display:flex;gap:8px;flex-wrap:wrap}
+.binding-order-content{padding:30px 40px;background:#fff;direction:rtl;font-family:'Heebo',Arial,sans-serif;color:#1f2937}
+.binding-order-header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--binding-accent,#0d9488);padding-bottom:20px;margin-bottom:25px;gap:12px;flex-wrap:wrap}
+.binding-logo{font-size:20px;font-weight:900;color:var(--binding-accent,#0d9488)}
+.binding-title-block{text-align:left}
+.binding-title{font-size:22px;font-weight:900;color:#1f2937}
+.binding-date{font-size:13px;color:#6b7280;margin-top:4px}
+.binding-section{margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:10px}
+.binding-section.binding-highlight{background:linear-gradient(135deg,var(--binding-bg-from,#f0fdfa) 0%,var(--binding-bg-to,#ecfeff) 100%);border:2px solid var(--binding-accent,#0d9488)}
+.binding-section-title{font-size:14px;font-weight:700;color:var(--binding-accent,#0d9488);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}
+.binding-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.binding-field{display:flex;gap:10px;padding:6px 0;flex-wrap:wrap}
+.field-label{font-weight:600;color:#4b5563;min-width:100px}
+.field-value{color:#1f2937;font-weight:700}
+.binding-big-details{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
+.big-detail{background:#fff;padding:15px;border-radius:8px;text-align:center;border:1px solid #d1d5db}
+.big-detail.highlight-quantity{background:linear-gradient(135deg,var(--binding-accent,#0d9488) 0%,var(--binding-accent-2,#14b8a6) 100%);color:#fff;border-color:var(--binding-accent,#0d9488)}
+.big-label{font-size:12px;color:#6b7280;letter-spacing:.5px;margin-bottom:5px}
+.big-detail.highlight-quantity .big-label{color:rgba(255,255,255,.85)}
+.big-value{font-size:28px;font-weight:900;color:#1f2937}
+.big-detail.highlight-quantity .big-value{color:#fff}
+.big-sub{font-size:11px;color:#9ca3af;margin-top:2px}
+.big-detail.highlight-quantity .big-sub{color:rgba(255,255,255,.75)}
+.binding-notes{padding:10px;background:#fff;border-radius:6px;border-right:3px solid #f59e0b;color:#92400e;font-size:14px;line-height:1.6;white-space:pre-wrap}
+.binding-signature{margin-top:30px;padding-top:20px;border-top:2px dashed #d1d5db;background:transparent}
+.signature-row{display:flex;gap:30px;margin-bottom:25px;flex-wrap:wrap}
+.signature-item{flex:1;min-width:180px}
+.signature-label{font-size:12px;color:#6b7280;font-weight:600;margin-bottom:25px}
+.signature-line{border-bottom:1px solid #6b7280;height:1px}
+.signature-line.short{max-width:150px}
+.binding-order-footer{text-align:center;font-size:11px;color:#9ca3af;padding-top:20px;border-top:1px solid #e5e7eb;margin-top:30px}
+@media(max-width:640px){.binding-grid,.binding-big-details{grid-template-columns:1fr}}
 /* Package G — employee messages */
 .emp-messages-dashboard{padding:20px;max-width:1000px;margin:0 auto}
 .emp-messages-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
@@ -12503,27 +12546,97 @@ function alutBuildDavachPdfPayload(order,item,itemIndex,pricing,notes){
     notes:notes||null,
   };
 }
-async function alutDownloadDavachPdf(payload){
-  const {data,error}=await supabaseClient.functions.invoke("generate-davach-pdf",{body:payload});
-  if(error)throw error;
-  if(!data?.success)throw new Error(data?.error||data?.details||"שגיאה ביצירת PDF");
-  const link=document.createElement("a");
-  link.href=`data:application/pdf;base64,${data.pdf_base64}`;
-  link.download=data.filename;
-  link.click();
-  return data;
+
+function AlutBindingOrderPrint({order,itemLetter,calendarTypeLabel,quantity,cartonsCount,cartonsSize,notes,vendor,onClose}){
+  const cfg=vendor==="itzik"
+    ?{name:"איציק",icon:"🔧",title:"הזמנת עבודה לאיציק",accent:"#ec4899",accent2:"#f472b6",bgFrom:"#fdf2f8",bgTo:"#fce7f3"}
+    :{name:"דבח",icon:"📦",title:"הזמנת עבודה לדבח",accent:"#0d9488",accent2:"#14b8a6",bgFrom:"#f0fdfa",bgTo:"#ecfeff"};
+  const handlePrint=()=>{
+    document.body.classList.add("printing-binding-order");
+    setTimeout(()=>{
+      window.print();
+      setTimeout(()=>document.body.classList.remove("printing-binding-order"),500);
+    },100);
+  };
+  const qty=Number(quantity)||0;
+  const cSize=Number(cartonsSize)||0;
+  const cCount=Number(cartonsCount)||0;
+  return<div className="binding-order-modal-backdrop" onClick={onClose} style={{"--binding-accent":cfg.accent,"--binding-accent-2":cfg.accent2,"--binding-bg-from":cfg.bgFrom,"--binding-bg-to":cfg.bgTo}}>
+    <div className="binding-order-modal" onClick={e=>e.stopPropagation()}>
+      <div className="no-print" style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"14px 18px",borderBottom:"1px solid #e5e7eb",flexWrap:"wrap"}}>
+        <h2 style={{margin:0,fontSize:16}}>{cfg.icon} {cfg.title} - הזמנה #{order.order_number} / פריט {itemLetter}</h2>
+        <div className="binding-order-actions">
+          <button type="button" onClick={handlePrint} style={{padding:"10px 16px",borderRadius:8,border:"none",background:cfg.accent,color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🖨️ הדפס / שמור PDF</button>
+          <button type="button" onClick={onClose} style={{padding:"10px 16px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>✕ סגור</button>
+        </div>
+      </div>
+      <div className="binding-order-content">
+        <div className="binding-order-header">
+          <div className="binding-logo">🖨️ נטלי פרינט</div>
+          <div className="binding-title-block">
+            <div className="binding-title">{cfg.title}</div>
+            <div className="binding-date">תאריך הזמנה: {new Date().toLocaleDateString("he-IL")}</div>
+          </div>
+        </div>
+        <div className="binding-section">
+          <div className="binding-section-title">📋 פרטי הזמנה</div>
+          <div className="binding-grid">
+            <div className="binding-field"><div className="field-label">מספר הזמנה:</div><div className="field-value">#{order.order_number}</div></div>
+            <div className="binding-field"><div className="field-label">פריט:</div><div className="field-value">{itemLetter}</div></div>
+            <div className="binding-field"><div className="field-label">חברה:</div><div className="field-value">{order.company_name}</div></div>
+            {order.contact_name&&<div className="binding-field"><div className="field-label">איש קשר:</div><div className="field-value">{order.contact_name}</div></div>}
+          </div>
+        </div>
+        <div className="binding-section binding-highlight">
+          <div className="binding-section-title">📦 פרטי המוצר</div>
+          <div className="binding-big-details">
+            <div className="big-detail">
+              <div className="big-label">סוג לוח</div>
+              <div className="big-value" style={{fontSize:20}}>{calendarTypeLabel}</div>
+            </div>
+            <div className="big-detail highlight-quantity">
+              <div className="big-label">כמות</div>
+              <div className="big-value">{qty.toLocaleString("he-IL")}</div>
+              <div className="big-sub">יחידות</div>
+            </div>
+            <div className="big-detail">
+              <div className="big-label">קרטונים</div>
+              <div className="big-value">{cCount.toLocaleString("he-IL")}</div>
+              <div className="big-sub">{cSize.toLocaleString("he-IL")} יח׳ לקרטון</div>
+            </div>
+          </div>
+        </div>
+        {notes&&<div className="binding-section">
+          <div className="binding-section-title">📝 הערות</div>
+          <div className="binding-notes">{notes}</div>
+        </div>}
+        <div className="binding-section binding-signature">
+          <div className="signature-row">
+            <div className="signature-item"><div className="signature-label">חתימת {cfg.name}:</div><div className="signature-line"></div></div>
+            <div className="signature-item"><div className="signature-label">תאריך קבלה:</div><div className="signature-line short"></div></div>
+          </div>
+          <div className="signature-row">
+            <div className="signature-item"><div className="signature-label">חתימת נטלי פרינט:</div><div className="signature-line"></div></div>
+            <div className="signature-item"><div className="signature-label">תאריך החזרה:</div><div className="signature-line short"></div></div>
+          </div>
+        </div>
+        <div className="binding-order-footer">🖨️ נטלי פרינט © {new Date().getFullYear()} | פרויקט אלוט {new Date().getFullYear()}</div>
+      </div>
+    </div>
+  </div>;
 }
 
 function AlutDavachModal({item,itemIndex,order,pricing,onClose,onSaved}){
   const [notes,setNotes]=useState("");
   const [isGenerating,setIsGenerating]=useState(false);
   const [updateStatus,setUpdateStatus]=useState(false);
+  const [printOpen,setPrintOpen]=useState(false);
   const payload=useMemo(()=>alutBuildDavachPdfPayload(order,item,itemIndex,pricing,notes.trim()||null),[order,item,itemIndex,pricing,notes]);
   const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
   const handleGeneratePdf=async()=>{
     setIsGenerating(true);
     try{
-      const data=await alutDownloadDavachPdf(payload);
+      const filename=`davach_order_${payload.order_number}${payload.item_letter}.pdf`;
       const {error:insertError}=await supabaseClient.from("alut_davach_orders").insert({
         item_id:item.id,
         order_id:order.id,
@@ -12532,7 +12645,7 @@ function AlutDavachModal({item,itemIndex,order,pricing,onClose,onSaved}){
         cartons_count:payload.cartons_count,
         cost_per_unit:payload.cost_per_unit,
         total_cost:payload.total_cost,
-        pdf_filename:data.filename,
+        pdf_filename:filename,
         notes:notes.trim()||null,
       });
       if(insertError)throw insertError;
@@ -12540,11 +12653,24 @@ function AlutDavachModal({item,itemIndex,order,pricing,onClose,onSaved}){
         await sb(`alut_order_items?id=eq.${item.id}`,{method:"PATCH",body:JSON.stringify({status:"at_davach",davach_sent_at:new Date().toISOString()})});
       }
       onSaved?.();
-      onClose();
+      setPrintOpen(true);
     }catch(err){
       window.alert("שגיאה: "+(err.message||String(err)));
     }finally{setIsGenerating(false);}
   };
+  if(printOpen){
+    return<AlutBindingOrderPrint
+      order={order}
+      itemLetter={payload.item_letter}
+      calendarTypeLabel={payload.calendar_type_label}
+      quantity={payload.quantity}
+      cartonsCount={payload.cartons_count}
+      cartonsSize={payload.cartons_size}
+      notes={notes.trim()||null}
+      vendor="davach"
+      onClose={()=>{setPrintOpen(false);onClose();}}
+    />;
+  }
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"12px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl",resize:"vertical",minHeight:80};
   return<Modal open={true} onClose={isGenerating?()=>{}:onClose} title={`📄 הזמנת עבודה לדבח - הזמנה #${order.order_number} / פריט ${payload.item_letter}`} maxWidth={520}>
     <div style={{direction:"rtl"}}>
@@ -12563,7 +12689,7 @@ function AlutDavachModal({item,itemIndex,order,pricing,onClose,onSaved}){
       <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
         <button type="button" onClick={onClose} disabled={isGenerating} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:isGenerating?"wait":"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
         <button type="button" onClick={handleGeneratePdf} disabled={isGenerating} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#a855f7 0%,#7c3aed 100%)",color:"#fff",fontWeight:700,cursor:isGenerating?"wait":"pointer",fontFamily:"inherit",minHeight:44,display:"flex",alignItems:"center",gap:8}}>
-          {isGenerating?<><Spinner sz={16} color="#fff"/> מפיק PDF...</>:<>📥 הפק PDF</>}
+          {isGenerating?<><Spinner sz={16} color="#fff"/> שומר...</>:<>🖨️ הדפס / שמור PDF</>}
         </button>
       </div>
     </div>
@@ -12593,34 +12719,25 @@ function alutBuildItzikPdfPayload(order,item,itemIndex,pricing,notes){
     notes:notes||null,
   };
 }
-async function alutDownloadItzikPdf(payload){
-  const {data,error}=await supabaseClient.functions.invoke("generate-itzik-pdf",{body:payload});
-  if(error)throw error;
-  if(!data?.success)throw new Error(data?.error||data?.details||"שגיאה ביצירת PDF");
-  const link=document.createElement("a");
-  link.href=`data:application/pdf;base64,${data.pdf_base64}`;
-  link.download=data.filename;
-  link.click();
-  return data;
-}
 
 function AlutItzikModal({item,itemIndex,order,pricing,onClose,onSaved}){
   const [notes,setNotes]=useState("");
   const [isGenerating,setIsGenerating]=useState(false);
   const [updateStatus,setUpdateStatus]=useState(false);
+  const [printOpen,setPrintOpen]=useState(false);
   const payload=useMemo(()=>alutBuildItzikPdfPayload(order,item,itemIndex,pricing,notes.trim()||null),[order,item,itemIndex,pricing,notes]);
   const ct=ALUT_CALENDAR_TYPES[item.calendar_type]||{};
   const handleGeneratePdf=async()=>{
     setIsGenerating(true);
     try{
-      const data=await alutDownloadItzikPdf(payload);
+      const filename=`itzik_order_${payload.order_number}${payload.item_letter}.pdf`;
       const {error:insertError}=await supabaseClient.from("alut_itzik_orders").insert({
         item_id:item.id,
         order_id:order.id,
         calendar_type:item.calendar_type,
         quantity:payload.quantity,
         cartons_count:payload.cartons_count,
-        pdf_filename:data.filename,
+        pdf_filename:filename,
         notes:notes.trim()||null,
       });
       if(insertError)throw insertError;
@@ -12628,11 +12745,24 @@ function AlutItzikModal({item,itemIndex,order,pricing,onClose,onSaved}){
         await sb(`alut_order_items?id=eq.${item.id}`,{method:"PATCH",body:JSON.stringify({status:"at_itzik",itzik_sent_at:new Date().toISOString()})});
       }
       onSaved?.();
-      onClose();
+      setPrintOpen(true);
     }catch(err){
       window.alert("שגיאה: "+(err.message||String(err)));
     }finally{setIsGenerating(false);}
   };
+  if(printOpen){
+    return<AlutBindingOrderPrint
+      order={order}
+      itemLetter={payload.item_letter}
+      calendarTypeLabel={payload.calendar_type_label}
+      quantity={payload.quantity}
+      cartonsCount={payload.cartons_count}
+      cartonsSize={payload.cartons_size}
+      notes={notes.trim()||null}
+      vendor="itzik"
+      onClose={()=>{setPrintOpen(false);onClose();}}
+    />;
+  }
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"12px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl",resize:"vertical",minHeight:80};
   return<Modal open={true} onClose={isGenerating?()=>{}:onClose} title={`🖨️ הזמנת עבודה לאיציק - הזמנה #${order.order_number} / פריט ${payload.item_letter}`} maxWidth={520}>
     <div style={{direction:"rtl"}}>
@@ -12650,7 +12780,7 @@ function AlutItzikModal({item,itemIndex,order,pricing,onClose,onSaved}){
       <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
         <button type="button" onClick={onClose} disabled={isGenerating} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:isGenerating?"wait":"pointer",fontFamily:"inherit",minHeight:44}}>ביטול</button>
         <button type="button" onClick={handleGeneratePdf} disabled={isGenerating} style={{padding:"12px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#ec4899 0%,#be185d 100%)",color:"#fff",fontWeight:700,cursor:isGenerating?"wait":"pointer",fontFamily:"inherit",minHeight:44,display:"flex",alignItems:"center",gap:8}}>
-          {isGenerating?<><Spinner sz={16} color="#fff"/> מפיק PDF...</>:<>📥 הפק PDF</>}
+          {isGenerating?<><Spinner sz={16} color="#fff"/> שומר...</>:<>🖨️ הדפס / שמור PDF</>}
         </button>
       </div>
     </div>
@@ -12821,7 +12951,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
   const [sentEmails,setSentEmails]=useState([]);
   const [showDavachModal,setShowDavachModal]=useState(null);
   const [showItzikModal,setShowItzikModal]=useState(null);
-  const [redownloadingId,setRedownloadingId]=useState(null);
+  const [bindingPrint,setBindingPrint]=useState(null);
   const [showCartonLabels,setShowCartonLabels]=useState(false);
   const [showTransferModal,setShowTransferModal]=useState(false);
   const pricing=useMemo(()=>alutPricingRowsToMap(pricingRows),[pricingRows]);
@@ -12883,21 +13013,31 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     })});
     setAddItemOpen(false);setNewItem(ALUT_EMPTY_ITEM());reload();
   };
-  const handleRedownloadDavach=async(record,item,itemIndex)=>{
-    setRedownloadingId(`d-${record.id}`);
-    try{
-      await alutDownloadDavachPdf(alutBuildDavachPdfPayload(data,item,itemIndex,pricing,record.notes));
-    }catch(err){
-      window.alert("שגיאה: "+(err.message||String(err)));
-    }finally{setRedownloadingId(null);}
+  const handleRedownloadDavach=(record,item,itemIndex)=>{
+    const p=alutBuildDavachPdfPayload(data,item,itemIndex,pricing,record.notes);
+    setBindingPrint({
+      order:data,
+      itemLetter:p.item_letter,
+      calendarTypeLabel:p.calendar_type_label,
+      quantity:record.quantity??p.quantity,
+      cartonsCount:record.cartons_count??p.cartons_count,
+      cartonsSize:p.cartons_size,
+      notes:record.notes||null,
+      vendor:"davach",
+    });
   };
-  const handleRedownloadItzik=async(record,item,itemIndex)=>{
-    setRedownloadingId(`i-${record.id}`);
-    try{
-      await alutDownloadItzikPdf(alutBuildItzikPdfPayload(data,item,itemIndex,pricing,record.notes));
-    }catch(err){
-      window.alert("שגיאה: "+(err.message||String(err)));
-    }finally{setRedownloadingId(null);}
+  const handleRedownloadItzik=(record,item,itemIndex)=>{
+    const p=alutBuildItzikPdfPayload(data,item,itemIndex,pricing,record.notes);
+    setBindingPrint({
+      order:data,
+      itemLetter:p.item_letter,
+      calendarTypeLabel:p.calendar_type_label,
+      quantity:record.quantity??p.quantity,
+      cartonsCount:record.cartons_count??p.cartons_count,
+      cartonsSize:p.cartons_size,
+      notes:record.notes||null,
+      vendor:"itzik",
+    });
   };
   const IS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
   return<Modal open={true} onClose={onClose} title={`📋 הזמנה #${data.order_number} - ${data.company_name}`} maxWidth={640} fullScreenMobile>
@@ -12942,7 +13082,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
           <AlutItemDeadlineEdit item={item} onSaved={reload}/>
           <div style={{fontSize:14,fontWeight:700,color:"#0d9488",marginTop:6}}>{alutFmtMoney(item.subtotal)}</div>
           <div className="alut-item-work-btns">
-            {["duplex","wall"].includes(item.calendar_type)&&<button type="button" className="alut-btn-davach" onClick={()=>setShowDavachModal({item,itemIndex})}>📄 הזמנת עבודה לדבח</button>}
+            {["duplex","wall"].includes(item.calendar_type)&&<button type="button" className="alut-btn-davach" onClick={()=>setShowDavachModal({item,itemIndex})}>🖨️ הזמנת עבודה לדבח</button>}
             <button type="button" className="alut-btn-itzik" onClick={()=>setShowItzikModal({item,itemIndex})}>🖨️ הזמנת עבודה לאיציק</button>
           </div>
           {itemDavachRecords.length>0&&<div className="alut-davach-history">
@@ -12950,8 +13090,8 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
             {itemDavachRecords.map(record=><div key={record.id} className="alut-davach-history-item">
               <span>{new Date(record.generated_at).toLocaleDateString("he-IL")}</span>
               <span>{record.quantity} יח׳ × {Number(record.cost_per_unit).toFixed(2)} = {alutFmtMoney(record.total_cost)}</span>
-              <button type="button" className="alut-davach-download-btn" disabled={redownloadingId===`d-${record.id}`} onClick={()=>handleRedownloadDavach(record,item,itemIndex)}>
-                {redownloadingId===`d-${record.id}`?"...":"📥 הורד שוב"}
+              <button type="button" className="alut-davach-download-btn" onClick={()=>handleRedownloadDavach(record,item,itemIndex)}>
+                🖨️ הדפס שוב
               </button>
             </div>)}
           </div>}
@@ -12960,8 +13100,8 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
             {itemItzikRecords.map(record=><div key={record.id} className="alut-itzik-history-item">
               <span>{new Date(record.generated_at).toLocaleDateString("he-IL")}</span>
               <span>{record.quantity} יח׳</span>
-              <button type="button" className="alut-itzik-download-btn" disabled={redownloadingId===`i-${record.id}`} onClick={()=>handleRedownloadItzik(record,item,itemIndex)}>
-                {redownloadingId===`i-${record.id}`?"...":"📥 הורד שוב"}
+              <button type="button" className="alut-itzik-download-btn" onClick={()=>handleRedownloadItzik(record,item,itemIndex)}>
+                🖨️ הדפס שוב
               </button>
             </div>)}
           </div>}
@@ -13003,6 +13143,7 @@ function AlutOrderDetailModal({order,pricingRows,onClose,onSaved}){
     {editItem&&<AlutItemEditModal item={editItem} order={data} pricingRows={pricingRows} onClose={()=>setEditItem(null)} onSaved={reload}/>}
     {showDavachModal&&<AlutDavachModal item={showDavachModal.item} itemIndex={showDavachModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowDavachModal(null)} onSaved={reload}/>}
     {showItzikModal&&<AlutItzikModal item={showItzikModal.item} itemIndex={showItzikModal.itemIndex} order={data} pricing={pricing} onClose={()=>setShowItzikModal(null)} onSaved={reload}/>}
+    {bindingPrint&&<AlutBindingOrderPrint {...bindingPrint} onClose={()=>setBindingPrint(null)}/>}
     {showCartonLabels&&<AlutCartonLabelsModal order={data} onClose={()=>setShowCartonLabels(false)}/>}
     {showTransferModal&&<AlutTransferToShipmentsModal order={data} onClose={()=>setShowTransferModal(false)} onTransferred={()=>{reload();onSaved?.();}}/>}
   </Modal>;

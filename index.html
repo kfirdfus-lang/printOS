@@ -7279,6 +7279,588 @@ function DeliveryTab({tasks}){
   </div>;
 }
 
+/**
+ * Package H Stage B — Unified order/quote modal + open quotes tab + follow-up cron helper text.
+ * Spliced into index.html before CreateOrderModal.
+ */
+
+function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="order",prefill=null,sourceQuoteId=null}){
+  const [mode,setMode]=useState(initialMode==="quote"?"quote":"order");
+  const [submitting,setSubmitting]=useState(false);
+  const [error,setError]=useState(null);
+  const [clientSearch,setClientSearch]=useState("");
+  const [selectedClient,setSelectedClient]=useState(null);
+  const [items,setItems]=useState([{description:"",quantity:1,unitPrice:0,discount:0}]);
+  const [title,setTitle]=useState("");
+  const [remark,setRemark]=useState("");
+  const [dept,setDept]=useState("כללי");
+  const [agent,setAgent]=useState("");
+  const [contactName,setContactName]=useState("");
+  const [dueDate,setDueDate]=useState("");
+  const [workFile,setWorkFile]=useState(null);
+  const [workerNote,setWorkerNote]=useState("");
+  const [activeQuoteId,setActiveQuoteId]=useState(sourceQuoteId||null);
+
+  const applyPrefill=async(p)=>{
+    if(!p)return;
+    if(p.mode)setMode(p.mode==="quote"?"quote":"order");
+    if(p.title!=null)setTitle(p.title||"");
+    if(p.remark!=null)setRemark(p.remark||"");
+    if(p.agent!=null)setAgent(p.agent||"");
+    if(p.contactName!=null)setContactName(p.contactName||"");
+    if(p.dueDate!=null)setDueDate(p.dueDate||"");
+    if(p.workerNote!=null)setWorkerNote(p.workerNote||"");
+    if(p.dept!=null)setDept(p.dept||"כללי");
+    if(Array.isArray(p.items)&&p.items.length){
+      setItems(p.items.map(it=>({
+        description:it.description||"",
+        quantity:it.quantity!=null?it.quantity:1,
+        unitPrice:it.unitPrice!=null?it.unitPrice:(it.unit_price!=null?it.unit_price:0),
+        discount:it.discount!=null?it.discount:(it.discount_pct!=null?it.discount_pct:0),
+      })));
+    }
+    if(p.client)setSelectedClient(p.client);
+    else if(p.bina_cust_id!=null){
+      const list=Array.isArray(clients)?clients:[];
+      const found=list.find(c=>String(c.bina_customer_id)===String(p.bina_cust_id));
+      if(found)setSelectedClient(found);
+    }
+    if(p.sourceQuoteId)setActiveQuoteId(p.sourceQuoteId);
+  };
+
+  useEffect(()=>{
+    if(!open)return;
+    setMode(initialMode==="quote"?"quote":"order");
+    setClientSearch("");
+    setSelectedClient(null);
+    setItems([{description:"",quantity:1,unitPrice:0,discount:0}]);
+    setTitle("");
+    setRemark("");
+    setDept("כללי");
+    setAgent("");
+    setContactName("");
+    setDueDate("");
+    setWorkFile(null);
+    setWorkerNote("");
+    setActiveQuoteId(sourceQuoteId||null);
+    setError(null);
+    setSubmitting(false);
+    if(prefill)applyPrefill(prefill);
+  },[open,initialMode,sourceQuoteId]);
+
+  if(!open)return null;
+
+  const isOrder=mode==="order";
+  const accent=isOrder?"#2563EB":"#7C3AED";
+  const filteredClients=(clients||[]).filter(c=>{
+    if(!clientSearch.trim())return true;
+    const q=clientSearch.toLowerCase().trim();
+    return (c.name||"").toLowerCase().includes(q)||(c.phone||"").includes(q)||String(c.bina_customer_id||"").includes(q);
+  }).slice(0,50);
+  const itemsTotal=items.reduce((sum,it)=>{
+    const qty=Number(it.quantity)||0;
+    const price=Number(it.unitPrice)||0;
+    const disc=Number(it.discount)||0;
+    return sum+qty*price*(1-disc/100);
+  },0);
+  const addItem=()=>setItems([...items,{description:"",quantity:1,unitPrice:0,discount:0}]);
+  const removeItem=(idx)=>{if(items.length===1)return;setItems(items.filter((_,i)=>i!==idx));};
+  const updateItem=(idx,field,value)=>{const ni=[...items];ni[idx]={...ni[idx],[field]:value};setItems(ni);};
+
+  const validate=()=>{
+    if(!selectedClient)return"נא לבחור לקוח";
+    if(!selectedClient.bina_customer_id)return"הלקוח לא מקושר לבינה";
+    if(!items.some(it=>(it.description||"").trim()))return"נא למלא לפחות פריט אחד";
+    if(isOrder&&!dueDate)return"נא למלא דדליין להזמנה";
+    if(isOrder&&!workFile&&!prefill?.skipFileRequired){
+      // file recommended but package says required fields: order needs file+deadline in A4 upload; B3 says file section for order
+      // Package B3 table: file and deadline for order only - treat as required for new orders
+    }
+    if(isOrder&&!workFile)return"נא לצרף קובץ עבודה להזמנה";
+    return null;
+  };
+
+  const attachWorkFileAfterOrder=async(binaOrderId,taskIdHint)=>{
+    if(!workFile)return;
+    const year=new Date().getFullYear();
+    const uploaded=await uploadFileToStorage(workFile,"work-files/"+year);
+    const meta={
+      file_path:uploaded.path,
+      file_name:workFile.name,
+      file_type:workFile.type||null,
+      file_size_kb:Math.round((workFile.size||0)/1024),
+      worker_note:workerNote.trim()||null,
+      due_date:dueDate||null,
+    };
+    let taskId=taskIdHint||null;
+    if(!taskId){
+      const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",String(binaOrderId)).is("archived_at",null).limit(1);
+      taskId=found?.[0]?.id||null;
+    }
+    if(taskId){
+      await applyWorkFileToTask(taskId,meta);
+    }else{
+      const{error:pErr}=await supabaseClient.from("pending_work_files").insert({
+        created_by_name:null,
+        bina_order_id:String(binaOrderId),
+        file_path:meta.file_path,
+        file_name:meta.file_name,
+        file_type:meta.file_type,
+        file_size_kb:meta.file_size_kb,
+        worker_note:meta.worker_note,
+        due_date:meta.due_date,
+        status:"waiting",
+      });
+      if(pErr)throw pErr;
+    }
+  };
+
+  const submitOrder=async()=>{
+    // Payload זהה ל-CreateOrderModal הקיים — בינה קודם, בלי יצירה מקומית לפני הצלחה
+    const payload={
+      client:{
+        binaCustomerId:String(selectedClient.bina_customer_id),
+        name:selectedClient.name||"ללא שם",
+        city:selectedClient.address||"ללא",
+        address:selectedClient.address||"ללא",
+        contactPerson:(contactName||"").trim()||selectedClient.name||"ללא",
+        phone:selectedClient.phone||"",
+        email:selectedClient.email||"",
+      },
+      items:items.map((it,idx)=>({
+        itemId:"LINE-"+(idx+1),
+        description:it.description||("פריט "+(idx+1)),
+        quantity:Number(it.quantity)||1,
+        unitPrice:Number(it.unitPrice)||0,
+        discount:Number(it.discount)||0,
+      })),
+      title:title||("הזמנה ל"+(selectedClient.name||"לקוח")),
+      remark:remark||"",
+    };
+    const{data,error:invE}=await supabaseClient.functions.invoke("bina-create-order",{body:payload});
+    if(invE)throw new Error(invE.message||String(invE));
+    let result=data;
+    if(typeof data==="string"){try{result=JSON.parse(data);}catch{result=null;}}
+    if(!result||result.success!==true)throw new Error(result?.error||"שגיאה ביצירת הזמנה בבינה");
+
+    // רק אחרי הצלחה בבינה — עדכונים מקומיים
+    if(result.taskId){
+      const taskPatch={};
+      if(dept!=="כללי")taskPatch.dept=dept;
+      const ag=(agent||"").trim();
+      if(ag)taskPatch.assignee=ag;
+      taskPatch.sales_agent=ag||null;
+      if(dueDate)taskPatch.due_date=dueDate;
+      try{await sb("tasks?id=eq."+result.taskId,{method:"PATCH",body:JSON.stringify(taskPatch)});}catch(e){console.warn(e);}
+    }
+    try{
+      const addrStr=selectedClient.address||"";
+      const cityPart=(addrStr.split(",")[0]||"").trim();
+      const orderRow={
+        bina_doc_id:Number(result.binaOrderId),
+        title:title||("הזמנה ל"+(selectedClient.name||"לקוח")),
+        bina_cust_id:parseInt(String(selectedClient.bina_customer_id),10),
+        bina_cust_name:selectedClient.name||"",
+        bina_cust_address:addrStr||null,
+        bina_cust_city:cityPart||null,
+        bina_cust_phone:selectedClient.phone||null,
+        bina_cust_email:selectedClient.email||null,
+        contact_person:(contactName||"").trim()||null,
+        sales_agent:(agent||"").trim()||null,
+        remark:remark||"",
+        status:"נשלחה",
+        task_id:result.taskId||null,
+      };
+      const ordRes=await sb("orders",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(orderRow)});
+      const ord=Array.isArray(ordRes)?ordRes[0]:ordRes;
+      if(ord?.id){
+        const oItems=items.map((it,idx)=>({
+          order_id:ord.id,
+          line_number:idx+1,
+          description:it.description||("פריט "+(idx+1)),
+          quantity:Number(it.quantity)||1,
+          unit_price:Number(it.unitPrice)||0,
+          discount_pct:Number(it.discount)||0,
+        }));
+        await sb("order_items",{method:"POST",body:JSON.stringify(oItems)});
+      }
+    }catch(e){console.warn("[UnifiedOrderQuoteModal] orders DB save failed:",e);}
+
+    try{
+      await attachWorkFileAfterOrder(result.binaOrderId,result.taskId||null);
+    }catch(fileErr){
+      console.warn("work file attach failed",fileErr);
+      window.alert("ההזמנה נוצרה, אך חיבור הקובץ נכשל: "+(fileErr.message||fileErr)+" — אפשר לחבר בטאב קבצי עבודה");
+    }
+
+    if(activeQuoteId){
+      try{
+        await supabaseClient.from("quotes").update({
+          quote_status:"approved",
+          converted_to_order_id:String(result.binaOrderId),
+          converted_at:new Date().toISOString(),
+          status_changed_at:new Date().toISOString(),
+        }).eq("id",activeQuoteId);
+      }catch(e){console.warn(e);}
+    }
+
+    if(onSuccess)onSuccess(result);
+    window.alert("✅ הזמנה נוצרה. הקובץ יחובר אוטומטית.");
+    onClose();
+  };
+
+  const submitQuote=async()=>{
+    // bina-create-quote דורש quote_id — יוצרים מקומית, ואם בינה נכשלת מוחקים (אין השארת רשומה יתומה)
+    const quoteTitle=title||("הצעה ל"+(selectedClient.name||"לקוח"));
+    const binaCustNum=parseInt(String(selectedClient.bina_customer_id),10);
+    if(!binaCustNum||Number.isNaN(binaCustNum))throw new Error("קוד לקוח בינה לא תקין");
+
+    const quoteData={
+      title:quoteTitle,
+      bina_cust_id:binaCustNum,
+      bina_cust_name:selectedClient.name||"ללא שם",
+      bina_cust_city:(selectedClient.address||"").split(",")[0]?.trim()||selectedClient.address||"",
+      bina_cust_address:selectedClient.address||"",
+      bina_cust_phone:selectedClient.phone||"",
+      contact_person:(contactName||"").trim(),
+      sales_agent:agent||null,
+      status:"טיוטה",
+      quote_status:"sent",
+      sent_at:new Date().toISOString(),
+    };
+
+    let quoteId=null;
+    try{
+      const quoteResponse=await sb("quotes",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(quoteData)});
+      const quoteResult=Array.isArray(quoteResponse)?quoteResponse[0]:quoteResponse;
+      if(!quoteResult?.id)throw new Error("שגיאה ביצירת הצעה ב-DB");
+      quoteId=quoteResult.id;
+      const itemsToInsert=items.map((it,idx)=>({
+        quote_id:quoteId,
+        item_name:"LINE-"+(idx+1),
+        description:it.description||("פריט "+(idx+1)),
+        quantity:Number(it.quantity)||1,
+        unit_price:Number(it.unitPrice)||0,
+        discount_pct:Number(it.discount)||0,
+        line_number:idx+1,
+      }));
+      await sb("quote_items",{method:"POST",body:JSON.stringify(itemsToInsert)});
+
+      const{data:fnData,error:invE}=await supabaseClient.functions.invoke("bina-create-quote",{body:{quote_id:quoteId}});
+      if(invE)throw new Error(invE.message||String(invE));
+      let result=fnData;
+      if(typeof fnData==="string"){try{result=JSON.parse(fnData);}catch{result=null;}}
+      if(!result||result.success!==true)throw new Error(result?.error||result?.binaMessage||"שגיאה בשליחה לבינה");
+
+      try{
+        await supabaseClient.from("quotes").update({
+          quote_status:"sent",
+          sent_at:new Date().toISOString(),
+        }).eq("id",quoteId);
+      }catch(e){console.warn(e);}
+
+      if(onSuccess)onSuccess(result);
+      window.alert("✅ הצעה נוצרה");
+      onClose();
+    }catch(err){
+      if(quoteId){
+        try{await sb("quote_items?quote_id=eq."+quoteId,{method:"DELETE"});}catch(delE){console.warn("rollback quote_items failed",delE);}
+        try{await sb("quotes?id=eq."+quoteId,{method:"DELETE"});}catch(delE){console.warn("rollback quote failed",delE);}
+      }
+      throw err;
+    }
+  };
+
+  const handleSubmit=async()=>{
+    const v=validate();
+    if(v){setError(v);return;}
+    setSubmitting(true);
+    setError(null);
+    try{
+      if(isOrder)await submitOrder();
+      else await submitQuote();
+    }catch(err){
+      setError(err.message||String(err));
+    }finally{
+      setSubmitting(false);
+    }
+  };
+
+  const overlayStyle={position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0};
+  const modalStyle={width:"100%",maxWidth:640,maxHeight:"95vh",background:"#fff",borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",boxShadow:"0 -4px 24px rgba(0,0,0,0.2)",overflow:"hidden"};
+  const headerStyle={padding:"16px 20px",borderBottom:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--bg2)",gap:8,flexWrap:"wrap"};
+  const bodyStyle={flex:1,overflowY:"auto",padding:20,direction:"rtl"};
+  const footerStyle={padding:16,borderTop:"1px solid #eee",background:"var(--bg2)",display:"flex",gap:8};
+  const labelStyle={display:"block",fontSize:14,fontWeight:600,marginBottom:6,color:"var(--text)"};
+  const inputStyle={width:"100%",padding:"12px 14px",fontSize:16,border:"1px solid var(--border)",borderRadius:10,boxSizing:"border-box",fontFamily:"inherit",direction:"rtl",background:"var(--bg2)",color:"var(--text)"};
+  const sectionTitle={fontSize:16,fontWeight:800,margin:"0 0 12px",color:accent};
+  const btnPrimary={flex:1,padding:"14px 20px",fontSize:16,fontWeight:600,background:accent,color:"#fff",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"};
+  const btnSecondary={flex:1,padding:"14px 20px",fontSize:16,background:"#fff",color:"var(--text2)",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",fontFamily:"inherit"};
+  const btnDanger={padding:"8px 12px",fontSize:14,background:"var(--red)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"};
+  const toggleBtn=(m,lab)=><button type="button" onClick={()=>!submitting&&setMode(m)} style={{flex:1,padding:"12px 10px",borderRadius:10,border:mode===m?"2px solid "+accent:"1px solid var(--border)",background:mode===m?accent:"#fff",color:mode===m?"#fff":"var(--text)",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:48}}>{lab}</button>;
+
+  return<div style={overlayStyle} onClick={()=>!submitting&&onClose()}>
+    <div style={modalStyle} onClick={e=>e.stopPropagation()}>
+      <div style={headerStyle}>
+        <strong style={{fontSize:17}}>{isOrder?"📋 הזמנה / הצעה":"💼 הזמנה / הצעה"}</strong>
+        <button type="button" onClick={onClose} disabled={submitting} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:"var(--text2)",fontFamily:"inherit"}}>✕</button>
+      </div>
+      <div style={bodyStyle}>
+        <div style={{display:"flex",gap:8,marginBottom:20}}>
+          {toggleBtn("quote","הצעת מחיר")}
+          {toggleBtn("order","הזמנה")}
+        </div>
+
+        <div style={{marginBottom:22}}>
+          <div style={sectionTitle}>👤 פרטי לקוח</div>
+          {selectedClient?<div style={{padding:12,background:"#f0fdf4",borderRadius:10,border:"1px solid #86efac",marginBottom:10}}>
+            <div style={{fontWeight:700}}>{selectedClient.name}</div>
+            <div style={{fontSize:13,color:"#166534",marginTop:4}}>📞 {selectedClient.phone||"—"} · 🆔 {selectedClient.bina_customer_id}</div>
+            <button type="button" onClick={()=>setSelectedClient(null)} style={{marginTop:8,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>החלף לקוח</button>
+          </div>:<>
+            <input type="text" placeholder="🔍 חיפוש לפי שם, טלפון, או קוד בינה..." value={clientSearch} onChange={e=>setClientSearch(e.target.value)} style={inputStyle}/>
+            <div style={{marginTop:10,maxHeight:200,overflowY:"auto"}}>
+              {filteredClients.map(c=><div key={c.id} onClick={()=>{
+                if(c.bina_customer_id)setSelectedClient(c);
+                else{
+                  const ok=window.confirm("הלקוח לא מקושר לבינה. לפתוח יצירת לקוח?");
+                  if(ok){onClose();if(window.openBinaClient)window.openBinaClient();}
+                }
+              }} style={{padding:12,marginBottom:6,borderRadius:8,cursor:"pointer",background:c.bina_customer_id?"#f0fdf4":"#fefce8",borderRight:c.bina_customer_id?"4px solid #22c55e":"4px solid #eab308"}}>
+                <div style={{fontWeight:600}}>{c.name||"ללא שם"}</div>
+                <div style={{fontSize:12,color:"#666"}}>📞 {c.phone||"—"}</div>
+              </div>)}
+            </div>
+          </>}
+        </div>
+
+        <div style={{marginBottom:22}}>
+          <div style={sectionTitle}>📋 פרטי מסמך</div>
+          <label style={labelStyle}>כותרת</label>
+          <input type="text" value={title} onChange={e=>setTitle(e.target.value)} placeholder={isOrder?"כותרת הזמנה":"כותרת הצעה"} style={{...inputStyle,marginBottom:12}}/>
+          <label style={labelStyle}>סוכן</label>
+          <select value={agent} onChange={e=>setAgent(e.target.value)} style={{...inputStyle,marginBottom:12}}>
+            <option value="">בחר סוכן...</option>
+            <option value="כפיר">כפיר</option>
+            <option value="נטלי">נטלי</option>
+            <option value="ברק">ברק</option>
+          </select>
+          <label style={labelStyle}>לידי (איש קשר)</label>
+          <input type="text" value={contactName} onChange={e=>setContactName(e.target.value)} style={{...inputStyle,marginBottom:12}}/>
+          {isOrder&&<>
+            <label style={labelStyle}>מחלקה (אופציונלי)</label>
+            <select value={dept} onChange={e=>setDept(e.target.value)} style={{...inputStyle,marginBottom:12}}>
+              <option value="כללי">כללי</option>
+              {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
+            </select>
+            <label style={labelStyle}>הערות</label>
+            <textarea value={remark} onChange={e=>setRemark(e.target.value)} rows={2} style={{...inputStyle,resize:"vertical"}}/>
+          </>}
+        </div>
+
+        <div style={{marginBottom:22}}>
+          <div style={sectionTitle}>📦 פריטים</div>
+          {items.map((it,idx)=><div key={idx} style={{padding:12,marginBottom:12,background:"var(--bg2)",borderRadius:10,border:"1px solid var(--border)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <strong>פריט {idx+1}</strong>
+              {items.length>1&&<button type="button" onClick={()=>removeItem(idx)} style={btnDanger}>🗑️</button>}
+            </div>
+            <label style={labelStyle}>תיאור</label>
+            <input type="text" value={it.description} onChange={e=>updateItem(idx,"description",e.target.value)} style={{...inputStyle,marginBottom:10}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div><label style={labelStyle}>כמות</label><input type="number" value={it.quantity} onChange={e=>updateItem(idx,"quantity",e.target.value)} style={inputStyle}/></div>
+              <div><label style={labelStyle}>מחיר ₪</label><input type="number" step="0.01" value={it.unitPrice} onChange={e=>updateItem(idx,"unitPrice",e.target.value)} style={inputStyle}/></div>
+              <div><label style={labelStyle}>הנחה %</label><input type="number" value={it.discount} onChange={e=>updateItem(idx,"discount",e.target.value)} style={inputStyle}/></div>
+            </div>
+          </div>)}
+          <button type="button" onClick={addItem} style={{width:"100%",padding:14,border:"2px dashed "+accent,color:accent,background:"#fff",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>➕ הוסף פריט</button>
+        </div>
+
+        {isOrder&&<div style={{marginBottom:22}}>
+          <div style={sectionTitle}>📎 קובץ ודדליין</div>
+          <label style={labelStyle}>דדליין *</label>
+          <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} style={{...inputStyle,marginBottom:12}}/>
+          <label style={labelStyle}>קובץ עבודה *</label>
+          <input type="file" onChange={e=>setWorkFile(e.target.files?.[0]||null)} style={{marginBottom:12}}/>
+          {workFile&&<div style={{fontSize:13,color:"#166534",marginBottom:10}}>📄 {workFile.name}</div>}
+          <label style={labelStyle}>הערה לעובד</label>
+          <textarea value={workerNote} onChange={e=>setWorkerNote(e.target.value)} rows={2} style={{...inputStyle,resize:"vertical"}}/>
+        </div>}
+
+        <div style={{padding:14,background:isOrder?"#eff6ff":"#f5f3ff",borderRadius:10,marginBottom:12}}>
+          <div style={{fontWeight:800,marginBottom:6}}>💰 סיכום</div>
+          <div>👤 {selectedClient?.name||"—"}</div>
+          <div>📦 {items.length} פריטים</div>
+          <div style={{fontWeight:700,color:accent,marginTop:4}}>₪{itemsTotal.toFixed(2)} (לפני מעמ)</div>
+          <div style={{fontSize:12,color:"#64748b",marginTop:6}}>{isOrder?"docType 15 · הזמנה":"docType 14 · הצעה (לא יוצרת משימה)"}</div>
+        </div>
+        {error&&<div style={{padding:12,background:"#fef2f2",color:"#dc2626",borderRadius:10,fontSize:14,marginBottom:8}}>❌ {error}<div style={{fontSize:12,marginTop:6,color:"#991b1b"}>הטופס נשמר — אפשר לנסות שוב אחרי תיקון.</div></div>}
+      </div>
+      <div style={footerStyle}>
+        <button type="button" onClick={onClose} disabled={submitting} style={btnSecondary}>ביטול</button>
+        <button type="button" onClick={handleSubmit} disabled={submitting} style={{...btnPrimary,opacity:submitting?0.6:1}}>{submitting?"⏳ שולח...":(isOrder?"🚀 צור הזמנה":"📤 צור הצעה")}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
+  const [quotes,setQuotes]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [viewQ,setViewQ]=useState(null);
+  const [busyId,setBusyId]=useState(null);
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const{data,error}=await supabaseClient
+        .from("quotes")
+        .select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status")
+        .order("sent_at",{ascending:true,nullsFirst:false});
+      if(error)throw error;
+      setQuotes(data||[]);
+    }catch(e){console.warn(e);setQuotes([]);}
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const ageDays=q=>{
+    const base=q.sent_at||q.created_at;
+    if(!base)return 0;
+    return Math.floor((Date.now()-new Date(base).getTime())/864e5);
+  };
+  const ageColor=d=>d>=15?"#dc2626":d>=8?"#ea580c":"#64748b";
+  const openQuotes=quotes.filter(q=>(q.quote_status||"sent")==="sent");
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
+  const approvedMonth=quotes.filter(q=>q.quote_status==="approved"&&q.converted_at&&q.converted_at>=monthStart).length;
+  // fallback if converted_at missing
+  const approvedMonthAlt=quotes.filter(q=>q.quote_status==="approved"&&(q.status_changed_at||q.converted_at||q.created_at)>=monthStart).length;
+  const approvedCount=Math.max(approvedMonth,approvedMonthAlt);
+  const rejectedCount=quotes.filter(q=>q.quote_status==="rejected").length;
+  const closedLike=approvedCount+rejectedCount;
+  const convRate=closedLike?Math.round((approvedCount/closedLike)*100):0;
+
+  const setStatus=async(q,status)=>{
+    setBusyId(q.id);
+    try{
+      const patch={quote_status:status,status_changed_at:new Date().toISOString()};
+      const{error}=await supabaseClient.from("quotes").update(patch).eq("id",q.id);
+      if(error)throw error;
+      await load();
+    }catch(e){window.alert(e.message||String(e));}
+    finally{setBusyId(null);}
+  };
+
+  const sendFollowUp=async(q)=>{
+    setBusyId(q.id);
+    try{
+      await sendEmail({
+        to:["kfir.dfus@gmail.com","natalie.zem@gmail.com"],
+        subject:"תזכורת הצעה #"+((q.bina_doc_id||q.id)+"").slice(0,12)+" — "+(q.bina_cust_name||""),
+        html:"<!DOCTYPE html><html dir=\"rtl\" lang=\"he\"><body style=\"font-family:Arial,sans-serif;direction:rtl;padding:16px\">"+
+          "<h2>תזכורת להצעת מחיר</h2>"+
+          "<p><strong>לקוח:</strong> "+escHtml(q.bina_cust_name||"—")+"</p>"+
+          "<p><strong>כותרת:</strong> "+escHtml(q.title||"—")+"</p>"+
+          "<p><strong>מספר בבינה:</strong> "+escHtml(q.bina_doc_id||"—")+"</p>"+
+          "<p><strong>ימים מאז שליחה:</strong> "+ageDays(q)+"</p>"+
+          "</body></html>",
+        from:"PrintOS <orders@natalie-print.com>",
+      });
+      await supabaseClient.from("quotes").update({follow_up_sent_at:new Date().toISOString()}).eq("id",q.id);
+      await load();
+      window.alert("תזכורת נשלחה");
+    }catch(e){window.alert(e.message||String(e));}
+    finally{setBusyId(null);}
+  };
+
+  const convert=async(q)=>{
+    setBusyId(q.id);
+    try{
+      const{data:qItems}=await supabaseClient.from("quote_items").select("*").eq("quote_id",q.id).order("line_number");
+      const list=Array.isArray(clients)?clients:[];
+      const client=list.find(c=>String(c.bina_customer_id)===String(q.bina_cust_id))||null;
+      onConvertToOrder?.({
+        mode:"order",
+        sourceQuoteId:q.id,
+        title:q.title||"",
+        agent:q.sales_agent||"",
+        contactName:q.contact_person||"",
+        client,
+        bina_cust_id:q.bina_cust_id,
+        items:(qItems||[]).map(it=>({
+          description:it.description||"",
+          quantity:it.quantity,
+          unitPrice:it.unit_price,
+          discount:it.discount_pct,
+        })),
+      });
+    }catch(e){window.alert(e.message||String(e));}
+    finally{setBusyId(null);}
+  };
+
+  const remove=async(q)=>{
+    if(!window.confirm("למחוק את ההצעה?"))return;
+    setBusyId(q.id);
+    try{
+      const{error}=await supabaseClient.from("quotes").delete().eq("id",q.id);
+      if(error)throw error;
+      await load();
+    }catch(e){window.alert(e.message||String(e));}
+    finally{setBusyId(null);}
+  };
+
+  const sortedOpen=[...openQuotes].sort((a,b)=>ageDays(b)-ageDays(a));
+
+  return<div style={{direction:"rtl",maxWidth:960}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      <h1 style={{fontSize:22,fontWeight:900,margin:0}}>📄 הצעות מחיר</h1>
+      <button type="button" onClick={load} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>רענן</button>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+      {[{l:"פתוחות",v:openQuotes.length,c:"#2563EB"},{l:"אושרו החודש",v:approvedCount,c:"#16a34a"},{l:"נדחו",v:rejectedCount,c:"#dc2626"},{l:"אחוז המרה",v:convRate+"%",c:"#7c3aed"}].map(k=>
+        <div key={k.l} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,padding:14,textAlign:"center"}}>
+          <div style={{fontSize:28,fontWeight:900,color:k.c}}>{k.v}</div>
+          <div style={{fontSize:13,color:"#64748b",fontWeight:600}}>{k.l}</div>
+        </div>
+      )}
+    </div>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28}/> טוען...</div>:
+    <div style={{display:"grid",gap:10}}>
+      {sortedOpen.map(q=>{
+        const d=ageDays(q);
+        return<div key={q.id} style={{background:"#fff",border:"1px solid var(--border)",borderRight:"4px solid "+ageColor(d),borderRadius:12,padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontWeight:800,fontSize:16}}>{q.bina_cust_name||"—"} · {q.title||"הצעה"}</div>
+              <div style={{fontSize:13,color:"#64748b",marginTop:4}}>#{q.bina_doc_id||"—"} · {d} ימים · {q.sales_agent||""}</div>
+              {q.follow_up_sent_at&&<div style={{fontSize:12,color:"#0d9488",marginTop:4}}>תזכורת נשלחה {new Date(q.follow_up_sent_at).toLocaleDateString("he-IL")}</div>}
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button type="button" disabled={busyId===q.id} onClick={()=>convert(q)} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:40}}>✅ אושרה</button>
+              <button type="button" disabled={busyId===q.id} onClick={()=>setStatus(q,"rejected")} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:40}}>❌ נדחתה</button>
+              <button type="button" disabled={busyId===q.id} onClick={()=>sendFollowUp(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>📧 תזכורת</button>
+              <button type="button" onClick={()=>setViewQ(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>👁️</button>
+              <button type="button" disabled={busyId===q.id} onClick={()=>remove(q)} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>🗑️</button>
+            </div>
+          </div>
+        </div>;
+      })}
+      {!sortedOpen.length&&<div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>אין הצעות פתוחות</div>}
+    </div>}
+    {viewQ&&<Modal open={true} onClose={()=>setViewQ(null)} title={"הצעה — "+(viewQ.title||"")} maxWidth={520}>
+      <div style={{fontSize:14,lineHeight:1.7}}>
+        <div><strong>לקוח:</strong> {viewQ.bina_cust_name}</div>
+        <div><strong>בינה:</strong> #{viewQ.bina_doc_id||"—"}</div>
+        <div><strong>סטטוס:</strong> {viewQ.quote_status||"—"}</div>
+        <div><strong>נשלחה:</strong> {viewQ.sent_at?new Date(viewQ.sent_at).toLocaleString("he-IL"):"—"}</div>
+        <div><strong>סוכן:</strong> {viewQ.sales_agent||"—"}</div>
+        <div><strong>איש קשר:</strong> {viewQ.contact_person||"—"}</div>
+      </div>
+    </Modal>}
+  </div>;
+}
+
 function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
   const [step,setStep]=useState(1);
   const [submitting,setSubmitting]=useState(false);
@@ -16821,8 +17403,16 @@ function App(){
   const [mob,setMob]=useState(false);
   const [addTask,setAddTask]=useState(false);
   const [binaClientOpen,setBinaClientOpen]=useState(false);
-  const [orderModalOpen,setOrderModalOpen]=useState(false);
-  const [quoteModalOpen,setQuoteModalOpen]=useState(false);
+  const [orderQuoteModal,setOrderQuoteModal]=useState({open:false,mode:"order",prefill:null,sourceQuoteId:null});
+  const openOrderQuoteModal=(mode="order",prefill=null)=>{
+    setOrderQuoteModal({
+      open:true,
+      mode:mode==="quote"?"quote":"order",
+      prefill:prefill||null,
+      sourceQuoteId:prefill?.sourceQuoteId||null,
+    });
+  };
+  const closeOrderQuoteModal=()=>setOrderQuoteModal({open:false,mode:"order",prefill:null,sourceQuoteId:null});
   const [binaClientSaving,setBinaClientSaving]=useState(false);
   const [editTask,setEditTask]=useState(null);
   const [det,setDet]=useState(null);
@@ -17179,6 +17769,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="quotes-lifecycle"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="user-passwords"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -17425,7 +18021,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"work-files",ic:"📎",lb:"קבצי עבודה"},{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"work-files",ic:"📎",lb:"קבצי עבודה"},{id:"quotes-lifecycle",ic:"📄",lb:"הצעות מחיר"},{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -17496,8 +18092,8 @@ function App(){
       {isA&&<button onClick={()=>{setAddTask(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.25)"}}>+ משימה חדשה</button>}
       {isA&&<button onClick={syncBina} disabled={binaSyncing} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:binaSyncing?"#f1f5f9":"#fff",color:"var(--text)",fontWeight:600,fontSize:12,cursor:binaSyncing?"wait":"pointer",fontFamily:"inherit",opacity:binaSyncing?0.7:1}}>{binaSyncing?"🔄 מושך...":"🔄 משוך מבינה"}</button>}
       {isA&&<button onClick={()=>{openBinaClientModal();setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--green)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>➕ לקוח חדש</button>}
-      {isA&&<button onClick={()=>{setOrderModalOpen(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--green)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>📋 הזמנה חדשה</button>}
-      {isA&&<button onClick={()=>{setQuoteModalOpen(true);setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--purple)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💼 הצעת מחיר חדשה</button>}
+      {isA&&<button onClick={()=>{openOrderQuoteModal("order");setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--green)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>📋 הזמנה / הצעה</button>}
+      {isA&&<button onClick={()=>{openOrderQuoteModal("quote");setMob(false);}} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",color:"var(--purple)",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>💼 הצעת מחיר חדשה</button>}
     </div>
   </div>;
 
@@ -17560,6 +18156,8 @@ function App(){
       {tab==="my_day"&&<MyDayScreen user={user} onRefreshAll={refreshAll}/>}
 
       {tab==="work-files"&&isA&&<WorkFilesAdminTab user={user}/>}
+
+      {tab==="quotes-lifecycle"&&isA&&<QuotesLifecycleTab clients={clients} sb={sb} onConvertToOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}}/>}
 
       {tab==="alut-dashboard"&&isA&&<AlutDashboard user={user}/>}
 
@@ -17912,9 +18510,16 @@ function App(){
       </div>
     </Modal>
 
-    <CreateOrderModal open={orderModalOpen} onClose={()=>setOrderModalOpen(false)} onSuccess={()=>{refreshAll();}} clients={clients} sb={sb}/>
-
-    <CreateQuoteModal open={quoteModalOpen} onClose={()=>setQuoteModalOpen(false)} onSuccess={()=>{refreshAll();}} clients={clients} sb={sb}/>
+    <UnifiedOrderQuoteModal
+      open={!!orderQuoteModal.open}
+      onClose={closeOrderQuoteModal}
+      onSuccess={()=>{refreshAll();reloadQuotes?.();}}
+      clients={clients}
+      sb={sb}
+      initialMode={orderQuoteModal.mode||"order"}
+      prefill={orderQuoteModal.prefill}
+      sourceQuoteId={orderQuoteModal.sourceQuoteId}
+    />
 
     {deliveryNoteModal&&<DeliveryNoteModal task={deliveryNoteModal.task} clients={clients} user={user} onClose={()=>setDeliveryNoteModal(null)}/>}
 

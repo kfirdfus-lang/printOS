@@ -16327,7 +16327,7 @@ function MyDayTaskDetail({task,dept,user,taskItems,onBack,onChanged}){
       if(error)throw error;
       window.sendAlert?.(
         `✅ משימה הושלמה: ${task.title}`,
-        `משימה הושלמה במערכת PrintOS:\n\nכותרת: ${task.title}\nמחלקה: ${task.department||task.dept||"—}\nלקוח: ${task.client_name||"—"}\nהושלם ע״י: ${user?.name||"—"}`
+        `משימה הושלמה במערכת PrintOS:\n\nכותרת: ${task.title}\nמחלקה: ${task.department||task.dept||"—"}\nלקוח: ${task.client_name||"—"}\nהושלם ע״י: ${user?.name||"—"}`
       )?.catch?.(()=>{});
       setDoneFlash(true);
       onChanged?.({...task,...patch});

@@ -16584,14 +16584,14 @@ function WorkFilesAdminTab({user}){
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2500);};
   const load=async()=>{
     await linkPendingWorkFiles();
-    const[{data:deps},{data:pend},      {data:tasks}]=await Promise.all([
+    const [depsRes,pendRes,tasksRes]=await Promise.all([
       supabaseClient.from("departments").select("*").eq("is_active",true).order("sort_order"),
       supabaseClient.from("pending_work_files").select("*").eq("status","waiting").order("created_at",{ascending:true}),
       supabaseClient.from("tasks").select("id,title,client_name,bina_order_id,due_date,department,dept,work_file_path,status").is("archived_at",null).order("due_date",{ascending:true}).limit(200),
     ]);
-    setDepartments(deps||[]);
-    setPending(pend||[]);
-    setNoFileTasks((tasks||[]).filter(t=>!TASK_DONE_STATUSES.includes(t.status)&&!t.work_file_path));
+    setDepartments(depsRes.data||[]);
+    setPending(pendRes.data||[]);
+    setNoFileTasks((tasksRes.data||[]).filter(t=>!TASK_DONE_STATUSES.includes(t.status)&&!t.work_file_path));
   };
   useEffect(()=>{load();},[]);
   const uploadAndAttach=async()=>{

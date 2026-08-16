@@ -44,6 +44,10 @@
   --shadow-lg:0 10px 40px rgba(0,0,0,0.12);
   --radius:12px;
   --sidebar:240px;
+  --fill-accent:#0d9488;
+  --bg-success:#F0FDF4;
+  --text-secondary:#64748b;
+  --border-warning:#F59E0B;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);font-family:'Heebo',sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
@@ -55,6 +59,45 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.2)}}
+.myday-wrap{direction:rtl;max-width:900px;margin:0 auto}
+.myday-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 24px}
+.myday-kpi-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;box-shadow:var(--shadow)}
+.myday-kpi-card.done{background:var(--bg-success);border-color:#bbf7d0}
+.myday-kpi-val{font-size:32px;font-weight:900;line-height:1.1}
+.myday-kpi-lab{font-size:13px;color:var(--text-secondary);margin-top:4px;font-weight:600}
+.myday-urgent{border:2px solid #ef4444;border-radius:16px;padding:18px;background:#fff;margin-bottom:20px;box-shadow:0 4px 16px rgba(239,68,68,.12);cursor:pointer}
+.myday-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:10px;cursor:pointer;box-shadow:var(--shadow)}
+.myday-card.done{opacity:.55}
+.myday-card.done .myday-client{text-decoration:line-through}
+.myday-client{font-size:18px;font-weight:500;color:var(--text)}
+.myday-title{font-size:16px;color:var(--text-secondary);margin-top:4px}
+.myday-due{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-top:8px}
+.myday-due.today{background:#fef2f2;color:#dc2626}
+.myday-due.tomorrow{background:#fff7ed;color:#ea580c}
+.myday-due.later{background:#f1f5f9;color:#64748b}
+.myday-newdot{width:10px;height:10px;border-radius:50%;background:#2563eb;display:inline-block;margin-left:8px;vertical-align:middle}
+.myday-banner{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:1200;background:#0f172a;color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;font-size:14px;box-shadow:var(--shadow-lg);animation:fadeUp .25s ease}
+.myday-dept-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:24px}
+.myday-dept-card{border:none;border-radius:16px;padding:28px 16px;color:#fff;font-size:20px;font-weight:800;cursor:pointer;font-family:inherit;min-height:110px;box-shadow:var(--shadow-md)}
+.myday-detail{max-width:720px;margin:0 auto;direction:rtl}
+.myday-detail-back{display:inline-flex;align-items:center;gap:8px;background:none;border:none;color:var(--blue);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px 0;min-height:44px}
+.myday-deadline-banner{padding:16px 18px;border-radius:14px;font-size:22px;font-weight:800;margin:12px 0 20px}
+.myday-field-lab{font-size:15px;color:var(--text-secondary);margin-bottom:4px}
+.myday-field-val{font-size:22px;font-weight:500;color:var(--text)}
+.myday-file-box{border:1px solid var(--border);border-radius:14px;padding:18px;background:#fff;margin:16px 0}
+.myday-file-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.myday-btn-dl,.myday-btn-view{flex:1;min-width:140px;height:56px;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--border);background:#fff}
+.myday-btn-dl{background:#0f172a;color:#fff;border-color:#0f172a}
+.myday-btn-done{width:100%;height:72px;border:none;border-radius:14px;background:var(--fill-accent);color:#fff;font-size:20px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:12px}
+.myday-btn-issue{width:100%;height:64px;border:2px solid var(--border-warning);border-radius:14px;background:#fff;color:#b45309;font-size:17px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:10px}
+.myday-note{background:#fef9c3;border:1px solid #fde047;border-radius:12px;padding:14px;margin:14px 0;font-size:16px}
+.workfiles-drop{border:2px dashed #94a3b8;border-radius:14px;padding:28px;text-align:center;background:#f8fafc;color:#64748b;font-size:15px;margin-top:10px}
+.workfiles-drop.over{border-color:#0d9488;background:#f0fdfa;color:#0d9488}
+.workfiles-stale{background:#fef2f2!important}
+@media(max-width:640px){
+  .myday-kpi{grid-template-columns:1fr;gap:8px}
+  .myday-kpi-val{font-size:28px}
+}
 @media(max-width:768px){
   .sd{display:none!important}
   .sm{display:block!important}
@@ -16123,6 +16166,621 @@ function TvGalleryManager(){
 }
 
 // ── MAIN APP ──
+const PRINTOS_DEPT_LS_KEY="printos_department";
+const MYDAY_ADMIN_EMAILS=["kfir.dfus@gmail.com","natalie.zem@gmail.com"];
+
+function myDayGreeting(){
+  const h=new Date().getHours();
+  if(h<12)return"בוקר טוב";
+  if(h<17)return"צהריים טובים";
+  return"ערב טוב";
+}
+function myDayTodayYmd(){
+  return toLocalDateStr(new Date());
+}
+function myDayIsSameDay(iso){
+  if(!iso)return false;
+  return String(iso).slice(0,10)===myDayTodayYmd();
+}
+function myDayDueKind(due){
+  if(!due)return null;
+  const d=String(due).slice(0,10);
+  const today=myDayTodayYmd();
+  if(d===today)return"today";
+  const tmr=new Date();tmr.setDate(tmr.getDate()+1);
+  if(d===toLocalDateStr(tmr))return"tomorrow";
+  return"later";
+}
+function myDayDueLabel(due){
+  const k=myDayDueKind(due);
+  if(!k)return null;
+  if(k==="today")return"היום";
+  if(k==="tomorrow")return"מחר";
+  try{return new Date(String(due).slice(0,10)+"T12:00:00").toLocaleDateString("he-IL",{day:"numeric",month:"short"});}catch{return String(due).slice(0,10);}
+}
+function playMyDayChime(){
+  try{
+    const Ctx=window.AudioContext||window.webkitAudioContext;
+    if(!Ctx)return;
+    const ctx=new Ctx();
+    const o=ctx.createOscillator();
+    const g=ctx.createGain();
+    o.type="sine";o.frequency.value=880;
+    g.gain.value=0.0001;
+    o.connect(g);g.connect(ctx.destination);
+    const now=ctx.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.12,now+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,now+0.28);
+    o.start(now);o.stop(now+0.3);
+  }catch(e){}
+}
+async function downloadWorkFile(path,fileName){
+  const url=await getSignedUrl(path,3600);
+  if(!url){window.alert("לא ניתן להוריד את הקובץ");return;}
+  try{
+    const res=await fetch(url);
+    const blob=await res.blob();
+    const obj=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=obj;a.download=fileName||"file";
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(obj),1500);
+  }catch(e){
+    const a=document.createElement("a");
+    a.href=url;a.download=fileName||"file";a.target="_blank";a.rel="noopener";
+    document.body.appendChild(a);a.click();a.remove();
+  }
+}
+async function viewWorkFile(path){
+  const url=await getSignedUrl(path,3600);
+  if(!url){window.alert("לא ניתן לפתוח את הקובץ");return;}
+  window.open(url,"_blank","noopener");
+}
+async function linkPendingWorkFiles(){
+  try{
+    const{data:pending,error}=await supabaseClient.from("pending_work_files").select("*").eq("status","waiting");
+    if(error)throw error;
+    if(!pending?.length)return 0;
+    let linked=0;
+    for(const p of pending){
+      const oid=String(p.bina_order_id||"").trim();
+      if(!oid)continue;
+      const{data:tasks}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).is("archived_at",null).limit(1);
+      const task=tasks?.[0];
+      if(!task)continue;
+      const patch={
+        work_file_path:p.file_path,
+        work_file_name:p.file_name,
+        work_file_type:p.file_type||null,
+      };
+      if(p.worker_note)patch.worker_note=p.worker_note;
+      if(p.due_date)patch.due_date=p.due_date;
+      if(p.department)patch.department=p.department;
+      const{error:uErr}=await supabaseClient.from("tasks").update(patch).eq("id",task.id);
+      if(uErr){console.warn("link pending task update",uErr);continue;}
+      await supabaseClient.from("pending_work_files").update({
+        status:"linked",linked_task_id:task.id,linked_at:new Date().toISOString()
+      }).eq("id",p.id);
+      linked++;
+    }
+    return linked;
+  }catch(e){
+    console.warn("linkPendingWorkFiles",e);
+    return 0;
+  }
+}
+async function applyWorkFileToTask(taskId,fileMeta){
+  const patch={
+    work_file_path:fileMeta.file_path,
+    work_file_name:fileMeta.file_name,
+    work_file_type:fileMeta.file_type||null,
+  };
+  if(fileMeta.worker_note!=null&&fileMeta.worker_note!=="")patch.worker_note=fileMeta.worker_note;
+  if(fileMeta.due_date)patch.due_date=fileMeta.due_date;
+  if(fileMeta.department)patch.department=fileMeta.department;
+  const{error}=await supabaseClient.from("tasks").update(patch).eq("id",taskId);
+  if(error)throw error;
+}
+
+function MyDayTaskCard({task,urgent,onOpen}){
+  const dueKind=myDayDueKind(task.due_date);
+  const dueLab=myDayDueLabel(task.due_date);
+  const done=TASK_DONE_STATUSES.includes(task.status);
+  return<div className={"myday-card"+(urgent?" myday-urgent":"")+(done?" done":"")} onClick={()=>onOpen(task)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen(task);}}}>
+    <div className="myday-client">
+      {!task.first_viewed_at&&!done&&<span className="myday-newdot" title="חדש"/>}
+      {done?"✓ ":""}{task.client_name||"—"}
+      {task.issue_reported&&<span style={{marginRight:8,fontSize:13,color:"#b45309",fontWeight:700}}>⚠ דווחה בעיה</span>}
+    </div>
+    <div className="myday-title">{task.title||""}</div>
+    {dueLab&&<span className={"myday-due "+(dueKind||"later")}>{dueLab}</span>}
+  </div>;
+}
+
+function MyDayTaskDetail({task,dept,user,taskItems,onBack,onChanged}){
+  const [busy,setBusy]=useState(false);
+  const [doneFlash,setDoneFlash]=useState(false);
+  const [issueOpen,setIssueOpen]=useState(false);
+  const [issueType,setIssueType]=useState("חסר חומר");
+  const [issueText,setIssueText]=useState("");
+  const hasRip=!!dept?.has_rip;
+  const items=(taskItems||[]).filter(i=>i.task_id===task.id&&i.status!=="ארכיון");
+  useEffect(()=>{
+    if(task.first_viewed_at)return;
+    const now=new Date().toISOString();
+    supabaseClient.from("tasks").update({first_viewed_at:now}).eq("id",task.id).then(({error})=>{
+      if(!error)onChanged?.({...task,first_viewed_at:now});
+    });
+  },[task.id]);
+  const dueKind=myDayDueKind(task.due_date);
+  const deadlineBg=dueKind==="today"?"#fef2f2":dueKind==="tomorrow"?"#fff7ed":"#f1f5f9";
+  const deadlineColor=dueKind==="today"?"#dc2626":dueKind==="tomorrow"?"#ea580c":"#334155";
+  const deadlineText=dueKind==="today"?"דדליין: היום":dueKind==="tomorrow"?"דדליין: מחר":(task.due_date?`דדליין: ${myDayDueLabel(task.due_date)}`:"ללא דדליין");
+  const markDone=async()=>{
+    if(busy||TASK_DONE_STATUSES.includes(task.status))return;
+    setBusy(true);
+    try{
+      const now=new Date().toISOString();
+      // אותה לוגיקה כמו updStatus → "הושלם"
+      const patch={status:"הושלם",completed_at:now,completed_by:user?.name||null};
+      const{error}=await supabaseClient.from("tasks").update(patch).eq("id",task.id);
+      if(error)throw error;
+      window.sendAlert?.(
+        `✅ משימה הושלמה: ${task.title}`,
+        `משימה הושלמה במערכת PrintOS:\n\nכותרת: ${task.title}\nמחלקה: ${task.department||task.dept||"—}\nלקוח: ${task.client_name||"—"}\nהושלם ע״י: ${user?.name||"—"}`
+      )?.catch?.(()=>{});
+      setDoneFlash(true);
+      onChanged?.({...task,...patch});
+      setTimeout(()=>onBack(),1800);
+    }catch(e){window.alert("שגיאה: "+(e.message||e));}
+    finally{setBusy(false);}
+  };
+  const reportIssue=async()=>{
+    const text=issueType==="אחר"?(issueText.trim()||"אחר"):(issueText.trim()?`${issueType}: ${issueText.trim()}`:issueType);
+    if(!text){window.alert("נא לפרט את הבעיה");return;}
+    setBusy(true);
+    try{
+      const now=new Date().toISOString();
+      const patch={issue_reported:true,issue_text:text,issue_reported_at:now};
+      const{error}=await supabaseClient.from("tasks").update(patch).eq("id",task.id);
+      if(error)throw error;
+      try{
+        await sendEmail({
+          to:MYDAY_ADMIN_EMAILS,
+          subject:`⚠ בעיה במשימה — ${task.client_name||task.title||""}`,
+          html:`<!DOCTYPE html><html dir="rtl" lang="he"><body style="font-family:Arial,sans-serif;direction:rtl;padding:16px">
+            <h2>דווחה בעיה במשימה</h2>
+            <p><strong>לקוח:</strong> ${escHtml(task.client_name||"—")}</p>
+            <p><strong>משימה:</strong> ${escHtml(task.title||"—")}</p>
+            <p><strong>הזמנה:</strong> #${escHtml(task.bina_order_id||"—")}</p>
+            <p><strong>מחלקה:</strong> ${escHtml(task.department||dept?.name||"—")}</p>
+            <p><strong>דווח ע״י:</strong> ${escHtml(user?.name||"—")}</p>
+            <p><strong>בעיה:</strong> ${escHtml(text)}</p>
+          </body></html>`,
+          from:"PrintOS <orders@natalie-print.com>",
+        });
+      }catch(mailErr){console.warn("issue email failed",mailErr);}
+      onChanged?.({...task,...patch});
+      setIssueOpen(false);
+      window.alert("הבעיה דווחה. המשימה נשארת פתוחה.");
+    }catch(e){window.alert("שגיאה: "+(e.message||e));}
+    finally{setBusy(false);}
+  };
+  const detailFields=[
+    {lab:"לקוח",val:task.client_name,style:{fontSize:26,fontWeight:500}},
+    {lab:"מה לעשות",val:task.title,style:{fontSize:22}},
+  ].filter(f=>f.val);
+  const gridFields=[
+    {lab:"כמות",val:task.quantity},
+    {lab:"מידה",val:task.size||task.dimensions},
+    {lab:"חומר",val:task.material},
+    {lab:"גימור",val:task.finish||task.finishing},
+  ].filter(f=>f.val!=null&&String(f.val).trim()!=="");
+  return<div className="myday-detail">
+    <button type="button" className="myday-detail-back" onClick={onBack}>← חזרה להיום שלי</button>
+    <div className="myday-deadline-banner" style={{background:deadlineBg,color:deadlineColor}}>{deadlineText}</div>
+    {detailFields.map(f=><div key={f.lab} style={{marginBottom:16}}>
+      <div className="myday-field-lab">{f.lab}</div>
+      <div className="myday-field-val" style={f.style}>{f.val}</div>
+    </div>)}
+    {task.bina_order_id&&<div style={{marginBottom:16}}>
+      <div className="myday-field-lab">מספר הזמנה</div>
+      <div className="myday-field-val" style={{fontSize:22,direction:"ltr",textAlign:"right"}}>#{task.bina_order_id}</div>
+    </div>}
+    {gridFields.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+      {gridFields.map(f=><div key={f.lab}>
+        <div className="myday-field-lab">{f.lab}</div>
+        <div className="myday-field-val" style={{fontWeight:500}}>{String(f.val)}</div>
+      </div>)}
+    </div>}
+    {items.length>0&&<div style={{marginBottom:16}}>
+      <div className="myday-field-lab">פריטים</div>
+      <div style={{display:"grid",gap:8}}>
+        {items.map(it=><div key={it.id} style={{background:"#f8fafc",border:"1px solid var(--border)",borderRadius:10,padding:"10px 12px",fontSize:16}}>
+          {it.description||it.bina_item_code||"פריט"}{it.quantity!=null?` · ${it.quantity}`:""}
+        </div>)}
+      </div>
+    </div>}
+    <div className="myday-file-box">
+      {task.work_file_path?<>
+        <div style={{fontSize:17,fontWeight:700}}>📄 {task.work_file_name||"קובץ עבודה"}</div>
+        {task.work_file_type&&<div style={{fontSize:13,color:"var(--text-secondary)",marginTop:4}}>{task.work_file_type}</div>}
+        <div className="myday-file-actions">
+          {hasRip&&<button type="button" className="myday-btn-dl" onClick={()=>downloadWorkFile(task.work_file_path,task.work_file_name)}>⬇ הורד</button>}
+          <button type="button" className="myday-btn-view" onClick={()=>viewWorkFile(task.work_file_path)}>👁 צפה</button>
+        </div>
+      </>:<div style={{color:"#94a3b8",fontSize:16,textAlign:"center",padding:"8px 0"}}>לא צורף קובץ</div>}
+    </div>
+    {task.worker_note&&<div className="myday-note"><strong>הערה:</strong> {task.worker_note}</div>}
+    {task.issue_reported&&<div style={{background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:12,marginBottom:12,color:"#9a3412",fontWeight:600}}>⚠ דווחה בעיה: {task.issue_text||""}</div>}
+    {doneFlash?<div style={{background:"#dcfce7",color:"#166534",borderRadius:14,padding:20,textAlign:"center",fontSize:22,fontWeight:800,marginTop:12}}>✓ סומן כהושלם</div>:
+    !TASK_DONE_STATUSES.includes(task.status)&&<>
+      <button type="button" className="myday-btn-done" disabled={busy} onClick={markDone}>{busy?"⏳...":"✓ סיימתי"}</button>
+      <button type="button" className="myday-btn-issue" disabled={busy} onClick={()=>setIssueOpen(true)}>⚠ יש בעיה</button>
+    </>}
+    {issueOpen&&<Modal open={true} onClose={()=>!busy&&setIssueOpen(false)} title="דיווח בעיה" maxWidth={440}>
+      <div style={{display:"grid",gap:10}}>
+        {["חסר חומר","קובץ לא תקין","אחר"].map(opt=>
+          <button key={opt} type="button" onClick={()=>setIssueType(opt)} style={{padding:14,borderRadius:10,border:`2px solid ${issueType===opt?"#f59e0b":"var(--border)"}`,background:issueType===opt?"#fffbeb":"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:15,minHeight:52}}>{opt}</button>
+        )}
+        <textarea value={issueText} onChange={e=>setIssueText(e.target.value)} placeholder="פירוט (אופציונלי / חובה ב'אחר')" rows={3} style={{width:"100%",padding:12,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:15,boxSizing:"border-box"}}/>
+        <button type="button" onClick={reportIssue} disabled={busy} style={{padding:14,borderRadius:10,border:"none",background:"#b45309",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:52}}>{busy?"שולח...":"שלח דיווח"}</button>
+      </div>
+    </Modal>}
+  </div>;
+}
+
+function MyDayScreen({user,onRefreshAll}){
+  const [departments,setDepartments]=useState([]);
+  const [deptName,setDeptName]=useState(()=>localStorage.getItem(PRINTOS_DEPT_LS_KEY)||"");
+  const [tasks,setTasks]=useState([]);
+  const [taskItems,setTaskItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null);
+  const [banner,setBanner]=useState(null);
+  const knownIdsRef=useRef(new Set());
+  const primedRef=useRef(false);
+  const dept=departments.find(d=>d.name===deptName)||null;
+  const loadDepts=async()=>{
+    const{data,error}=await supabaseClient.from("departments").select("*").eq("is_active",true).order("sort_order");
+    if(error){console.warn(error);setDepartments([]);}
+    else setDepartments(data||[]);
+  };
+  const loadTasks=async()=>{
+    if(!deptName){setLoading(false);return;}
+    try{
+      await linkPendingWorkFiles();
+      const today=myDayTodayYmd();
+      const{data,error}=await supabaseClient
+        .from("tasks")
+        .select("*")
+        .eq("department",deptName)
+        .is("archived_at",null)
+        .order("due_date",{ascending:true,nullsFirst:false});
+      if(error)throw error;
+      const list=(data||[]).filter(t=>{
+        if(TASK_DONE_STATUSES.includes(t.status))return myDayIsSameDay(t.completed_at);
+        return true;
+      });
+      const ids=list.map(t=>t.id);
+      if(primedRef.current){
+        const newcomers=list.filter(t=>!knownIdsRef.current.has(t.id)&&!TASK_DONE_STATUSES.includes(t.status));
+        if(newcomers.length){
+          playMyDayChime();
+          setBanner(`משימה חדשה: ${newcomers[0].client_name||newcomers[0].title||""}`);
+          setTimeout(()=>setBanner(null),5000);
+        }
+      }
+      knownIdsRef.current=new Set(ids);
+      primedRef.current=true;
+      setTasks(list);
+      if(ids.length){
+        const{data:items}=await supabaseClient.from("task_items").select("*").in("task_id",ids);
+        setTaskItems(items||[]);
+      }else setTaskItems([]);
+      onRefreshAll?.();
+    }catch(e){console.warn("myday load",e);}
+    setLoading(false);
+  };
+  useEffect(()=>{loadDepts();},[]);
+  useEffect(()=>{
+    if(!deptName){setLoading(false);return;}
+    setLoading(true);primedRef.current=false;knownIdsRef.current=new Set();
+    loadTasks();
+    const t=setInterval(loadTasks,30000);
+    return()=>clearInterval(t);
+  },[deptName]);
+  const pickDept=name=>{
+    localStorage.setItem(PRINTOS_DEPT_LS_KEY,name);
+    setDeptName(name);setSelected(null);
+  };
+  const clearDept=()=>{
+    localStorage.removeItem(PRINTOS_DEPT_LS_KEY);
+    setDeptName("");setSelected(null);primedRef.current=false;
+  };
+  if(!deptName){
+    return<div className="myday-wrap">
+      <h1 style={{fontSize:28,fontWeight:900,margin:"8px 0"}}>☀️ היום שלי</h1>
+      <p style={{color:"var(--text-secondary)",fontSize:16}}>בחר מחלקה למחשב הזה — הבחירה תיזכר אוטומטית</p>
+      <div className="myday-dept-grid">
+        {(departments.length?departments:[{name:"הדפסה",color:"#378ADD"},{name:"גימור",color:"#1D9E75"},{name:"כריכה",color:"#7F77DD"},{name:"משלוחים",color:"#BA7517"}]).map(d=>
+          <button key={d.name} type="button" className="myday-dept-card" style={{background:d.color||"#6B7280"}} onClick={()=>pickDept(d.name)}>{d.name}</button>
+        )}
+      </div>
+      {!departments.length&&<p style={{marginTop:16,color:"#b45309",fontSize:14}}>⚠️ טבלת מחלקות עדיין לא רצה ב-SQL — מוצגות ברירות מחדל</p>}
+    </div>;
+  }
+  if(selected){
+    return<MyDayTaskDetail
+      task={selected}
+      dept={dept}
+      user={user}
+      taskItems={taskItems}
+      onBack={()=>{setSelected(null);loadTasks();}}
+      onChanged={updated=>{
+        setSelected(updated);
+        setTasks(p=>p.map(t=>t.id===updated.id?{...t,...updated}:t));
+      }}
+    />;
+  }
+  const open=tasks.filter(t=>!TASK_DONE_STATUSES.includes(t.status));
+  const doneToday=tasks.filter(t=>TASK_DONE_STATUSES.includes(t.status)&&myDayIsSameDay(t.completed_at));
+  const forToday=open.length+doneToday.length;
+  const remaining=open.length;
+  const sortedOpen=[...open].sort((a,b)=>{
+    const ad=a.due_date?String(a.due_date).slice(0,10):"9999";
+    const bd=b.due_date?String(b.due_date).slice(0,10):"9999";
+    return ad.localeCompare(bd);
+  });
+  const urgent=sortedOpen[0]||null;
+  const rest=urgent?sortedOpen.slice(1):[];
+  const dateLabel=new Date().toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long"});
+  return<div className="myday-wrap">
+    {banner&&<div className="myday-banner">🔔 {banner}</div>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:28,fontWeight:900}}>{myDayGreeting()} ☀️</div>
+        <div style={{color:"var(--text-secondary)",fontSize:15,marginTop:4}}>{dateLabel}</div>
+        <div style={{fontWeight:700,fontSize:16,marginTop:8,color:dept?.color||"var(--text)"}}>מחלקת {deptName}</div>
+      </div>
+      <button type="button" onClick={clearDept} style={{padding:"8px 12px",borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:13,minHeight:44}}>החלף מחלקה</button>
+    </div>
+    <div className="myday-kpi">
+      <div className="myday-kpi-card"><div className="myday-kpi-val">{forToday}</div><div className="myday-kpi-lab">להיום</div></div>
+      <div className="myday-kpi-card done"><div className="myday-kpi-val">{doneToday.length}</div><div className="myday-kpi-lab">הושלמו</div></div>
+      <div className="myday-kpi-card"><div className="myday-kpi-val">{remaining}</div><div className="myday-kpi-lab">נשארו</div></div>
+    </div>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28}/> טוען...</div>:<>
+      {urgent&&<>
+        <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>⚡ הדחוף ביותר</div>
+        <MyDayTaskCard task={urgent} urgent onOpen={setSelected}/>
+      </>}
+      {rest.length>0&&<>
+        <div style={{fontWeight:800,fontSize:16,margin:"18px 0 10px"}}>📋 שאר המשימות</div>
+        {rest.map(t=><MyDayTaskCard key={t.id} task={t} onOpen={setSelected}/>)}
+      </>}
+      {doneToday.length>0&&<>
+        <div style={{fontWeight:800,fontSize:16,margin:"18px 0 10px",color:"var(--text-secondary)"}}>✓ הושלמו היום</div>
+        {doneToday.map(t=><MyDayTaskCard key={t.id} task={t} onOpen={setSelected}/>)}
+      </>}
+      {!urgent&&!doneToday.length&&<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין משימות למחלקה זו כרגע</div>}
+    </>}
+  </div>;
+}
+
+function WorkFilesAdminTab({user}){
+  const [sub,setSub]=useState("new");
+  const [departments,setDepartments]=useState([]);
+  const [pending,setPending]=useState([]);
+  const [noFileTasks,setNoFileTasks]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [form,setForm]=useState({bina_order_id:"",due_date:"",department:"",worker_note:"",file:null});
+  const [fixId,setFixId]=useState(null);
+  const [fixOid,setFixOid]=useState("");
+  const [linkId,setLinkId]=useState(null);
+  const [linkTaskId,setLinkTaskId]=useState("");
+  const [dragOverId,setDragOverId]=useState(null);
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2500);};
+  const load=async()=>{
+    await linkPendingWorkFiles();
+    const[{data:deps},{data:pend},      {data:tasks}]=await Promise.all([
+      supabaseClient.from("departments").select("*").eq("is_active",true).order("sort_order"),
+      supabaseClient.from("pending_work_files").select("*").eq("status","waiting").order("created_at",{ascending:true}),
+      supabaseClient.from("tasks").select("id,title,client_name,bina_order_id,due_date,department,dept,work_file_path,status").is("archived_at",null).order("due_date",{ascending:true}).limit(200),
+    ]);
+    setDepartments(deps||[]);
+    setPending(pend||[]);
+    setNoFileTasks((tasks||[]).filter(t=>!TASK_DONE_STATUSES.includes(t.status)&&!t.work_file_path));
+  };
+  useEffect(()=>{load();},[]);
+  const uploadAndAttach=async()=>{
+    const oid=String(form.bina_order_id||"").trim();
+    if(!oid){window.alert("נא למלא מספר הזמנה בבינה");return;}
+    if(!form.file){window.alert("נא לבחור קובץ");return;}
+    if(!form.due_date){window.alert("נא למלא דדליין");return;}
+    setBusy(true);
+    try{
+      const year=new Date().getFullYear();
+      const uploaded=await uploadFileToStorage(form.file,`work-files/${year}`);
+      const meta={
+        file_path:uploaded.path,
+        file_name:form.file.name,
+        file_type:form.file.type||null,
+        file_size_kb:Math.round((form.file.size||0)/1024),
+        worker_note:form.worker_note.trim()||null,
+        due_date:form.due_date,
+        department:form.department||null,
+      };
+      const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).is("archived_at",null).limit(1);
+      const task=found?.[0];
+      if(task){
+        await applyWorkFileToTask(task.id,meta);
+        showToast("✅ חובר למשימה");
+      }else{
+        const{error}=await supabaseClient.from("pending_work_files").insert({
+          created_by_name:user?.name||null,
+          bina_order_id:oid,
+          file_path:meta.file_path,
+          file_name:meta.file_name,
+          file_type:meta.file_type,
+          file_size_kb:meta.file_size_kb,
+          worker_note:meta.worker_note,
+          due_date:meta.due_date,
+          department:meta.department,
+          status:"waiting",
+        });
+        if(error)throw error;
+        showToast("⏳ יחובר אוטומטית כשהמשימה תיכנס");
+      }
+      setForm({bina_order_id:"",due_date:"",department:"",worker_note:"",file:null});
+      await load();
+    }catch(e){window.alert("שגיאה: "+(e.message||e));}
+    finally{setBusy(false);}
+  };
+  const cancelPending=async(p)=>{
+    if(!window.confirm("לבטל קובץ ממתין?"))return;
+    await supabaseClient.from("pending_work_files").update({status:"cancelled"}).eq("id",p.id);
+    await load();
+  };
+  const saveFixOid=async()=>{
+    const oid=String(fixOid||"").trim();
+    if(!oid||!fixId)return;
+    await supabaseClient.from("pending_work_files").update({bina_order_id:oid}).eq("id",fixId);
+    setFixId(null);setFixOid("");
+    await linkPendingWorkFiles();
+    await load();
+    showToast("עודכן");
+  };
+  const manualLink=async()=>{
+    if(!linkId||!linkTaskId)return;
+    const p=pending.find(x=>x.id===linkId);
+    if(!p)return;
+    try{
+      await applyWorkFileToTask(linkTaskId,{
+        file_path:p.file_path,file_name:p.file_name,file_type:p.file_type,
+        worker_note:p.worker_note,due_date:p.due_date,department:p.department,
+      });
+      await supabaseClient.from("pending_work_files").update({
+        status:"linked",linked_task_id:linkTaskId,linked_at:new Date().toISOString()
+      }).eq("id",linkId);
+      setLinkId(null);setLinkTaskId("");
+      await load();
+      showToast("✅ חובר ידנית");
+    }catch(e){window.alert(e.message||String(e));}
+  };
+  const onDropFile=async(task,file)=>{
+    if(!file)return;
+    setBusy(true);
+    try{
+      const year=new Date().getFullYear();
+      const uploaded=await uploadFileToStorage(file,`work-files/${year}`);
+      await applyWorkFileToTask(task.id,{
+        file_path:uploaded.path,
+        file_name:file.name,
+        file_type:file.type||null,
+        due_date:task.due_date||null,
+        department:task.department||null,
+      });
+      showToast("✅ הקובץ צורף");
+      await load();
+    }catch(e){window.alert(e.message||String(e));}
+    finally{setBusy(false);setDragOverId(null);}
+  };
+  const waitHours=p=>{
+    const ms=Date.now()-new Date(p.created_at).getTime();
+    return ms/(3600e3);
+  };
+  const IS={width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:14,boxSizing:"border-box",marginBottom:10};
+  const tabBtn=(id,lab)=><button type="button" onClick={()=>setSub(id)} style={{padding:"10px 14px",borderRadius:10,border:sub===id?"2px solid #0d9488":"1px solid var(--border)",background:sub===id?"#f0fdfa":"#fff",color:sub===id?"#0d9488":"var(--text)",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>{lab}</button>;
+  return<div style={{direction:"rtl",maxWidth:960}}>
+    {toast&&<div className="myday-banner">{toast}</div>}
+    <h1 style={{fontSize:22,fontWeight:900,margin:"0 0 12px"}}>📎 קבצי עבודה</h1>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
+      {tabBtn("new","קובץ חדש")}
+      {tabBtn("pending",`ממתינים לחיבור (${pending.length})`)}
+      {tabBtn("nofile",`משימות בלי קובץ (${noFileTasks.length})`)}
+    </div>
+    {sub==="new"&&<div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:14,padding:18}}>
+      <label style={{display:"block",fontWeight:700,marginBottom:4}}>מספר הזמנה בבינה *</label>
+      <input value={form.bina_order_id} onChange={e=>setForm(f=>({...f,bina_order_id:e.target.value}))} style={IS} placeholder="לדוגמה 12345" dir="ltr"/>
+      <label style={{display:"block",fontWeight:700,marginBottom:4}}>קובץ *</label>
+      <input type="file" onChange={e=>setForm(f=>({...f,file:e.target.files?.[0]||null}))} style={{marginBottom:10}}/>
+      <label style={{display:"block",fontWeight:700,marginBottom:4}}>דדליין *</label>
+      <input type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))} style={IS}/>
+      <label style={{display:"block",fontWeight:700,marginBottom:4}}>מחלקה</label>
+      <select value={form.department} onChange={e=>setForm(f=>({...f,department:e.target.value}))} style={IS}>
+        <option value="">— ללא —</option>
+        {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
+      </select>
+      <label style={{display:"block",fontWeight:700,marginBottom:4}}>הערה לעובד</label>
+      <textarea value={form.worker_note} onChange={e=>setForm(f=>({...f,worker_note:e.target.value}))} rows={3} style={IS}/>
+      <button type="button" disabled={busy} onClick={uploadAndAttach} style={{padding:"12px 18px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:48}}>{busy?"⏳ מעלה...":"💾 שמור"}</button>
+    </div>}
+    {sub==="pending"&&<div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:14,overflow:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",minWidth:720}}>
+        <thead><tr style={{background:"#f8fafa"}}>
+          <th style={{padding:10,textAlign:"right"}}>תאריך</th><th style={{padding:10,textAlign:"right"}}>הזמנה</th><th style={{padding:10,textAlign:"right"}}>קובץ</th><th style={{padding:10,textAlign:"right"}}>דדליין</th><th style={{padding:10,textAlign:"right"}}>המתנה</th><th style={{padding:10,textAlign:"right"}}>פעולות</th>
+        </tr></thead>
+        <tbody>
+          {pending.map(p=>{
+            const hrs=waitHours(p);
+            const stale=hrs>=24;
+            return<tr key={p.id} className={stale?"workfiles-stale":""}>
+              <td style={{padding:10}}>{new Date(p.created_at).toLocaleString("he-IL")}</td>
+              <td style={{padding:10,direction:"ltr",textAlign:"right"}}>{p.bina_order_id}</td>
+              <td style={{padding:10}}>{p.file_name}</td>
+              <td style={{padding:10}}>{p.due_date||"—"}</td>
+              <td style={{padding:10}}>{stale?<span style={{color:"#dc2626",fontWeight:700}}>⚠ ממתין מעל יממה ({Math.floor(hrs)}ש׳)</span>:`${Math.floor(hrs)} שעות`}</td>
+              <td style={{padding:10}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <button type="button" onClick={()=>{setFixId(p.id);setFixOid(p.bina_order_id);}} style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✏️ תקן מספר</button>
+                  <button type="button" onClick={()=>{setLinkId(p.id);setLinkTaskId("");}} style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:36}}>🔗 חבר ידנית</button>
+                  <button type="button" onClick={()=>cancelPending(p)} style={{padding:"6px 10px",borderRadius:8,border:"none",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontFamily:"inherit",minHeight:36}}>🗑️ בטל</button>
+                </div>
+              </td>
+            </tr>;
+          })}
+          {!pending.length&&<tr><td colSpan={6} style={{padding:24,textAlign:"center",color:"var(--text3)"}}>אין קבצים ממתינים</td></tr>}
+        </tbody>
+      </table>
+      {fixId&&<div style={{padding:14,borderTop:"1px solid var(--border)",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <strong>תיקון מספר הזמנה:</strong>
+        <input value={fixOid} onChange={e=>setFixOid(e.target.value)} style={{...IS,marginBottom:0,maxWidth:180}} dir="ltr"/>
+        <button type="button" onClick={saveFixOid} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>שמור</button>
+        <button type="button" onClick={()=>setFixId(null)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+      </div>}
+      {linkId&&<div style={{padding:14,borderTop:"1px solid var(--border)",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <strong>חבר למשימה:</strong>
+        <select value={linkTaskId} onChange={e=>setLinkTaskId(e.target.value)} style={{...IS,marginBottom:0,maxWidth:360}}>
+          <option value="">— בחר משימה —</option>
+          {noFileTasks.map(t=><option key={t.id} value={t.id}>#{t.bina_order_id||"—"} · {t.client_name||t.title||t.id}</option>)}
+        </select>
+        <button type="button" onClick={manualLink} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#0d9488",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>חבר</button>
+        <button type="button" onClick={()=>setLinkId(null)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+      </div>}
+    </div>}
+    {sub==="nofile"&&<div style={{display:"grid",gap:12}}>
+      {noFileTasks.map(t=><div key={t.id}
+        className={"workfiles-drop"+(dragOverId===t.id?" over":"")}
+        onDragOver={e=>{e.preventDefault();setDragOverId(t.id);}}
+        onDragLeave={()=>setDragOverId(null)}
+        onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files?.[0];onDropFile(t,f);}}
+      >
+        <div style={{fontWeight:800,fontSize:16,color:"var(--text)"}}>#{t.bina_order_id||"—"} · {t.client_name||"—"}</div>
+        <div style={{marginTop:4}}>{t.title}</div>
+        <div style={{marginTop:8,fontSize:13}}>גרור קובץ לכאן או{" "}
+          <label style={{color:"#0d9488",fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>
+            בחר קובץ
+            <input type="file" hidden disabled={busy} onChange={e=>onDropFile(t,e.target.files?.[0])}/>
+          </label>
+        </div>
+      </div>)}
+      {!noFileTasks.length&&<div style={{padding:40,textAlign:"center",color:"var(--text3)"}}>כל המשימות הפתוחות עם מספר הזמנה כבר עם קובץ (או אין משימות)</div>}
+    </div>}
+  </div>;
+}
+
 function App(){
   const [user,setUser]=useState(null);
   const [tasks,setTasks]=useState([]);
@@ -16491,6 +17149,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="work-files"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="user-passwords"&&(!user||user.role!=="admin")){
       setTab("dashboard");
     }
@@ -16732,11 +17396,12 @@ function App(){
   const LS={color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:5,display:"block"};
 
   const navs=[
+    {id:"my_day",ic:"☀️",lb:"היום שלי"},
     {id:"dashboard",ic:"⊟",lb:"דשבורד"},
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
-    ...(isA?[{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"work-files",ic:"📎",lb:"קבצי עבודה"},{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -16867,6 +17532,10 @@ function App(){
       </div>}
 
       {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
+
+      {tab==="my_day"&&<MyDayScreen user={user} onRefreshAll={refreshAll}/>}
+
+      {tab==="work-files"&&isA&&<WorkFilesAdminTab user={user}/>}
 
       {tab==="alut-dashboard"&&isA&&<AlutDashboard user={user}/>}
 

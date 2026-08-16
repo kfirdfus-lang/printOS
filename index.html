@@ -16168,6 +16168,17 @@ function TvGalleryManager(){
 // ── MAIN APP ──
 const PRINTOS_DEPT_LS_KEY="printos_department";
 const MYDAY_ADMIN_EMAILS=["kfir.dfus@gmail.com","natalie.zem@gmail.com"];
+const MYDAY_DEFAULT_DEPTS=[
+  {name:"פורמט רחב",color:"#378ADD",has_rip:true,sort_order:1},
+  {name:"דיגיטלי צבעוני",color:"#1D9E75",has_rip:true,sort_order:2},
+  {name:"דיגיטלי שחור לבן",color:"#6B7280",has_rip:true,sort_order:3},
+  {name:"אופסט",color:"#7F77DD",has_rip:true,sort_order:4},
+  {name:"ביגוד ומוצרי פרסום",color:"#BA7517",has_rip:true,sort_order:5},
+  {name:"עבודות חוץ",color:"#C2410C",has_rip:false,sort_order:6},
+  {name:"משלוחים",color:"#0891B2",has_rip:false,sort_order:7},
+];
+const ITEM_OPEN_STATUS="בעבודה";
+const ITEM_DONE_STATUS="מוכן";
 
 function myDayGreeting(){
   const h=new Date().getHours();
@@ -16236,6 +16247,9 @@ async function viewWorkFile(path){
   if(!url){window.alert("לא ניתן לפתוח את הקובץ");return;}
   window.open(url,"_blank","noopener");
 }
+function myDayTaskFromItem(item){
+  return item.tasks||{};
+}
 async function linkPendingWorkFiles(){
   try{
     const{data:pending,error}=await supabaseClient.from("pending_work_files").select("*").eq("status","waiting");
@@ -16255,7 +16269,6 @@ async function linkPendingWorkFiles(){
       };
       if(p.worker_note)patch.worker_note=p.worker_note;
       if(p.due_date)patch.due_date=p.due_date;
-      if(p.department)patch.department=p.department;
       const{error:uErr}=await supabaseClient.from("tasks").update(patch).eq("id",task.id);
       if(uErr){console.warn("link pending task update",uErr);continue;}
       await supabaseClient.from("pending_work_files").update({
@@ -16277,129 +16290,150 @@ async function applyWorkFileToTask(taskId,fileMeta){
   };
   if(fileMeta.worker_note!=null&&fileMeta.worker_note!=="")patch.worker_note=fileMeta.worker_note;
   if(fileMeta.due_date)patch.due_date=fileMeta.due_date;
-  if(fileMeta.department)patch.department=fileMeta.department;
   const{error}=await supabaseClient.from("tasks").update(patch).eq("id",taskId);
   if(error)throw error;
 }
+async function maybeCompleteTaskWhenAllItemsDone(taskId){
+  if(!taskId)return false;
+  const{data:arr,error}=await supabaseClient.from("task_items").select("id,status").eq("task_id",taskId);
+  if(error)throw error;
+  const items=Array.isArray(arr)?arr:[];
+  if(!items.length)return false;
+  const allDone=items.every(i=>i.status===ITEM_DONE_STATUS||i.status==="ארכיון");
+  if(!allDone)return false;
+  const{error:tErr}=await supabaseClient.from("tasks").update({
+    status:"הושלם",
+    completed_at:new Date().toISOString(),
+  }).eq("id",taskId);
+  if(tErr)throw tErr;
+  return true;
+}
 
-function MyDayTaskCard({task,urgent,onOpen}){
+function MyDayItemCard({item,urgent,onOpen}){
+  const task=myDayTaskFromItem(item);
   const dueKind=myDayDueKind(task.due_date);
   const dueLab=myDayDueLabel(task.due_date);
-  const done=TASK_DONE_STATUSES.includes(task.status);
-  return<div className={"myday-card"+(urgent?" myday-urgent":"")+(done?" done":"")} onClick={()=>onOpen(task)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen(task);}}}>
-    <div className="myday-client">
-      {!task.first_viewed_at&&!done&&<span className="myday-newdot" title="חדש"/>}
-      {done?"✓ ":""}{task.client_name||"—"}
-      {task.issue_reported&&<span style={{marginRight:8,fontSize:13,color:"#b45309",fontWeight:700}}>⚠ דווחה בעיה</span>}
+  const done=item.status===ITEM_DONE_STATUS;
+  return<div className={"myday-card"+(urgent?" myday-urgent":"")+(done?" done":"")} onClick={()=>onOpen(item)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onOpen(item);}}} style={done?{opacity:0.55}:undefined}>
+    <div className="myday-title" style={{fontSize:18,fontWeight:500,textDecoration:done?"line-through":"none"}}>
+      {!item.first_viewed_at&&!done&&<span className="myday-newdot" title="חדש"/>}
+      {done?"✓ ":""}{item.description||"—"}
     </div>
-    <div className="myday-title">{task.title||""}</div>
-    {dueLab&&<span className={"myday-due "+(dueKind||"later")}>{dueLab}</span>}
+    <div className="myday-client" style={{fontSize:16,color:"var(--text-secondary)"}}>{task.client_name||"—"}</div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:8,alignItems:"center"}}>
+      {item.quantity!=null&&String(item.quantity).trim()!==""&&<span style={{display:"inline-block",padding:"4px 10px",borderRadius:8,background:"#f1f5f9",fontSize:14,fontWeight:600}}>כמות: {item.quantity}</span>}
+      {dueLab&&<span className={"myday-due "+(dueKind||"later")}>{dueLab}</span>}
+      {item.issue_reported&&<span style={{fontSize:13,color:"#b45309",fontWeight:700}}>⚠ דווחה בעיה</span>}
+    </div>
   </div>;
 }
 
-function MyDayTaskDetail({task,dept,user,taskItems,onBack,onChanged}){
+function MyDayItemDetail({item,dept,user,onBack,onChanged}){
   const [busy,setBusy]=useState(false);
   const [doneFlash,setDoneFlash]=useState(false);
   const [issueOpen,setIssueOpen]=useState(false);
   const [issueType,setIssueType]=useState("חסר חומר");
   const [issueText,setIssueText]=useState("");
+  const [siblings,setSiblings]=useState([]);
+  const task=myDayTaskFromItem(item);
   const hasRip=!!dept?.has_rip;
-  const items=(taskItems||[]).filter(i=>i.task_id===task.id&&i.status!=="ארכיון");
   useEffect(()=>{
-    if(task.first_viewed_at)return;
+    if(item.first_viewed_at)return;
     const now=new Date().toISOString();
-    supabaseClient.from("tasks").update({first_viewed_at:now}).eq("id",task.id).then(({error})=>{
-      if(!error)onChanged?.({...task,first_viewed_at:now});
+    supabaseClient.from("task_items").update({first_viewed_at:now}).eq("id",item.id).then(({error})=>{
+      if(!error)onChanged?.({...item,first_viewed_at:now});
     });
-  },[task.id]);
+  },[item.id]);
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      if(!item.task_id){setSiblings([]);return;}
+      const{data}=await supabaseClient.from("task_items").select("id,description,department,status").eq("task_id",item.task_id).neq("id",item.id).order("line_number",{ascending:true});
+      if(!cancelled)setSiblings((data||[]).filter(s=>s.status!=="ארכיון"));
+    })();
+    return()=>{cancelled=true;};
+  },[item.task_id,item.id]);
   const dueKind=myDayDueKind(task.due_date);
   const deadlineBg=dueKind==="today"?"#fef2f2":dueKind==="tomorrow"?"#fff7ed":"#f1f5f9";
   const deadlineColor=dueKind==="today"?"#dc2626":dueKind==="tomorrow"?"#ea580c":"#334155";
-  const deadlineText=dueKind==="today"?"דדליין: היום":dueKind==="tomorrow"?"דדליין: מחר":(task.due_date?`דדליין: ${myDayDueLabel(task.due_date)}`:"ללא דדליין");
+  const deadlineText=dueKind==="today"?"דדליין: היום":dueKind==="tomorrow"?"דדליין: מחר":(task.due_date?("דדליין: "+myDayDueLabel(task.due_date)):"ללא דדליין");
   const markDone=async()=>{
-    if(busy||TASK_DONE_STATUSES.includes(task.status))return;
+    if(busy||item.status===ITEM_DONE_STATUS)return;
     setBusy(true);
     try{
       const now=new Date().toISOString();
-      // אותה לוגיקה כמו updStatus → "הושלם"
-      const patch={status:"הושלם",completed_at:now,completed_by:user?.name||null};
-      const{error}=await supabaseClient.from("tasks").update(patch).eq("id",task.id);
+      const patch={status:ITEM_DONE_STATUS,completed_at:now,completed_by:user?.name||null};
+      const{error}=await supabaseClient.from("task_items").update(patch).eq("id",item.id);
       if(error)throw error;
-      window.sendAlert?.(
-        `✅ משימה הושלמה: ${task.title}`,
-        `משימה הושלמה במערכת PrintOS:\n\nכותרת: ${task.title}\nמחלקה: ${task.department||task.dept||"—"}\nלקוח: ${task.client_name||"—"}\nהושלם ע״י: ${user?.name||"—"}`
-      )?.catch?.(()=>{});
+      await maybeCompleteTaskWhenAllItemsDone(item.task_id);
       setDoneFlash(true);
-      onChanged?.({...task,...patch});
+      onChanged?.({...item,...patch});
       setTimeout(()=>onBack(),1800);
     }catch(e){window.alert("שגיאה: "+(e.message||e));}
     finally{setBusy(false);}
   };
   const reportIssue=async()=>{
-    const text=issueType==="אחר"?(issueText.trim()||"אחר"):(issueText.trim()?`${issueType}: ${issueText.trim()}`:issueType);
+    const text=issueType==="אחר"?(issueText.trim()||"אחר"):(issueText.trim()?issueType+": "+issueText.trim():issueType);
     if(!text){window.alert("נא לפרט את הבעיה");return;}
     setBusy(true);
     try{
       const now=new Date().toISOString();
       const patch={issue_reported:true,issue_text:text,issue_reported_at:now};
-      const{error}=await supabaseClient.from("tasks").update(patch).eq("id",task.id);
+      const{error}=await supabaseClient.from("task_items").update(patch).eq("id",item.id);
       if(error)throw error;
       try{
+        const html=""
+          +"<!DOCTYPE html><html dir=\"rtl\" lang=\"he\"><body style=\"font-family:Arial,sans-serif;direction:rtl;padding:16px\">"
+          +"<h2>דווחה בעיה בפריט</h2>"
+          +"<p><strong>לקוח:</strong> "+escHtml(task.client_name||"—")+"</p>"
+          +"<p><strong>פריט:</strong> "+escHtml(item.description||"—")+"</p>"
+          +"<p><strong>הזמנה:</strong> #"+escHtml(String(task.bina_order_id||item.bina_order_id||"—"))+"</p>"
+          +"<p><strong>מחלקה:</strong> "+escHtml(item.department||dept?.name||"—")+"</p>"
+          +"<p><strong>דווח על ידי:</strong> "+escHtml(user?.name||"—")+"</p>"
+          +"<p><strong>בעיה:</strong> "+escHtml(text)+"</p>"
+          +"</body></html>";
         await sendEmail({
           to:MYDAY_ADMIN_EMAILS,
-          subject:`⚠ בעיה במשימה — ${task.client_name||task.title||""}`,
-          html:`<!DOCTYPE html><html dir="rtl" lang="he"><body style="font-family:Arial,sans-serif;direction:rtl;padding:16px">
-            <h2>דווחה בעיה במשימה</h2>
-            <p><strong>לקוח:</strong> ${escHtml(task.client_name||"—")}</p>
-            <p><strong>משימה:</strong> ${escHtml(task.title||"—")}</p>
-            <p><strong>הזמנה:</strong> #${escHtml(task.bina_order_id||"—")}</p>
-            <p><strong>מחלקה:</strong> ${escHtml(task.department||dept?.name||"—")}</p>
-            <p><strong>דווח ע״י:</strong> ${escHtml(user?.name||"—")}</p>
-            <p><strong>בעיה:</strong> ${escHtml(text)}</p>
-          </body></html>`,
+          subject:"⚠ בעיה בפריט — "+(task.client_name||item.description||""),
+          html:html,
           from:"PrintOS <orders@natalie-print.com>",
         });
       }catch(mailErr){console.warn("issue email failed",mailErr);}
-      onChanged?.({...task,...patch});
+      onChanged?.({...item,...patch});
       setIssueOpen(false);
-      window.alert("הבעיה דווחה. המשימה נשארת פתוחה.");
+      window.alert("הבעיה דווחה. הפריט נשאר בעבודה.");
     }catch(e){window.alert("שגיאה: "+(e.message||e));}
     finally{setBusy(false);}
   };
-  const detailFields=[
-    {lab:"לקוח",val:task.client_name,style:{fontSize:26,fontWeight:500}},
-    {lab:"מה לעשות",val:task.title,style:{fontSize:22}},
-  ].filter(f=>f.val);
-  const gridFields=[
-    {lab:"כמות",val:task.quantity},
-    {lab:"מידה",val:task.size||task.dimensions},
-    {lab:"חומר",val:task.material},
-    {lab:"גימור",val:task.finish||task.finishing},
-  ].filter(f=>f.val!=null&&String(f.val).trim()!=="");
+  const statusIcon=s=>s===ITEM_DONE_STATUS?"✅ מוכן":"🔵 בעבודה";
   return<div className="myday-detail">
     <button type="button" className="myday-detail-back" onClick={onBack}>← חזרה להיום שלי</button>
-    <div className="myday-deadline-banner" style={{background:deadlineBg,color:deadlineColor}}>{deadlineText}</div>
-    {detailFields.map(f=><div key={f.lab} style={{marginBottom:16}}>
-      <div className="myday-field-lab">{f.lab}</div>
-      <div className="myday-field-val" style={f.style}>{f.val}</div>
-    </div>)}
-    {task.bina_order_id&&<div style={{marginBottom:16}}>
+    <div className="myday-deadline-banner" style={{background:deadlineBg,color:deadlineColor,fontSize:22}}>{deadlineText}</div>
+    {item.description&&<div style={{marginBottom:16}}>
+      <div className="myday-field-lab">מה לעשות</div>
+      <div className="myday-field-val" style={{fontSize:26,fontWeight:500}}>{item.description}</div>
+    </div>}
+    {task.client_name&&<div style={{marginBottom:16}}>
+      <div className="myday-field-lab">לקוח</div>
+      <div className="myday-field-val" style={{fontSize:22}}>{task.client_name}</div>
+    </div>}
+    {item.quantity!=null&&String(item.quantity).trim()!==""&&<div style={{marginBottom:16}}>
+      <div className="myday-field-lab">כמות</div>
+      <div className="myday-field-val" style={{fontSize:22,fontWeight:500}}>{String(item.quantity)}</div>
+    </div>}
+    {(task.bina_order_id||item.bina_order_id)&&<div style={{marginBottom:16}}>
       <div className="myday-field-lab">מספר הזמנה</div>
-      <div className="myday-field-val" style={{fontSize:22,direction:"ltr",textAlign:"right"}}>#{task.bina_order_id}</div>
+      <div className="myday-field-val" style={{fontSize:18,direction:"ltr",textAlign:"right"}}>#{task.bina_order_id||item.bina_order_id}</div>
     </div>}
-    {gridFields.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
-      {gridFields.map(f=><div key={f.lab}>
-        <div className="myday-field-lab">{f.lab}</div>
-        <div className="myday-field-val" style={{fontWeight:500}}>{String(f.val)}</div>
-      </div>)}
+    {item.notes&&String(item.notes).trim()!==""&&<div style={{marginBottom:16}}>
+      <div className="myday-field-lab">הערת פריט</div>
+      <div className="myday-field-val" style={{fontSize:18}}>{item.notes}</div>
     </div>}
-    {items.length>0&&<div style={{marginBottom:16}}>
-      <div className="myday-field-lab">פריטים</div>
-      <div style={{display:"grid",gap:8}}>
-        {items.map(it=><div key={it.id} style={{background:"#f8fafc",border:"1px solid var(--border)",borderRadius:10,padding:"10px 12px",fontSize:16}}>
-          {it.description||it.bina_item_code||"פריט"}{it.quantity!=null?` · ${it.quantity}`:""}
-        </div>)}
-      </div>
+    {siblings.length>0&&<div style={{marginBottom:16,background:"#f8fafc",border:"1px solid var(--border)",borderRadius:12,padding:12}}>
+      <div style={{fontWeight:700,fontSize:15,marginBottom:8}}>📦 בהזמנה זו יש עוד {siblings.length} פריטים</div>
+      <ul style={{margin:0,paddingRight:18,display:"grid",gap:6,fontSize:14,color:"var(--text-secondary)"}}>
+        {siblings.map(s=><li key={s.id}>{s.description||"פריט"} — {s.department||"—"} — {statusIcon(s.status)}</li>)}
+      </ul>
     </div>}
     <div className="myday-file-box">
       {task.work_file_path?<>
@@ -16412,16 +16446,16 @@ function MyDayTaskDetail({task,dept,user,taskItems,onBack,onChanged}){
       </>:<div style={{color:"#94a3b8",fontSize:16,textAlign:"center",padding:"8px 0"}}>לא צורף קובץ</div>}
     </div>
     {task.worker_note&&<div className="myday-note"><strong>הערה:</strong> {task.worker_note}</div>}
-    {task.issue_reported&&<div style={{background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:12,marginBottom:12,color:"#9a3412",fontWeight:600}}>⚠ דווחה בעיה: {task.issue_text||""}</div>}
-    {doneFlash?<div style={{background:"#dcfce7",color:"#166534",borderRadius:14,padding:20,textAlign:"center",fontSize:22,fontWeight:800,marginTop:12}}>✓ סומן כהושלם</div>:
-    !TASK_DONE_STATUSES.includes(task.status)&&<>
+    {item.issue_reported&&<div style={{background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:12,marginBottom:12,color:"#9a3412",fontWeight:600}}>⚠ דווחה בעיה: {item.issue_text||""}</div>}
+    {doneFlash?<div style={{background:"#dcfce7",color:"#166534",borderRadius:14,padding:20,textAlign:"center",fontSize:22,fontWeight:800,marginTop:12}}>✓ סומן כמוכן</div>:
+    item.status!==ITEM_DONE_STATUS&&<>
       <button type="button" className="myday-btn-done" disabled={busy} onClick={markDone}>{busy?"⏳...":"✓ סיימתי"}</button>
       <button type="button" className="myday-btn-issue" disabled={busy} onClick={()=>setIssueOpen(true)}>⚠ יש בעיה</button>
     </>}
     {issueOpen&&<Modal open={true} onClose={()=>!busy&&setIssueOpen(false)} title="דיווח בעיה" maxWidth={440}>
       <div style={{display:"grid",gap:10}}>
         {["חסר חומר","קובץ לא תקין","אחר"].map(opt=>
-          <button key={opt} type="button" onClick={()=>setIssueType(opt)} style={{padding:14,borderRadius:10,border:`2px solid ${issueType===opt?"#f59e0b":"var(--border)"}`,background:issueType===opt?"#fffbeb":"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:15,minHeight:52}}>{opt}</button>
+          <button key={opt} type="button" onClick={()=>setIssueType(opt)} style={{padding:14,borderRadius:10,border:"2px solid "+(issueType===opt?"#f59e0b":"var(--border)"),background:issueType===opt?"#fffbeb":"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:15,minHeight:52}}>{opt}</button>
         )}
         <textarea value={issueText} onChange={e=>setIssueText(e.target.value)} placeholder="פירוט (אופציונלי / חובה ב'אחר')" rows={3} style={{width:"100%",padding:12,borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:15,boxSizing:"border-box"}}/>
         <button type="button" onClick={reportIssue} disabled={busy} style={{padding:14,borderRadius:10,border:"none",background:"#b45309",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:52}}>{busy?"שולח...":"שלח דיווח"}</button>
@@ -16433,51 +16467,46 @@ function MyDayTaskDetail({task,dept,user,taskItems,onBack,onChanged}){
 function MyDayScreen({user,onRefreshAll}){
   const [departments,setDepartments]=useState([]);
   const [deptName,setDeptName]=useState(()=>localStorage.getItem(PRINTOS_DEPT_LS_KEY)||"");
-  const [tasks,setTasks]=useState([]);
-  const [taskItems,setTaskItems]=useState([]);
+  const [items,setItems]=useState([]);
   const [loading,setLoading]=useState(true);
   const [selected,setSelected]=useState(null);
   const [banner,setBanner]=useState(null);
   const knownIdsRef=useRef(new Set());
   const primedRef=useRef(false);
-  const dept=departments.find(d=>d.name===deptName)||null;
+  const dept=departments.find(d=>d.name===deptName)||MYDAY_DEFAULT_DEPTS.find(d=>d.name===deptName)||null;
   const loadDepts=async()=>{
-    const{data,error}=await supabaseClient.from("departments").select("*").eq("is_active",true).order("sort_order");
+    const{data,error}=await supabaseClient.from("department_settings").select("*").order("sort_order");
     if(error){console.warn(error);setDepartments([]);}
-    else setDepartments(data||[]);
+    else setDepartments(data?.length?data:[]);
   };
-  const loadTasks=async()=>{
+  const loadItems=async()=>{
     if(!deptName){setLoading(false);return;}
     try{
       await linkPendingWorkFiles();
-      const today=myDayTodayYmd();
       const{data,error}=await supabaseClient
-        .from("tasks")
-        .select("*")
+        .from("task_items")
+        .select("*,tasks!inner(id,client_name,title,due_date,work_file_path,work_file_name,work_file_type,worker_note,bina_order_id,status,archived_at)")
         .eq("department",deptName)
-        .is("archived_at",null)
-        .order("due_date",{ascending:true,nullsFirst:false});
+        .in("status",[ITEM_OPEN_STATUS,ITEM_DONE_STATUS])
+        .is("tasks.archived_at",null);
       if(error)throw error;
-      const list=(data||[]).filter(t=>{
-        if(TASK_DONE_STATUSES.includes(t.status))return myDayIsSameDay(t.completed_at);
-        return true;
+      const list=(data||[]).filter(it=>{
+        if(it.status===ITEM_OPEN_STATUS)return true;
+        return myDayIsSameDay(it.completed_at);
       });
-      const ids=list.map(t=>t.id);
+      const ids=list.map(it=>it.id);
       if(primedRef.current){
-        const newcomers=list.filter(t=>!knownIdsRef.current.has(t.id)&&!TASK_DONE_STATUSES.includes(t.status));
+        const newcomers=list.filter(it=>!knownIdsRef.current.has(it.id)&&it.status===ITEM_OPEN_STATUS);
         if(newcomers.length){
           playMyDayChime();
-          setBanner(`משימה חדשה: ${newcomers[0].client_name||newcomers[0].title||""}`);
+          const t0=myDayTaskFromItem(newcomers[0]);
+          setBanner("פריט חדש: "+(newcomers[0].description||t0.client_name||""));
           setTimeout(()=>setBanner(null),5000);
         }
       }
       knownIdsRef.current=new Set(ids);
       primedRef.current=true;
-      setTasks(list);
-      if(ids.length){
-        const{data:items}=await supabaseClient.from("task_items").select("*").in("task_id",ids);
-        setTaskItems(items||[]);
-      }else setTaskItems([]);
+      setItems(list);
       onRefreshAll?.();
     }catch(e){console.warn("myday load",e);}
     setLoading(false);
@@ -16486,8 +16515,8 @@ function MyDayScreen({user,onRefreshAll}){
   useEffect(()=>{
     if(!deptName){setLoading(false);return;}
     setLoading(true);primedRef.current=false;knownIdsRef.current=new Set();
-    loadTasks();
-    const t=setInterval(loadTasks,30000);
+    loadItems();
+    const t=setInterval(loadItems,30000);
     return()=>clearInterval(t);
   },[deptName]);
   const pickDept=name=>{
@@ -16498,38 +16527,38 @@ function MyDayScreen({user,onRefreshAll}){
     localStorage.removeItem(PRINTOS_DEPT_LS_KEY);
     setDeptName("");setSelected(null);primedRef.current=false;
   };
+  const deptList=departments.length?departments:MYDAY_DEFAULT_DEPTS;
   if(!deptName){
     return<div className="myday-wrap">
       <h1 style={{fontSize:28,fontWeight:900,margin:"8px 0"}}>☀️ היום שלי</h1>
       <p style={{color:"var(--text-secondary)",fontSize:16}}>בחר מחלקה למחשב הזה — הבחירה תיזכר אוטומטית</p>
       <div className="myday-dept-grid">
-        {(departments.length?departments:[{name:"הדפסה",color:"#378ADD"},{name:"גימור",color:"#1D9E75"},{name:"כריכה",color:"#7F77DD"},{name:"משלוחים",color:"#BA7517"}]).map(d=>
+        {deptList.map(d=>
           <button key={d.name} type="button" className="myday-dept-card" style={{background:d.color||"#6B7280"}} onClick={()=>pickDept(d.name)}>{d.name}</button>
         )}
       </div>
-      {!departments.length&&<p style={{marginTop:16,color:"#b45309",fontSize:14}}>⚠️ טבלת מחלקות עדיין לא רצה ב-SQL — מוצגות ברירות מחדל</p>}
+      {!departments.length&&<p style={{marginTop:16,color:"#b45309",fontSize:14}}>⚠️ department_settings עדיין לא זמין — מוצגות ברירות מחדל</p>}
     </div>;
   }
   if(selected){
-    return<MyDayTaskDetail
-      task={selected}
+    return<MyDayItemDetail
+      item={selected}
       dept={dept}
       user={user}
-      taskItems={taskItems}
-      onBack={()=>{setSelected(null);loadTasks();}}
+      onBack={()=>{setSelected(null);loadItems();}}
       onChanged={updated=>{
         setSelected(updated);
-        setTasks(p=>p.map(t=>t.id===updated.id?{...t,...updated}:t));
+        setItems(p=>p.map(it=>it.id===updated.id?{...it,...updated}:it));
       }}
     />;
   }
-  const open=tasks.filter(t=>!TASK_DONE_STATUSES.includes(t.status));
-  const doneToday=tasks.filter(t=>TASK_DONE_STATUSES.includes(t.status)&&myDayIsSameDay(t.completed_at));
+  const open=items.filter(it=>it.status===ITEM_OPEN_STATUS);
+  const doneToday=items.filter(it=>it.status===ITEM_DONE_STATUS&&myDayIsSameDay(it.completed_at));
   const forToday=open.length+doneToday.length;
   const remaining=open.length;
   const sortedOpen=[...open].sort((a,b)=>{
-    const ad=a.due_date?String(a.due_date).slice(0,10):"9999";
-    const bd=b.due_date?String(b.due_date).slice(0,10):"9999";
+    const ad=myDayTaskFromItem(a).due_date?String(myDayTaskFromItem(a).due_date).slice(0,10):"9999";
+    const bd=myDayTaskFromItem(b).due_date?String(myDayTaskFromItem(b).due_date).slice(0,10):"9999";
     return ad.localeCompare(bd);
   });
   const urgent=sortedOpen[0]||null;
@@ -16553,29 +16582,28 @@ function MyDayScreen({user,onRefreshAll}){
     {loading?<div style={{padding:40,textAlign:"center"}}><Spinner sz={28}/> טוען...</div>:<>
       {urgent&&<>
         <div style={{fontWeight:800,fontSize:16,marginBottom:10}}>⚡ הדחוף ביותר</div>
-        <MyDayTaskCard task={urgent} urgent onOpen={setSelected}/>
+        <MyDayItemCard item={urgent} urgent onOpen={setSelected}/>
       </>}
       {rest.length>0&&<>
-        <div style={{fontWeight:800,fontSize:16,margin:"18px 0 10px"}}>📋 שאר המשימות</div>
-        {rest.map(t=><MyDayTaskCard key={t.id} task={t} onOpen={setSelected}/>)}
+        <div style={{fontWeight:800,fontSize:16,margin:"18px 0 10px"}}>📋 שאר הפריטים</div>
+        {rest.map(it=><MyDayItemCard key={it.id} item={it} onOpen={setSelected}/>)}
       </>}
       {doneToday.length>0&&<>
         <div style={{fontWeight:800,fontSize:16,margin:"18px 0 10px",color:"var(--text-secondary)"}}>✓ הושלמו היום</div>
-        {doneToday.map(t=><MyDayTaskCard key={t.id} task={t} onOpen={setSelected}/>)}
+        {doneToday.map(it=><MyDayItemCard key={it.id} item={it} onOpen={setSelected}/>)}
       </>}
-      {!urgent&&!doneToday.length&&<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין משימות למחלקה זו כרגע</div>}
+      {!urgent&&!doneToday.length&&<div style={{textAlign:"center",padding:48,color:"var(--text3)"}}>אין פריטים למחלקה זו כרגע</div>}
     </>}
   </div>;
 }
 
 function WorkFilesAdminTab({user}){
   const [sub,setSub]=useState("new");
-  const [departments,setDepartments]=useState([]);
   const [pending,setPending]=useState([]);
   const [noFileTasks,setNoFileTasks]=useState([]);
   const [busy,setBusy]=useState(false);
   const [toast,setToast]=useState(null);
-  const [form,setForm]=useState({bina_order_id:"",due_date:"",department:"",worker_note:"",file:null});
+  const [form,setForm]=useState({bina_order_id:"",due_date:"",worker_note:"",file:null});
   const [fixId,setFixId]=useState(null);
   const [fixOid,setFixOid]=useState("");
   const [linkId,setLinkId]=useState(null);
@@ -16584,14 +16612,17 @@ function WorkFilesAdminTab({user}){
   const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(null),2500);};
   const load=async()=>{
     await linkPendingWorkFiles();
-    const [depsRes,pendRes,tasksRes]=await Promise.all([
-      supabaseClient.from("departments").select("*").eq("is_active",true).order("sort_order"),
+    const [pendRes,tasksRes]=await Promise.all([
       supabaseClient.from("pending_work_files").select("*").eq("status","waiting").order("created_at",{ascending:true}),
-      supabaseClient.from("tasks").select("id,title,client_name,bina_order_id,due_date,department,dept,work_file_path,status").is("archived_at",null).order("due_date",{ascending:true}).limit(200),
+      supabaseClient.from("tasks").select("id,title,client_name,bina_order_id,due_date,work_file_path,status,task_items(id,status)").is("archived_at",null).order("due_date",{ascending:true}).limit(300),
     ]);
-    setDepartments(depsRes.data||[]);
     setPending(pendRes.data||[]);
-    setNoFileTasks((tasksRes.data||[]).filter(t=>!TASK_DONE_STATUSES.includes(t.status)&&!t.work_file_path));
+    setNoFileTasks((tasksRes.data||[]).filter(t=>{
+      if(t.work_file_path)return false;
+      if(TASK_DONE_STATUSES.includes(t.status))return false;
+      const its=t.task_items||[];
+      return its.some(i=>i.status===ITEM_OPEN_STATUS);
+    }));
   };
   useEffect(()=>{load();},[]);
   const uploadAndAttach=async()=>{
@@ -16602,7 +16633,7 @@ function WorkFilesAdminTab({user}){
     setBusy(true);
     try{
       const year=new Date().getFullYear();
-      const uploaded=await uploadFileToStorage(form.file,`work-files/${year}`);
+      const uploaded=await uploadFileToStorage(form.file,"work-files/"+year);
       const meta={
         file_path:uploaded.path,
         file_name:form.file.name,
@@ -16610,7 +16641,6 @@ function WorkFilesAdminTab({user}){
         file_size_kb:Math.round((form.file.size||0)/1024),
         worker_note:form.worker_note.trim()||null,
         due_date:form.due_date,
-        department:form.department||null,
       };
       const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).is("archived_at",null).limit(1);
       const task=found?.[0];
@@ -16627,13 +16657,12 @@ function WorkFilesAdminTab({user}){
           file_size_kb:meta.file_size_kb,
           worker_note:meta.worker_note,
           due_date:meta.due_date,
-          department:meta.department,
           status:"waiting",
         });
         if(error)throw error;
         showToast("⏳ יחובר אוטומטית כשהמשימה תיכנס");
       }
-      setForm({bina_order_id:"",due_date:"",department:"",worker_note:"",file:null});
+      setForm({bina_order_id:"",due_date:"",worker_note:"",file:null});
       await load();
     }catch(e){window.alert("שגיאה: "+(e.message||e));}
     finally{setBusy(false);}
@@ -16659,7 +16688,7 @@ function WorkFilesAdminTab({user}){
     try{
       await applyWorkFileToTask(linkTaskId,{
         file_path:p.file_path,file_name:p.file_name,file_type:p.file_type,
-        worker_note:p.worker_note,due_date:p.due_date,department:p.department,
+        worker_note:p.worker_note,due_date:p.due_date,
       });
       await supabaseClient.from("pending_work_files").update({
         status:"linked",linked_task_id:linkTaskId,linked_at:new Date().toISOString()
@@ -16674,13 +16703,12 @@ function WorkFilesAdminTab({user}){
     setBusy(true);
     try{
       const year=new Date().getFullYear();
-      const uploaded=await uploadFileToStorage(file,`work-files/${year}`);
+      const uploaded=await uploadFileToStorage(file,"work-files/"+year);
       await applyWorkFileToTask(task.id,{
         file_path:uploaded.path,
         file_name:file.name,
         file_type:file.type||null,
         due_date:task.due_date||null,
-        department:task.department||null,
       });
       showToast("✅ הקובץ צורף");
       await load();
@@ -16698,8 +16726,8 @@ function WorkFilesAdminTab({user}){
     <h1 style={{fontSize:22,fontWeight:900,margin:"0 0 12px"}}>📎 קבצי עבודה</h1>
     <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
       {tabBtn("new","קובץ חדש")}
-      {tabBtn("pending",`ממתינים לחיבור (${pending.length})`)}
-      {tabBtn("nofile",`משימות בלי קובץ (${noFileTasks.length})`)}
+      {tabBtn("pending","ממתינים לחיבור ("+pending.length+")")}
+      {tabBtn("nofile","הזמנות בלי קובץ ("+noFileTasks.length+")")}
     </div>
     {sub==="new"&&<div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:14,padding:18}}>
       <label style={{display:"block",fontWeight:700,marginBottom:4}}>מספר הזמנה בבינה *</label>
@@ -16708,11 +16736,6 @@ function WorkFilesAdminTab({user}){
       <input type="file" onChange={e=>setForm(f=>({...f,file:e.target.files?.[0]||null}))} style={{marginBottom:10}}/>
       <label style={{display:"block",fontWeight:700,marginBottom:4}}>דדליין *</label>
       <input type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))} style={IS}/>
-      <label style={{display:"block",fontWeight:700,marginBottom:4}}>מחלקה</label>
-      <select value={form.department} onChange={e=>setForm(f=>({...f,department:e.target.value}))} style={IS}>
-        <option value="">— ללא —</option>
-        {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
-      </select>
       <label style={{display:"block",fontWeight:700,marginBottom:4}}>הערה לעובד</label>
       <textarea value={form.worker_note} onChange={e=>setForm(f=>({...f,worker_note:e.target.value}))} rows={3} style={IS}/>
       <button type="button" disabled={busy} onClick={uploadAndAttach} style={{padding:"12px 18px",borderRadius:10,border:"none",background:"#0d9488",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:48}}>{busy?"⏳ מעלה...":"💾 שמור"}</button>
@@ -16731,7 +16754,7 @@ function WorkFilesAdminTab({user}){
               <td style={{padding:10,direction:"ltr",textAlign:"right"}}>{p.bina_order_id}</td>
               <td style={{padding:10}}>{p.file_name}</td>
               <td style={{padding:10}}>{p.due_date||"—"}</td>
-              <td style={{padding:10}}>{stale?<span style={{color:"#dc2626",fontWeight:700}}>⚠ ממתין מעל יממה ({Math.floor(hrs)}ש׳)</span>:`${Math.floor(hrs)} שעות`}</td>
+              <td style={{padding:10}}>{stale?<span style={{color:"#dc2626",fontWeight:700}}>⚠ ממתין מעל יממה ({Math.floor(hrs)}ש׳)</span>:Math.floor(hrs)+" שעות"}</td>
               <td style={{padding:10}}>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   <button type="button" onClick={()=>{setFixId(p.id);setFixOid(p.bina_order_id);}} style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:36}}>✏️ תקן מספר</button>
@@ -16776,10 +16799,11 @@ function WorkFilesAdminTab({user}){
           </label>
         </div>
       </div>)}
-      {!noFileTasks.length&&<div style={{padding:40,textAlign:"center",color:"var(--text3)"}}>כל המשימות הפתוחות עם מספר הזמנה כבר עם קובץ (או אין משימות)</div>}
+      {!noFileTasks.length&&<div style={{padding:40,textAlign:"center",color:"var(--text3)"}}>אין הזמנות פתוחות בלי קובץ</div>}
     </div>}
   </div>;
 }
+
 
 function App(){
   const [user,setUser]=useState(null);

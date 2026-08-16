@@ -1,5 +1,6 @@
 const fs = require("fs");
-const html = fs.readFileSync("index.html", "utf8");
+const path = require("path");
+const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const m = html.match(/<script[^>]*type=["']text\/babel["'][^>]*>([\s\S]*?)<\/script>/i);
 if (!m) {
   console.error("no babel script found");
@@ -23,7 +24,6 @@ for (let i = 0; i < lines.length; i++) {
     }
   }
 }
-// Package H block sanity: PRINTOS_DEPT through function App
 const hStart = code.indexOf("PRINTOS_DEPT_LS_KEY");
 const hEnd = code.indexOf("function App()");
 if (hStart >= 0 && hEnd > hStart) {
@@ -37,11 +37,7 @@ if (hStart >= 0 && hEnd > hStart) {
   }
 }
 console.log("bad_total", bad);
-const hOk = code.includes("PRINTOS_DEPT_LS_KEY") ? !/\|\|"[—–-]\}/.test(code.slice(code.indexOf("PRINTOS_DEPT_LS_KEY"), code.indexOf("function App()") || code.length)) : true;
-const hardFail = bad > 0 && lines.some((_, i) => {
-  // only fail hard on unclosed emdash patterns
-  return false;
-});
+
 let unclosed = 0;
 for (let i = 0; i < lines.length; i++) {
   if (/\|\|"[—–-]\}/.test(lines[i])) unclosed++;
@@ -51,4 +47,29 @@ if (unclosed > 0) {
   process.exit(1);
 }
 console.log("PASS: no unclosed em-dash quotes (nested-template odd-quote warnings are informational)");
+
+// Real JSX/JS syntax check via @babel/parser (catches missing }} in style={{...}})
+let parser;
+try {
+  parser = require("@babel/parser");
+} catch (e) {
+  console.error("FAIL: @babel/parser not installed — run npm i");
+  process.exit(1);
+}
+try {
+  parser.parse(code, {
+    sourceType: "script",
+    plugins: ["jsx"],
+    errorRecovery: false,
+    allowReturnOutsideFunction: true,
+  });
+  console.log("PASS: @babel/parser JSX parse OK");
+} catch (e) {
+  const loc = e.loc ? ` (${e.loc.line}:${e.loc.column})` : "";
+  console.error("FAIL: @babel/parser" + loc + ": " + e.message);
+  if (e.loc && lines[e.loc.line - 1]) {
+    console.error("LINE:", lines[e.loc.line - 1].trim().slice(0, 240));
+  }
+  process.exit(1);
+}
 process.exit(0);

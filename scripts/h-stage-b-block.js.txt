@@ -412,7 +412,10 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
           <div style={{fontWeight:700,color:accent,marginTop:4}}>₪{itemsTotal.toFixed(2)} (לפני מע"מ)</div>
           <div style={{fontSize:12,color:"#64748b",marginTop:6}}>{isOrder?"docType 15 · הזמנה":"docType 14 · הצעה (לא יוצרת משימה)"}</div>
         </div>
-        {error&&<div style={{padding:12,background:"#fef2f2",color:"#dc2626",borderRadius:10,fontSize:14,marginBottom:8}}>❌ {error}<div style={{fontSize:12,marginTop:6,color:"#991b1b"}>הטופס נשמר — אפשר לנסות שוב אחרי תיקון.</div></div>}
+        {error&&<div style={{padding:12,background:"#fef2f2",color:"#dc2626",borderRadius:10,fontSize:14,marginBottom:8}}>
+          <div>❌ {error}</div>
+          <div style={{fontSize:12,marginTop:6,color:"#991b1b"}}>הטופס נשמר — אפשר לנסות שוב אחרי תיקון.</div>
+        </div>}
       </div>
       <div style={footerStyle}>
         <button type="button" onClick={onClose} disabled={submitting} style={btnSecondary}>ביטול</button>

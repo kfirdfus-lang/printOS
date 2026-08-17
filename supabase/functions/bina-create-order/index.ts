@@ -4,6 +4,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts';
+import { rejectDisallowedInternalOrigin } from '../_shared/cors.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,6 +51,7 @@ interface CreateOrderRequest {
   remark?: string;
   status?: string;
   payment?: OrderPayment;
+  salesAgent?: string;
 }
 
 interface BinaResponse {
@@ -102,6 +104,11 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
     })),
   };
 
+  const salesAgent = req.salesAgent?.trim();
+  if (salesAgent) {
+    payload.orderSalesMan = salesAgent;
+  }
+
   if (req.payment) {
     payload.Payments = {
       PayDate: req.payment.payDate,
@@ -153,6 +160,9 @@ function extractBinaResponse(text: string): BinaResponse | null {
 // ---------- Main handler ----------
 
 Deno.serve(async (req) => {
+  const originBlock = rejectDisallowedInternalOrigin(req);
+  if (originBlock) return originBlock;
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -254,6 +264,7 @@ Deno.serve(async (req) => {
             source: 'manual',
             bina_order_id: String(binaData.docId),
             notes: body.remark || '',
+            sales_agent: body.salesAgent?.trim() || null,
           })
           .select('id')
           .single();

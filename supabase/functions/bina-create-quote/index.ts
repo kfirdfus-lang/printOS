@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts'
+import { rejectDisallowedInternalOrigin } from '../_shared/cors.ts'
 
 // ⚠️ Endpoint שונה ליצירה: PostJsonDoc.aspx (לא V2!)
 const BINA_CREATE_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx'
@@ -10,6 +11,9 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
+  const originBlock = rejectDisallowedInternalOrigin(req)
+  if (originBlock) return originBlock
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -61,7 +65,7 @@ Deno.serve(async (req) => {
     const requestId = Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 1000)
 
     // 🎯 בניית הבקשה לבינה לפי המבנה הנכון
-    const binaRequest = {
+    const binaRequest: Record<string, unknown> = {
       tokenId: binaToken,
       requestId: requestId,
       docType: 14,  // הצעת מחיר
@@ -89,6 +93,11 @@ Deno.serve(async (req) => {
         CurValue: 1,
         Discount: Number(item.discount_pct || 0),
       })),
+    }
+
+    const quoteSalesAgent = quote.sales_agent ? String(quote.sales_agent).trim() : '';
+    if (quoteSalesAgent) {
+      binaRequest.orderSalesMan = quoteSalesAgent;
     }
 
     const { tokenId: _, ...safeRequest } = binaRequest

@@ -12,6 +12,36 @@ const HB3_DEPT_FALLBACK=[
   {name:"עבודות חוץ",color:"#D97706",has_rip:false,sort_order:7,bina_item_code:"6"},
 ];
 const HB3_VAT=0.18;
+/** ערכי orderSalesMan כפי שבינה מחזירה/מצפה (מסנכרון tasks.sales_agent) */
+const BINA_SALES_AGENT_OPTIONS=[
+  {value:"כפיר צמח",label:"כפיר צמח"},
+  {value:"נטלי",label:"נטלי"},
+  {value:"ברק",label:"ברק"},
+];
+function normalizeBinaSalesAgent(val){
+  const v=String(val||"").trim();
+  if(!v)return "";
+  if(v==="כפיר"||/^כפיר\b/.test(v))return "כפיר צמח";
+  if(/^נטלי\b/.test(v))return "נטלי";
+  if(/^ברק\b/.test(v))return "ברק";
+  const hit=BINA_SALES_AGENT_OPTIONS.find(o=>o.value===v);
+  return hit?hit.value:v;
+}
+function defaultBinaSalesAgent(user){
+  if(!user?.name)return "";
+  const n=String(user.name).trim();
+  const parts=n.split(/[/|]/).map(s=>s.trim()).filter(Boolean);
+  if(parts.length===1){
+    const p=parts[0];
+    if(/כפיר/.test(p))return "כפיר צמח";
+    if(/נטלי/.test(p))return "נטלי";
+    if(/ברק/.test(p))return "ברק";
+  }
+  if(/^כפיר\b/.test(n))return "כפיר צמח";
+  if(/^נטלי\b/.test(n))return "נטלי";
+  if(/^ברק\b/.test(n))return "ברק";
+  return "";
+}
 function hb3EmptyItem(prev){
   return {description:"",quantity:1,unitPrice:0,lineTotal:0,discount:0,deptName:(prev&&prev.deptName)||"",binaItemCode:(prev&&prev.binaItemCode)||""};
 }
@@ -62,7 +92,7 @@ function hb3BuildPdfDoc({kind,binaDocId,title,client,contactName,items,agent,rem
   };
 }
 
-function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="order",prefill=null,sourceQuoteId=null}){
+function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,initialMode="order",prefill=null,sourceQuoteId=null}){
   const [mode,setMode]=useState(initialMode==="quote"?"quote":"order");
   const [submitting,setSubmitting]=useState(false);
   const [error,setError]=useState(null);
@@ -96,7 +126,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     if(p.mode)setMode(p.mode==="quote"?"quote":"order");
     if(p.title!=null)setTitle(p.title||"");
     if(p.remark!=null)setRemark(p.remark||"");
-    if(p.agent!=null)setAgent(p.agent||"");
+    if(p.agent!=null)setAgent(normalizeBinaSalesAgent(p.agent)||"");
     if(p.contactName!=null)setContactName(p.contactName||"");
     if(p.dueDate!=null)setDueDate(p.dueDate||"");
     if(p.workerNote!=null)setWorkerNote(p.workerNote||"");
@@ -159,6 +189,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     setPaymentTerms("");
     loadDepts();
     if(prefill)applyPrefill(prefill);
+    else setAgent(defaultBinaSalesAgent(user));
   },[open,initialMode,sourceQuoteId]);
 
   if(!open)return null;
@@ -317,6 +348,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
       items:binaItems(),
       title:title||("הזמנה ל"+(selectedClient.name||"לקוח")),
       remark:remark||"",
+      salesAgent:(agent||"").trim()||undefined,
     };
     const{data,error:invE}=await supabaseClient.functions.invoke("bina-create-order",{body:payload});
     if(invE)throw new Error(invE.message||String(invE));
@@ -509,9 +541,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
             <label className="hb3-lab">סוכן</label>
             <select className="hb3-inp" style={{marginBottom:8}} value={agent} onChange={e=>setAgent(e.target.value)}>
               <option value="">בחר סוכן...</option>
-              <option value="כפיר">כפיר</option>
-              <option value="נטלי">נטלי</option>
-              <option value="ברק">ברק</option>
+              {BINA_SALES_AGENT_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <label className="hb3-lab">לידי</label>
             <input className="hb3-inp" style={{marginBottom:8}} value={contactName} onChange={e=>setContactName(e.target.value)}/>

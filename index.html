@@ -98,6 +98,22 @@ input[type="date"]::-webkit-calendar-picker-indicator{opacity:0.5}
   .myday-kpi{grid-template-columns:1fr;gap:8px}
   .myday-kpi-val{font-size:28px}
 }
+.hb3-sec{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#2A807C;margin:0 0 8px;display:flex;align-items:center;gap:6px}
+.hb3-sec:before{content:"";width:6px;height:6px;border-radius:50%;background:#62C7C2;flex-shrink:0}
+.hb3-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.hb3-card{background:#fff;border:1px solid #E2EEED;border-radius:12px;padding:14px}
+.hb3-inp{width:100%;padding:8px 10px;font-size:14px;border:1px solid #D5E3E1;border-radius:8px;box-sizing:border-box;font-family:inherit;direction:rtl;background:#fff;color:#0E3651}
+.hb3-lab{display:block;font-size:11px;font-weight:700;color:#6B7F92;margin-bottom:4px}
+.hb3-item{border:1px solid #E2EEED;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff}
+.hb3-item.empty{border:1.5px dashed #BFE6E3;background:#FBFEFE}
+.hb3-item-grid{display:grid;grid-template-columns:1.5fr .8fr 1fr 1fr;gap:8px;margin-top:8px}
+.hb3-sticky{position:sticky;bottom:0;background:#0E3651;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;z-index:2}
+.hb3-toggle{display:flex;border:1px solid #D5E3E1;border-radius:8px;overflow:hidden}
+.hb3-toggle button{flex:1;padding:8px 10px;border:none;background:#fff;color:#0E3651;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;min-height:40px}
+.hb3-toggle button.on{background:#62C7C2;color:#fff}
+.hb3-ok{background:#EDF8F7;border:1px solid #BFE6E3;border-radius:12px;padding:14px}
+@media(max-width:720px){.hb3-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.hb3-item-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:768px){
   .sd{display:none!important}
   .sm{display:block!important}
@@ -7284,22 +7300,98 @@ function DeliveryTab({tasks}){
  * Spliced into index.html before CreateOrderModal.
  */
 
+/**
+ * Package H Stage B v3 — unified order/quote screen + quotes/orders lists.
+ */
+
+const HB3_DEPT_FALLBACK=[
+  {name:"פורמט רחב",color:"#62C7C2",has_rip:true,sort_order:1,bina_item_code:"8"},
+  {name:"דיגיטלי צבעוני",color:"#3EA9A4",has_rip:true,sort_order:2,bina_item_code:"3"},
+  {name:"דיגיטלי שחור לבן",color:"#6B7F92",has_rip:true,sort_order:3,bina_item_code:"4"},
+  {name:"אופסט",color:"#0E3651",has_rip:true,sort_order:4,bina_item_code:"5"},
+  {name:"ביגוד ומוצרי פרסום",color:"#EC008C",has_rip:true,sort_order:5,bina_item_code:"2"},
+  {name:"מתקני תצוגה ומוצרים נלווים",color:"#00AEEF",has_rip:false,sort_order:6,bina_item_code:"7"},
+  {name:"עבודות חוץ",color:"#D97706",has_rip:false,sort_order:7,bina_item_code:"6"},
+];
+const HB3_VAT=0.18;
+function hb3EmptyItem(prev){
+  return {description:"",quantity:1,unitPrice:0,lineTotal:0,discount:0,deptName:(prev&&prev.deptName)||"",binaItemCode:(prev&&prev.binaItemCode)||""};
+}
+function hb3LineTotal(it){
+  const qty=Number(it.quantity)||0;
+  const price=Number(it.unitPrice)||0;
+  const disc=Number(it.discount)||0;
+  return qty*price*(1-disc/100);
+}
+function hb3UnitFromTotal(it){
+  const qty=Number(it.quantity)||0;
+  const tot=Number(it.lineTotal)||0;
+  const disc=Number(it.discount)||0;
+  const denom=qty*(1-disc/100);
+  if(!denom)return 0;
+  return tot/denom;
+}
+function hb3FilledItems(items){
+  return (items||[]).filter(it=>(it.description||"").trim());
+}
+function hb3ClientTerms(c){
+  if(!c)return "";
+  return c.default_payment_terms||c.payment_terms||"";
+}
+function hb3BuildPdfDoc({kind,binaDocId,title,client,contactName,items,agent,remark,paymentTerms,dueDate,priceMode}){
+  return {
+    docType:kind==="quote"?"quote":"order",
+    binaDocId,
+    title,
+    client:{
+      name:client?.name||"",
+      address:client?.address||"",
+      phone:client?.phone||"",
+      email:client?.email||"",
+      contactPerson:(contactName||"").trim()||client?.name||"",
+    },
+    items:(items||[]).map(it=>{
+      const qty=Number(it.quantity)||1;
+      const lineTotal=priceMode==="total"?Number(it.lineTotal)||hb3LineTotal(it):hb3LineTotal(it);
+      const unitPrice=qty?lineTotal/qty:0;
+      return {description:it.description,quantity:qty,unitPrice,discount:Number(it.discount)||0,lineTotal};
+    }),
+    agent:(agent||"").trim(),
+    createdAt:new Date().toISOString(),
+    remark:remark||"",
+    paymentTerms:paymentTerms||"",
+    dueDate:dueDate||"",
+  };
+}
+
 function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="order",prefill=null,sourceQuoteId=null}){
   const [mode,setMode]=useState(initialMode==="quote"?"quote":"order");
   const [submitting,setSubmitting]=useState(false);
   const [error,setError]=useState(null);
   const [clientSearch,setClientSearch]=useState("");
   const [selectedClient,setSelectedClient]=useState(null);
-  const [items,setItems]=useState([{description:"",quantity:1,unitPrice:0,discount:0}]);
+  const [items,setItems]=useState([hb3EmptyItem()]);
   const [title,setTitle]=useState("");
   const [remark,setRemark]=useState("");
-  const [dept,setDept]=useState("כללי");
   const [agent,setAgent]=useState("");
   const [contactName,setContactName]=useState("");
   const [dueDate,setDueDate]=useState("");
   const [workFile,setWorkFile]=useState(null);
   const [workerNote,setWorkerNote]=useState("");
   const [activeQuoteId,setActiveQuoteId]=useState(sourceQuoteId||null);
+  const [priceMode,setPriceMode]=useState("unit");
+  const [paymentTerms,setPaymentTerms]=useState("");
+  const [depts,setDepts]=useState(HB3_DEPT_FALLBACK);
+  const [success,setSuccess]=useState(null);
+  const [dupNote,setDupNote]=useState(null);
+  const [duplicatedFrom,setDuplicatedFrom]=useState(null);
+
+  const loadDepts=async()=>{
+    try{
+      const{data,error:e}=await supabaseClient.from("department_settings").select("*").order("sort_order");
+      if(!e&&data?.length)setDepts(data);
+    }catch(err){console.warn(err);}
+  };
 
   const applyPrefill=async(p)=>{
     if(!p)return;
@@ -7310,20 +7402,38 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     if(p.contactName!=null)setContactName(p.contactName||"");
     if(p.dueDate!=null)setDueDate(p.dueDate||"");
     if(p.workerNote!=null)setWorkerNote(p.workerNote||"");
-    if(p.dept!=null)setDept(p.dept||"כללי");
-    if(Array.isArray(p.items)&&p.items.length){
-      setItems(p.items.map(it=>({
-        description:it.description||"",
-        quantity:it.quantity!=null?it.quantity:1,
-        unitPrice:it.unitPrice!=null?it.unitPrice:(it.unit_price!=null?it.unit_price:0),
-        discount:it.discount!=null?it.discount:(it.discount_pct!=null?it.discount_pct:0),
-      })));
+    if(p.priceMode)setPriceMode(p.priceMode==="total"?"total":"unit");
+    if(p.paymentTerms!=null)setPaymentTerms(p.paymentTerms||"");
+    if(p.duplicatedFromOrderId)setDuplicatedFrom(String(p.duplicatedFromOrderId));
+    if(p.sourceCreatedAt){
+      const age=(Date.now()-new Date(p.sourceCreatedAt).getTime())/864e5;
+      if(age>60){
+        const d=new Date(p.sourceCreatedAt).toLocaleDateString("he-IL");
+        setDupNote("ההזמנה המקורית מ־"+d+" — כדאי לוודא שהמחירים עדיין מעודכנים");
+      }
     }
-    if(p.client)setSelectedClient(p.client);
-    else if(p.bina_cust_id!=null){
+    if(Array.isArray(p.items)&&p.items.length){
+      const mapped=p.items.map(it=>{
+        const qty=it.quantity!=null?it.quantity:1;
+        const unit=it.unitPrice!=null?it.unitPrice:(it.unit_price!=null?it.unit_price:0);
+        const disc=it.discount!=null?it.discount:(it.discount_pct!=null?it.discount_pct:0);
+        const row={description:it.description||"",quantity:qty,unitPrice:unit,discount:disc,deptName:it.deptName||it.department||"",binaItemCode:it.binaItemCode||it.bina_item_code||""};
+        row.lineTotal=it.lineTotal!=null?it.lineTotal:hb3LineTotal(row);
+        return row;
+      });
+      mapped.push(hb3EmptyItem(mapped[mapped.length-1]));
+      setItems(mapped);
+    }
+    if(p.client){
+      setSelectedClient(p.client);
+      if(p.paymentTerms==null)setPaymentTerms(hb3ClientTerms(p.client));
+    }else if(p.bina_cust_id!=null){
       const list=Array.isArray(clients)?clients:[];
       const found=list.find(c=>String(c.bina_customer_id)===String(p.bina_cust_id));
-      if(found)setSelectedClient(found);
+      if(found){
+        setSelectedClient(found);
+        if(p.paymentTerms==null)setPaymentTerms(hb3ClientTerms(found));
+      }
     }
     if(p.sourceQuoteId)setActiveQuoteId(p.sourceQuoteId);
   };
@@ -7333,10 +7443,9 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     setMode(initialMode==="quote"?"quote":"order");
     setClientSearch("");
     setSelectedClient(null);
-    setItems([{description:"",quantity:1,unitPrice:0,discount:0}]);
+    setItems([hb3EmptyItem()]);
     setTitle("");
     setRemark("");
-    setDept("כללי");
     setAgent("");
     setContactName("");
     setDueDate("");
@@ -7345,38 +7454,77 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     setActiveQuoteId(sourceQuoteId||null);
     setError(null);
     setSubmitting(false);
+    setSuccess(null);
+    setDupNote(null);
+    setDuplicatedFrom(null);
+    setPriceMode("unit");
+    setPaymentTerms("");
+    loadDepts();
     if(prefill)applyPrefill(prefill);
   },[open,initialMode,sourceQuoteId]);
 
   if(!open)return null;
 
   const isOrder=mode==="order";
-  const accent=isOrder?"#2563EB":"#7C3AED";
+  const filled=hb3FilledItems(items);
+  const itemsTotal=filled.reduce((sum,it)=>sum+(priceMode==="total"?Number(it.lineTotal)||hb3LineTotal(it):hb3LineTotal(it)),0);
+  const vatAmt=itemsTotal*HB3_VAT;
+  const grand=itemsTotal+vatAmt;
   const filteredClients=(clients||[]).filter(c=>{
     if(!clientSearch.trim())return true;
     const q=clientSearch.toLowerCase().trim();
     return (c.name||"").toLowerCase().includes(q)||(c.phone||"").includes(q)||String(c.bina_customer_id||"").includes(q);
   }).slice(0,50);
-  const itemsTotal=items.reduce((sum,it)=>{
-    const qty=Number(it.quantity)||0;
-    const price=Number(it.unitPrice)||0;
-    const disc=Number(it.discount)||0;
-    return sum+qty*price*(1-disc/100);
-  },0);
-  const addItem=()=>setItems([...items,{description:"",quantity:1,unitPrice:0,discount:0}]);
-  const removeItem=(idx)=>{if(items.length===1)return;setItems(items.filter((_,i)=>i!==idx));};
-  const updateItem=(idx,field,value)=>{const ni=[...items];ni[idx]={...ni[idx],[field]:value};setItems(ni);};
+
+  const ensureTrailing=rows=>{
+    const last=rows[rows.length-1];
+    if(last&&(last.description||"").trim())rows.push(hb3EmptyItem(last));
+    return rows;
+  };
+  const updateItem=(idx,field,value)=>{
+    setItems(prev=>{
+      const ni=prev.map((it,i)=>i===idx?{...it,[field]:value}:it);
+      const it=ni[idx];
+      if(field==="deptName"){
+        const d=depts.find(x=>x.name===value);
+        it.binaItemCode=d?.bina_item_code||"";
+      }
+      if(priceMode==="unit"&&(field==="quantity"||field==="unitPrice"||field==="discount"))it.lineTotal=hb3LineTotal(it);
+      if(priceMode==="total"&&(field==="quantity"||field==="lineTotal"||field==="discount"))it.unitPrice=hb3UnitFromTotal(it);
+      return ensureTrailing(ni);
+    });
+  };
+  const removeItem=idx=>{
+    setItems(prev=>{
+      const ni=prev.filter((_,i)=>i!==idx);
+      return ni.length?ensureTrailing(ni):[hb3EmptyItem()];
+    });
+  };
+  const pickClient=c=>{
+    if(c.bina_customer_id){
+      setSelectedClient(c);
+      setPaymentTerms(hb3ClientTerms(c));
+    }else{
+      const ok=window.confirm("הלקוח לא מקושר לבינה. לפתוח יצירת לקוח?");
+      if(ok){onClose();if(window.openBinaClient)window.openBinaClient();}
+    }
+  };
+  const switchPriceMode=m=>{
+    setPriceMode(m);
+    setItems(prev=>prev.map(it=>{
+      const copy={...it};
+      if(m==="total")copy.lineTotal=hb3LineTotal(copy);
+      else copy.unitPrice=hb3UnitFromTotal(copy)||copy.unitPrice;
+      return copy;
+    }));
+  };
 
   const validate=()=>{
-    if(!selectedClient)return"נא לבחור לקוח";
-    if(!selectedClient.bina_customer_id)return"הלקוח לא מקושר לבינה";
-    if(!items.some(it=>(it.description||"").trim()))return"נא למלא לפחות פריט אחד";
-    if(isOrder&&!dueDate)return"נא למלא דדליין להזמנה";
-    if(isOrder&&!workFile&&!prefill?.skipFileRequired){
-      // file recommended but package says required fields: order needs file+deadline in A4 upload; B3 says file section for order
-      // Package B3 table: file and deadline for order only - treat as required for new orders
-    }
-    if(isOrder&&!workFile)return"נא לצרף קובץ עבודה להזמנה";
+    if(!selectedClient)return "נא לבחור לקוח";
+    if(!selectedClient.bina_customer_id)return "הלקוח לא מקושר לבינה";
+    if(!filled.length)return "נא למלא לפחות פריט אחד";
+    if(isOrder&&!dueDate)return "נא למלא דדליין להזמנה";
+    if(isOrder&&!workFile&&!prefill?.skipFileRequired)return "נא לצרף קובץ עבודה להזמנה";
     return null;
   };
 
@@ -7397,9 +7545,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
       const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",String(binaOrderId)).is("archived_at",null).limit(1);
       taskId=found?.[0]?.id||null;
     }
-    if(taskId){
-      await applyWorkFileToTask(taskId,meta);
-    }else{
+    if(taskId)await applyWorkFileToTask(taskId,meta);
+    else{
       const{error:pErr}=await supabaseClient.from("pending_work_files").insert({
         created_by_name:null,
         bina_order_id:String(binaOrderId),
@@ -7415,8 +7562,51 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     }
   };
 
+  const saveClientTerms=async()=>{
+    if(!selectedClient?.id)return;
+    const val=(paymentTerms||"").trim()||null;
+    try{
+      await supabaseClient.from("clients").update({
+        default_payment_terms:val,
+        payment_terms:val,
+        payment_terms_updated_at:new Date().toISOString(),
+      }).eq("id",selectedClient.id);
+    }catch(e){console.warn("payment terms save",e);}
+  };
+
+  const binaItems=()=>filled.map((it,idx)=>{
+    const qty=Number(it.quantity)||1;
+    const lineTotal=priceMode==="total"?Number(it.lineTotal)||hb3LineTotal(it):hb3LineTotal(it);
+    const unitPrice=qty?lineTotal/qty:0;
+    return {
+      itemId:String(it.binaItemCode||("LINE-"+(idx+1))),
+      description:it.description||("פריט "+(idx+1)),
+      quantity:qty,
+      unitPrice,
+      discount:Number(it.discount)||0,
+    };
+  });
+
+  const localLineRows=kindId=>(idKey,idVal)=>filled.map((it,idx)=>{
+    const qty=Number(it.quantity)||1;
+    const lineTotal=priceMode==="total"?Number(it.lineTotal)||hb3LineTotal(it):hb3LineTotal(it);
+    const unitPrice=qty?lineTotal/qty:0;
+    const row={
+      [idKey]:idVal,
+      line_number:idx+1,
+      description:it.description||("פריט "+(idx+1)),
+      quantity:qty,
+      unit_price:unitPrice,
+      discount_pct:Number(it.discount)||0,
+      price_entry_mode:priceMode,
+      bina_item_code:it.binaItemCode||null,
+      line_total:lineTotal,
+    };
+    if(kindId==="quote")row.item_name=String(it.binaItemCode||("LINE-"+(idx+1)));
+    return row;
+  });
+
   const submitOrder=async()=>{
-    // Payload זהה ל-CreateOrderModal הקיים — בינה קודם, בלי יצירה מקומית לפני הצלחה
     const payload={
       client:{
         binaCustomerId:String(selectedClient.bina_customer_id),
@@ -7427,13 +7617,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
         phone:selectedClient.phone||"",
         email:selectedClient.email||"",
       },
-      items:items.map((it,idx)=>({
-        itemId:"LINE-"+(idx+1),
-        description:it.description||("פריט "+(idx+1)),
-        quantity:Number(it.quantity)||1,
-        unitPrice:Number(it.unitPrice)||0,
-        discount:Number(it.discount)||0,
-      })),
+      items:binaItems(),
       title:title||("הזמנה ל"+(selectedClient.name||"לקוח")),
       remark:remark||"",
     };
@@ -7443,14 +7627,12 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     if(typeof data==="string"){try{result=JSON.parse(data);}catch{result=null;}}
     if(!result||result.success!==true)throw new Error(result?.error||"שגיאה ביצירת הזמנה בבינה");
 
-    // רק אחרי הצלחה בבינה — עדכונים מקומיים
     if(result.taskId){
-      const taskPatch={};
-      if(dept!=="כללי")taskPatch.dept=dept;
+      const taskPatch={sales_agent:(agent||"").trim()||null};
       const ag=(agent||"").trim();
       if(ag)taskPatch.assignee=ag;
-      taskPatch.sales_agent=ag||null;
       if(dueDate)taskPatch.due_date=dueDate;
+      if(duplicatedFrom)taskPatch.duplicated_from_order_id=duplicatedFrom;
       try{await sb("tasks?id=eq."+result.taskId,{method:"PATCH",body:JSON.stringify(taskPatch)});}catch(e){console.warn(e);}
     }
     try{
@@ -7474,25 +7656,15 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
       const ordRes=await sb("orders",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(orderRow)});
       const ord=Array.isArray(ordRes)?ordRes[0]:ordRes;
       if(ord?.id){
-        const oItems=items.map((it,idx)=>({
-          order_id:ord.id,
-          line_number:idx+1,
-          description:it.description||("פריט "+(idx+1)),
-          quantity:Number(it.quantity)||1,
-          unit_price:Number(it.unitPrice)||0,
-          discount_pct:Number(it.discount)||0,
-        }));
-        await sb("order_items",{method:"POST",body:JSON.stringify(oItems)});
+        await sb("order_items",{method:"POST",body:JSON.stringify(localLineRows("order")("order_id",ord.id))});
       }
     }catch(e){console.warn("[UnifiedOrderQuoteModal] orders DB save failed:",e);}
 
-    try{
-      await attachWorkFileAfterOrder(result.binaOrderId,result.taskId||null);
-    }catch(fileErr){
+    try{await attachWorkFileAfterOrder(result.binaOrderId,result.taskId||null);}
+    catch(fileErr){
       console.warn("work file attach failed",fileErr);
       window.alert("ההזמנה נוצרה, אך חיבור הקובץ נכשל: "+(fileErr.message||fileErr)+" — אפשר לחבר בטאב קבצי עבודה");
     }
-
     if(activeQuoteId){
       try{
         await supabaseClient.from("quotes").update({
@@ -7503,18 +7675,16 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
         }).eq("id",activeQuoteId);
       }catch(e){console.warn(e);}
     }
-
+    await saveClientTerms();
+    const pdfDoc=hb3BuildPdfDoc({kind:"order",binaDocId:result.binaOrderId,title:payload.title,client:selectedClient,contactName,items:filled,agent,remark,paymentTerms,dueDate,priceMode});
     if(onSuccess)onSuccess(result);
-    window.alert("✅ הזמנה נוצרה. הקובץ יחובר אוטומטית.");
-    onClose();
+    setSuccess({kind:"order",id:result.binaOrderId,pdfDoc});
   };
 
   const submitQuote=async()=>{
-    // bina-create-quote דורש quote_id — יוצרים מקומית, ואם בינה נכשלת מוחקים (אין השארת רשומה יתומה)
     const quoteTitle=title||("הצעה ל"+(selectedClient.name||"לקוח"));
     const binaCustNum=parseInt(String(selectedClient.bina_customer_id),10);
     if(!binaCustNum||Number.isNaN(binaCustNum))throw new Error("קוד לקוח בינה לא תקין");
-
     const quoteData={
       title:quoteTitle,
       bina_cust_id:binaCustNum,
@@ -7528,40 +7698,25 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
       quote_status:"sent",
       sent_at:new Date().toISOString(),
     };
-
     let quoteId=null;
     try{
       const quoteResponse=await sb("quotes",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(quoteData)});
       const quoteResult=Array.isArray(quoteResponse)?quoteResponse[0]:quoteResponse;
       if(!quoteResult?.id)throw new Error("שגיאה ביצירת הצעה ב-DB");
       quoteId=quoteResult.id;
-      const itemsToInsert=items.map((it,idx)=>({
-        quote_id:quoteId,
-        item_name:"LINE-"+(idx+1),
-        description:it.description||("פריט "+(idx+1)),
-        quantity:Number(it.quantity)||1,
-        unit_price:Number(it.unitPrice)||0,
-        discount_pct:Number(it.discount)||0,
-        line_number:idx+1,
-      }));
-      await sb("quote_items",{method:"POST",body:JSON.stringify(itemsToInsert)});
-
+      await sb("quote_items",{method:"POST",body:JSON.stringify(localLineRows("quote")("quote_id",quoteId))});
       const{data:fnData,error:invE}=await supabaseClient.functions.invoke("bina-create-quote",{body:{quote_id:quoteId}});
       if(invE)throw new Error(invE.message||String(invE));
       let result=fnData;
       if(typeof fnData==="string"){try{result=JSON.parse(fnData);}catch{result=null;}}
       if(!result||result.success!==true)throw new Error(result?.error||result?.binaMessage||"שגיאה בשליחה לבינה");
-
       try{
-        await supabaseClient.from("quotes").update({
-          quote_status:"sent",
-          sent_at:new Date().toISOString(),
-        }).eq("id",quoteId);
+        await supabaseClient.from("quotes").update({quote_status:"sent",sent_at:new Date().toISOString()}).eq("id",quoteId);
       }catch(e){console.warn(e);}
-
+      await saveClientTerms();
+      const pdfDoc=hb3BuildPdfDoc({kind:"quote",binaDocId:result.binaDocId,title:quoteTitle,client:selectedClient,contactName,items:filled,agent,remark,paymentTerms,dueDate:"",priceMode});
       if(onSuccess)onSuccess(result);
-      window.alert("✅ הצעה נוצרה");
-      onClose();
+      setSuccess({kind:"quote",id:result.binaDocId,pdfDoc});
     }catch(err){
       if(quoteId){
         try{await sb("quote_items?quote_id=eq."+quoteId,{method:"DELETE"});}catch(delE){console.warn("rollback quote_items failed",delE);}
@@ -7574,6 +7729,11 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
   const handleSubmit=async()=>{
     const v=validate();
     if(v){setError(v);return;}
+    const missing=filled.map((it,i)=>!(it.binaItemCode||"").trim()?i+1:null).filter(Boolean);
+    if(missing.length){
+      const ok=window.confirm("פריט "+missing.join(", ")+" בלי מחלקה — לא יופיע אצל אף עובד. להמשיך?");
+      if(!ok)return;
+    }
     setSubmitting(true);
     setError(null);
     try{
@@ -7586,142 +7746,191 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     }
   };
 
-  const overlayStyle={position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0};
-  const modalStyle={width:"100%",maxWidth:640,maxHeight:"95vh",background:"#fff",borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",boxShadow:"0 -4px 24px rgba(0,0,0,0.2)",overflow:"hidden"};
-  const headerStyle={padding:"16px 20px",borderBottom:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--bg2)",gap:8,flexWrap:"wrap"};
-  const bodyStyle={flex:1,overflowY:"auto",padding:20,direction:"rtl"};
-  const footerStyle={padding:16,borderTop:"1px solid #eee",background:"var(--bg2)",display:"flex",gap:8};
-  const labelStyle={display:"block",fontSize:14,fontWeight:600,marginBottom:6,color:"var(--text)"};
-  const inputStyle={width:"100%",padding:"12px 14px",fontSize:16,border:"1px solid var(--border)",borderRadius:10,boxSizing:"border-box",fontFamily:"inherit",direction:"rtl",background:"var(--bg2)",color:"var(--text)"};
-  const sectionTitle={fontSize:16,fontWeight:800,margin:"0 0 12px",color:accent};
-  const btnPrimary={flex:1,padding:"14px 20px",fontSize:16,fontWeight:600,background:accent,color:"#fff",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"};
-  const btnSecondary={flex:1,padding:"14px 20px",fontSize:16,background:"#fff",color:"var(--text2)",border:"1px solid var(--border)",borderRadius:10,cursor:"pointer",fontFamily:"inherit"};
-  const btnDanger={padding:"8px 12px",fontSize:14,background:"var(--red)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit"};
-  const toggleBtn=(m,lab)=><button type="button" onClick={()=>!submitting&&setMode(m)} style={{flex:1,padding:"12px 10px",borderRadius:10,border:mode===m?"2px solid "+accent:"1px solid var(--border)",background:mode===m?accent:"#fff",color:mode===m?"#fff":"var(--text)",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:48}}>{lab}</button>;
+  const overlayStyle={position:"fixed",inset:0,background:"rgba(14,54,81,0.45)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center"};
+  const modalStyle={width:"100%",maxWidth:860,maxHeight:"96vh",background:"#F7FBFA",borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",boxShadow:"0 -8px 32px rgba(14,54,81,0.18)",overflow:"hidden"};
+
+  if(success){
+    const lab=success.kind==="order"?"הזמנה":"הצעה";
+    return<div style={overlayStyle} onClick={()=>!submitting&&onClose()}>
+      <div style={modalStyle} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <strong style={{color:"#0E3651"}}>נוצר בבינה</strong>
+          <button type="button" onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        </div>
+        <div style={{padding:"8px 16px 24px"}}>
+          <div className="hb3-ok">
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:800,color:"#0E3651",fontSize:16}}>✅ {lab} {success.id} נוצרה בבינה</div>
+                {success.kind==="order"&&<div style={{fontSize:13,color:"#2A807C",marginTop:4}}>הקובץ יחובר למשימה אוטומטית כשהסנכרון יסתיים</div>}
+              </div>
+              <button type="button" onClick={()=>window.openDocumentPDF&&window.openDocumentPDF(success.pdfDoc)} style={{padding:"10px 14px",borderRadius:10,border:"none",background:"#62C7C2",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📄 הדפס PDF</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>;
+  }
 
   return<div style={overlayStyle} onClick={()=>!submitting&&onClose()}>
     <div style={modalStyle} onClick={e=>e.stopPropagation()}>
-      <div style={headerStyle}>
-        <strong style={{fontSize:17}}>{isOrder?"📋 הזמנה / הצעה":"💼 הזמנה / הצעה"}</strong>
-        <button type="button" onClick={onClose} disabled={submitting} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:"var(--text2)",fontFamily:"inherit"}}>✕</button>
+      <div style={{padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"#fff",borderBottom:"1px solid #E2EEED"}}>
+        <div className="hb3-toggle" style={{maxWidth:280,flex:1}}>
+          <button type="button" className={!isOrder?"on":""} onClick={()=>!submitting&&setMode("quote")}>הצעת מחיר</button>
+          <button type="button" className={isOrder?"on":""} onClick={()=>!submitting&&setMode("order")}>הזמנה</button>
+        </div>
+        <button type="button" onClick={onClose} disabled={submitting} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#0E3651",fontFamily:"inherit"}}>✕</button>
       </div>
-      <div style={bodyStyle}>
-        <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {toggleBtn("quote","הצעת מחיר")}
-          {toggleBtn("order","הזמנה")}
-        </div>
+      <div style={{flex:1,overflowY:"auto",padding:14,direction:"rtl"}}>
+        {isOrder&&<div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRight:"4px solid #D97706",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:13,color:"#92400E"}}>
+          <strong>שווה לוודא את תנאי התשלום</strong>
+          <div style={{marginTop:4}}>הם נמשכים מכרטיס הלקוח וקובעים את מועד הגבייה. שינוי כאן מתעדכן בכרטיס הלקוח ויחול על כל ההזמנות הבאות.</div>
+        </div>}
+        {dupNote&&<div style={{background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:13,color:"#0E3651"}}>ℹ️ {dupNote}</div>}
 
-        <div style={{marginBottom:22}}>
-          <div style={sectionTitle}>👤 פרטי לקוח</div>
-          {selectedClient?<div style={{padding:12,background:"#f0fdf4",borderRadius:10,border:"1px solid #86efac",marginBottom:10}}>
-            <div style={{fontWeight:700}}>{selectedClient.name}</div>
-            <div style={{fontSize:13,color:"#166534",marginTop:4}}>📞 {selectedClient.phone||"—"} · 🆔 {selectedClient.bina_customer_id}</div>
-            <button type="button" onClick={()=>setSelectedClient(null)} style={{marginTop:8,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>החלף לקוח</button>
-          </div>:<>
-            <input type="text" placeholder="🔍 חיפוש לפי שם, טלפון, או קוד בינה..." value={clientSearch} onChange={e=>setClientSearch(e.target.value)} style={inputStyle}/>
-            <div style={{marginTop:10,maxHeight:200,overflowY:"auto"}}>
-              {filteredClients.map(c=><div key={c.id} onClick={()=>{
-                if(c.bina_customer_id)setSelectedClient(c);
-                else{
-                  const ok=window.confirm("הלקוח לא מקושר לבינה. לפתוח יצירת לקוח?");
-                  if(ok){onClose();if(window.openBinaClient)window.openBinaClient();}
-                }
-              }} style={{padding:12,marginBottom:6,borderRadius:8,cursor:"pointer",background:c.bina_customer_id?"#f0fdf4":"#fefce8",borderRight:c.bina_customer_id?"4px solid #22c55e":"4px solid #eab308"}}>
-                <div style={{fontWeight:600}}>{c.name||"ללא שם"}</div>
-                <div style={{fontSize:12,color:"#666"}}>📞 {c.phone||"—"}</div>
-              </div>)}
-            </div>
-          </>}
-        </div>
-
-        <div style={{marginBottom:22}}>
-          <div style={sectionTitle}>📋 פרטי מסמך</div>
-          <label style={labelStyle}>כותרת</label>
-          <input type="text" value={title} onChange={e=>setTitle(e.target.value)} placeholder={isOrder?"כותרת הזמנה":"כותרת הצעה"} style={{...inputStyle,marginBottom:12}}/>
-          <label style={labelStyle}>סוכן</label>
-          <select value={agent} onChange={e=>setAgent(e.target.value)} style={{...inputStyle,marginBottom:12}}>
-            <option value="">בחר סוכן...</option>
-            <option value="כפיר">כפיר</option>
-            <option value="נטלי">נטלי</option>
-            <option value="ברק">ברק</option>
-          </select>
-          <label style={labelStyle}>לידי (איש קשר)</label>
-          <input type="text" value={contactName} onChange={e=>setContactName(e.target.value)} style={{...inputStyle,marginBottom:12}}/>
-          {isOrder&&<>
-            <label style={labelStyle}>מחלקה (אופציונלי)</label>
-            <select value={dept} onChange={e=>setDept(e.target.value)} style={{...inputStyle,marginBottom:12}}>
-              <option value="כללי">כללי</option>
-              {DEPTS.map(d=><option key={d} value={d}>{d}</option>)}
+        <div className="hb3-grid" style={{marginBottom:12}}>
+          <div className="hb3-card">
+            <div className="hb3-sec">לקוח</div>
+            {selectedClient?<div>
+              <div style={{fontWeight:800,color:"#0E3651"}}>{selectedClient.name}</div>
+              <div style={{fontSize:12,color:"#2A807C",marginTop:4}}>{selectedClient.phone||"—"} · {selectedClient.bina_customer_id}</div>
+              <button type="button" onClick={()=>setSelectedClient(null)} style={{marginTop:8,padding:"6px 10px",borderRadius:8,border:"1px solid #D5E3E1",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>החלף</button>
+            </div>:<>
+              <input className="hb3-inp" type="text" placeholder="חיפוש שם / טלפון / קוד בינה" value={clientSearch} onChange={e=>setClientSearch(e.target.value)}/>
+              <div style={{marginTop:8,maxHeight:140,overflowY:"auto"}}>
+                {filteredClients.map(c=><div key={c.id} onClick={()=>pickClient(c)} style={{padding:"8px 10px",marginBottom:4,borderRadius:8,cursor:"pointer",background:c.bina_customer_id?"#EDF8F7":"#FFFBEB"}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{c.name||"ללא שם"}</div>
+                  <div style={{fontSize:11,color:"#6B7F92"}}>{c.phone||"—"}</div>
+                </div>)}
+              </div>
+            </>}
+          </div>
+          <div className="hb3-card">
+            <div className="hb3-sec">פרטי מסמך</div>
+            <label className="hb3-lab">כותרת</label>
+            <input className="hb3-inp" style={{marginBottom:8}} value={title} onChange={e=>setTitle(e.target.value)} placeholder={isOrder?"כותרת הזמנה":"כותרת הצעה"}/>
+            <label className="hb3-lab">סוכן</label>
+            <select className="hb3-inp" style={{marginBottom:8}} value={agent} onChange={e=>setAgent(e.target.value)}>
+              <option value="">בחר סוכן...</option>
+              <option value="כפיר">כפיר</option>
+              <option value="נטלי">נטלי</option>
+              <option value="ברק">ברק</option>
             </select>
-            <label style={labelStyle}>הערות</label>
-            <textarea value={remark} onChange={e=>setRemark(e.target.value)} rows={2} style={{...inputStyle,resize:"vertical"}}/>
-          </>}
+            <label className="hb3-lab">לידי</label>
+            <input className="hb3-inp" style={{marginBottom:8}} value={contactName} onChange={e=>setContactName(e.target.value)}/>
+            <label className="hb3-lab">תנאי תשלום</label>
+            <input className="hb3-inp" value={paymentTerms} onChange={e=>setPaymentTerms(e.target.value)} placeholder="שוטף + 30"/>
+            {selectedClient&&<div style={{fontSize:11,color:"#6B7F92",marginTop:4}}>מכרטיס הלקוח · ניתן לשנות</div>}
+            {isOrder&&<>
+              <label className="hb3-lab" style={{marginTop:8}}>הערות</label>
+              <textarea className="hb3-inp" rows={2} value={remark} onChange={e=>setRemark(e.target.value)} style={{resize:"vertical"}}/>
+            </>}
+          </div>
         </div>
 
-        <div style={{marginBottom:22}}>
-          <div style={sectionTitle}>📦 פריטים</div>
-          {items.map((it,idx)=><div key={idx} style={{padding:12,marginBottom:12,background:"var(--bg2)",borderRadius:10,border:"1px solid var(--border)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-              <strong>פריט {idx+1}</strong>
-              {items.length>1&&<button type="button" onClick={()=>removeItem(idx)} style={btnDanger}>🗑️</button>}
+        <div className="hb3-card" style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <div className="hb3-sec" style={{margin:0}}>פריטים</div>
+            <div className="hb3-toggle" style={{width:220}}>
+              <button type="button" className={priceMode==="unit"?"on":""} onClick={()=>switchPriceMode("unit")}>מחיר יחידה</button>
+              <button type="button" className={priceMode==="total"?"on":""} onClick={()=>switchPriceMode("total")}>סה״כ</button>
             </div>
-            <label style={labelStyle}>תיאור</label>
-            <input type="text" value={it.description} onChange={e=>updateItem(idx,"description",e.target.value)} style={{...inputStyle,marginBottom:10}}/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-              <div><label style={labelStyle}>כמות</label><input type="number" value={it.quantity} onChange={e=>updateItem(idx,"quantity",e.target.value)} style={inputStyle}/></div>
-              <div><label style={labelStyle}>מחיר ₪</label><input type="number" step="0.01" value={it.unitPrice} onChange={e=>updateItem(idx,"unitPrice",e.target.value)} style={inputStyle}/></div>
-              <div><label style={labelStyle}>הנחה %</label><input type="number" value={it.discount} onChange={e=>updateItem(idx,"discount",e.target.value)} style={inputStyle}/></div>
-            </div>
-          </div>)}
-          <button type="button" onClick={addItem} style={{width:"100%",padding:14,border:"2px dashed "+accent,color:accent,background:"#fff",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>➕ הוסף פריט</button>
+          </div>
+          {items.map((it,idx)=>{
+            const isEmpty=!(it.description||"").trim()&&idx===items.length-1;
+            const computedUnit=hb3UnitFromTotal(it);
+            const computedTot=hb3LineTotal(it);
+            return<div key={idx} className={"hb3-item"+(isEmpty?" empty":"")}>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <input className="hb3-inp" value={it.description} onChange={e=>updateItem(idx,"description",e.target.value)} placeholder="תיאור הפריט"/>
+                {items.length>1&&<button type="button" onClick={()=>removeItem(idx)} style={{border:"none",background:"#FEE2E2",color:"#DC2626",borderRadius:8,width:36,height:36,cursor:"pointer",fontFamily:"inherit"}}>×</button>}
+              </div>
+              <div className="hb3-item-grid">
+                <div>
+                  <label className="hb3-lab">מחלקה</label>
+                  <select className="hb3-inp" value={it.deptName||""} onChange={e=>updateItem(idx,"deptName",e.target.value)}>
+                    <option value="">בחר...</option>
+                    {depts.map(d=><option key={d.name} value={d.name}>{d.name}</option>)}
+                  </select>
+                  {it.deptName&&<span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:(depts.find(d=>d.name===it.deptName)||{}).color||"#62C7C2",marginTop:6}}/>}
+                </div>
+                <div>
+                  <label className="hb3-lab">כמות</label>
+                  <input className="hb3-inp" type="number" value={it.quantity} onChange={e=>updateItem(idx,"quantity",e.target.value)}/>
+                </div>
+                <div>
+                  <label className="hb3-lab">מחיר יחידה</label>
+                  {priceMode==="unit"?
+                    <input className="hb3-inp" type="number" step="0.001" value={it.unitPrice} onChange={e=>updateItem(idx,"unitPrice",e.target.value)}/>:
+                    <div>
+                      <input className="hb3-inp" readOnly value={computedUnit.toFixed(3)} style={{background:"#F1F5F4",color:"#6B7F92"}}/>
+                      <div style={{fontSize:10,color:"#6B7F92",marginTop:2}}>מחושב</div>
+                    </div>}
+                </div>
+                <div>
+                  <label className="hb3-lab">סה״כ</label>
+                  {priceMode==="total"?
+                    <input className="hb3-inp" type="number" step="0.01" value={it.lineTotal} onChange={e=>updateItem(idx,"lineTotal",e.target.value)}/>:
+                    <input className="hb3-inp" readOnly value={computedTot.toFixed(2)} style={{background:"#F1F5F4",color:"#6B7F92"}}/>}
+                </div>
+              </div>
+            </div>;
+          })}
         </div>
 
-        {isOrder&&<div style={{marginBottom:22}}>
-          <div style={sectionTitle}>📎 קובץ ודדליין</div>
-          <label style={labelStyle}>דדליין *</label>
-          <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} style={{...inputStyle,marginBottom:12}}/>
-          <label style={labelStyle}>קובץ עבודה *</label>
-          <input type="file" onChange={e=>setWorkFile(e.target.files?.[0]||null)} style={{marginBottom:12}}/>
-          {workFile&&<div style={{fontSize:13,color:"#166534",marginBottom:10}}>📄 {workFile.name}</div>}
-          <label style={labelStyle}>הערה לעובד</label>
-          <textarea value={workerNote} onChange={e=>setWorkerNote(e.target.value)} rows={2} style={{...inputStyle,resize:"vertical"}}/>
+        {isOrder&&<div className="hb3-card" style={{marginBottom:12}}>
+          <div className="hb3-sec">קובץ ודדליין</div>
+          <div className="hb3-grid">
+            <div>
+              <label className="hb3-lab">דדליין *</label>
+              <input className="hb3-inp" type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}/>
+            </div>
+            <div>
+              <label className="hb3-lab">קובץ עבודה {prefill?.skipFileRequired?"":"*"}</label>
+              <input type="file" onChange={e=>setWorkFile(e.target.files?.[0]||null)}/>
+              {workFile&&<div style={{fontSize:12,color:"#2A807C",marginTop:4}}>{workFile.name}</div>}
+            </div>
+          </div>
+          <label className="hb3-lab" style={{marginTop:8}}>הערה לעובד</label>
+          <textarea className="hb3-inp" rows={2} value={workerNote} onChange={e=>setWorkerNote(e.target.value)} style={{resize:"vertical"}}/>
         </div>}
 
-        <div style={{padding:14,background:isOrder?"#eff6ff":"#f5f3ff",borderRadius:10,marginBottom:12}}>
-          <div style={{fontWeight:800,marginBottom:6}}>💰 סיכום</div>
-          <div>👤 {selectedClient?.name||"—"}</div>
-          <div>📦 {items.length} פריטים</div>
-          <div style={{fontWeight:700,color:accent,marginTop:4}}>₪{itemsTotal.toFixed(2)} (לפני מעמ)</div>
-          <div style={{fontSize:12,color:"#64748b",marginTop:6}}>{isOrder?"docType 15 · הזמנה":"docType 14 · הצעה (לא יוצרת משימה)"}</div>
-        </div>
-        {error&&<div style={{padding:12,background:"#fef2f2",color:"#dc2626",borderRadius:10,fontSize:14,marginBottom:8}}>
+        {error&&<div style={{padding:12,background:"#FEF2F2",color:"#DC2626",borderRadius:10,fontSize:14,marginBottom:8}}>
           <div>❌ {error}</div>
-          <div style={{fontSize:12,marginTop:6,color:"#991b1b"}}>הטופס נשמר — אפשר לנסות שוב אחרי תיקון.</div>
+          <div style={{fontSize:12,marginTop:6,color:"#991B1B"}}>הטופס נשמר — אפשר לנסות שוב אחרי תיקון.</div>
         </div>}
       </div>
-      <div style={footerStyle}>
-        <button type="button" onClick={onClose} disabled={submitting} style={btnSecondary}>ביטול</button>
-        <button type="button" onClick={handleSubmit} disabled={submitting} style={{...btnPrimary,opacity:submitting?0.6:1}}>{submitting?"⏳ שולח...":(isOrder?"🚀 צור הזמנה":"📤 צור הצעה")}</button>
+      <div className="hb3-sticky">
+        <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13}}>
+          <span>לפני מע״מ <strong>{itemsTotal.toFixed(2)}</strong></span>
+          <span>מע״מ <strong>{vatAmt.toFixed(2)}</strong></span>
+          <span style={{fontSize:16,fontWeight:800}}>סה״כ ₪{grand.toFixed(2)}</span>
+        </div>
+        <button type="button" onClick={handleSubmit} disabled={submitting} style={{padding:"12px 22px",border:"none",borderRadius:10,background:submitting?"#9CA3AF":"#62C7C2",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:44,minWidth:120}}>{submitting?"שולח...":(isOrder?"צור הזמנה":"צור הצעה")}</button>
       </div>
     </div>
   </div>;
 }
 
-function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
+function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
   const [quotes,setQuotes]=useState([]);
+  const [orders,setOrders]=useState([]);
   const [loading,setLoading]=useState(true);
   const [viewQ,setViewQ]=useState(null);
   const [busyId,setBusyId]=useState(null);
+  const [histQ,setHistQ]=useState("");
 
   const load=async()=>{
     setLoading(true);
     try{
-      const{data,error}=await supabaseClient
-        .from("quotes")
-        .select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status")
-        .order("sent_at",{ascending:true,nullsFirst:false});
+      const[{data,error},{data:ords,error:oErr}]=await Promise.all([
+        supabaseClient.from("quotes").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status").order("sent_at",{ascending:true,nullsFirst:false}),
+        supabaseClient.from("orders").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,created_at,remark,order_items(id,description,quantity,unit_price,discount_pct,bina_item_code,price_entry_mode,line_total,line_number)").order("created_at",{ascending:false}).limit(250),
+      ]);
       if(error)throw error;
+      if(oErr)console.warn(oErr);
       setQuotes(data||[]);
+      setOrders(ords||[]);
     }catch(e){console.warn(e);setQuotes([]);}
     setLoading(false);
   };
@@ -7737,7 +7946,6 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
   const now=new Date();
   const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
   const approvedMonth=quotes.filter(q=>q.quote_status==="approved"&&q.converted_at&&q.converted_at>=monthStart).length;
-  // fallback if converted_at missing
   const approvedMonthAlt=quotes.filter(q=>q.quote_status==="approved"&&(q.status_changed_at||q.converted_at||q.created_at)>=monthStart).length;
   const approvedCount=Math.max(approvedMonth,approvedMonthAlt);
   const rejectedCount=quotes.filter(q=>q.quote_status==="rejected").length;
@@ -7747,8 +7955,7 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
   const setStatus=async(q,status)=>{
     setBusyId(q.id);
     try{
-      const patch={quote_status:status,status_changed_at:new Date().toISOString()};
-      const{error}=await supabaseClient.from("quotes").update(patch).eq("id",q.id);
+      const{error}=await supabaseClient.from("quotes").update({quote_status:status,status_changed_at:new Date().toISOString()}).eq("id",q.id);
       if(error)throw error;
       await load();
     }catch(e){window.alert(e.message||String(e));}
@@ -7777,6 +7984,19 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
     finally{setBusyId(null);}
   };
 
+  const mapQuoteItems=qItems=>(qItems||[]).map(it=>{
+    const d=HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===String(it.bina_item_code||it.item_name||""))||null;
+    return {
+      description:it.description||"",
+      quantity:it.quantity,
+      unitPrice:it.unit_price,
+      discount:it.discount_pct,
+      binaItemCode:it.bina_item_code||it.item_name||"",
+      deptName:d?d.name:"",
+      lineTotal:it.line_total!=null?it.line_total:null,
+    };
+  });
+
   const convert=async(q)=>{
     setBusyId(q.id);
     try{
@@ -7791,15 +8011,20 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
         contactName:q.contact_person||"",
         client,
         bina_cust_id:q.bina_cust_id,
-        items:(qItems||[]).map(it=>({
-          description:it.description||"",
-          quantity:it.quantity,
-          unitPrice:it.unit_price,
-          discount:it.discount_pct,
-        })),
+        items:mapQuoteItems(qItems),
       });
     }catch(e){window.alert(e.message||String(e));}
     finally{setBusyId(null);}
+  };
+
+  const printQuote=async(q)=>{
+    const{data:qItems}=await supabaseClient.from("quote_items").select("*").eq("quote_id",q.id).order("line_number");
+    const list=Array.isArray(clients)?clients:[];
+    const client=list.find(c=>String(c.bina_customer_id)===String(q.bina_cust_id))||{name:q.bina_cust_name};
+    const items=mapQuoteItems(qItems);
+    window.openDocumentPDF&&window.openDocumentPDF(hb3BuildPdfDoc({
+      kind:"quote",binaDocId:q.bina_doc_id,title:q.title,client,contactName:q.contact_person,items,agent:q.sales_agent,remark:"",paymentTerms:hb3ClientTerms(client),dueDate:"",priceMode:"unit"
+    }));
   };
 
   const remove=async(q)=>{
@@ -7813,11 +8038,57 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
     finally{setBusyId(null);}
   };
 
+  const duplicateOrder=o=>{
+    const list=Array.isArray(clients)?clients:[];
+    const client=list.find(c=>String(c.bina_customer_id)===String(o.bina_cust_id))||null;
+    const items=(o.order_items||[]).sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
+      const d=HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===String(it.bina_item_code||""))||null;
+      return {
+        description:it.description||"",
+        quantity:it.quantity,
+        unitPrice:it.unit_price,
+        discount:it.discount_pct,
+        binaItemCode:it.bina_item_code||"",
+        deptName:d?d.name:"",
+        lineTotal:it.line_total,
+      };
+    });
+    onDuplicateOrder?.({
+      mode:"order",
+      skipFileRequired:true,
+      duplicatedFromOrderId:o.bina_doc_id,
+      sourceCreatedAt:o.created_at,
+      title:o.title||"",
+      agent:o.sales_agent||"",
+      contactName:o.contact_person||"",
+      client,
+      bina_cust_id:o.bina_cust_id,
+      remark:o.remark||"",
+      items,
+    });
+  };
+
+  const printOrder=o=>{
+    const list=Array.isArray(clients)?clients:[];
+    const client=list.find(c=>String(c.bina_customer_id)===String(o.bina_cust_id))||{name:o.bina_cust_name};
+    const items=(o.order_items||[]).map(it=>({
+      description:it.description,quantity:it.quantity,unitPrice:it.unit_price,discount:it.discount_pct,lineTotal:it.line_total
+    }));
+    window.openDocumentPDF&&window.openDocumentPDF(hb3BuildPdfDoc({
+      kind:"order",binaDocId:o.bina_doc_id,title:o.title,client,contactName:o.contact_person,items,agent:o.sales_agent,remark:o.remark||"",paymentTerms:hb3ClientTerms(client),dueDate:"",priceMode:"unit"
+    }));
+  };
+
   const sortedOpen=[...openQuotes].sort((a,b)=>ageDays(b)-ageDays(a));
+  const hq=histQ.trim().toLowerCase();
+  const filteredOrders=!hq?orders:orders.filter(o=>{
+    const blob=[o.bina_cust_name,o.title,String(o.bina_doc_id||""),(o.order_items||[]).map(it=>it.description).join(" ")].join(" ").toLowerCase();
+    return blob.includes(hq);
+  });
 
   return<div style={{direction:"rtl",maxWidth:960}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
-      <h1 style={{fontSize:22,fontWeight:900,margin:0}}>📄 הצעות מחיר</h1>
+      <h1 style={{fontSize:22,fontWeight:900,margin:0,color:"#0E3651"}}>📄 הצעות מחיר</h1>
       <button type="button" onClick={load} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>רענן</button>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
@@ -7843,6 +8114,7 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
               <button type="button" disabled={busyId===q.id} onClick={()=>convert(q)} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:40}}>✅ אושרה</button>
               <button type="button" disabled={busyId===q.id} onClick={()=>setStatus(q,"rejected")} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:40}}>❌ נדחתה</button>
               <button type="button" disabled={busyId===q.id} onClick={()=>sendFollowUp(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>📧 תזכורת</button>
+              <button type="button" onClick={()=>printQuote(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>📄 PDF</button>
               <button type="button" onClick={()=>setViewQ(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>👁️</button>
               <button type="button" disabled={busyId===q.id} onClick={()=>remove(q)} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>🗑️</button>
             </div>
@@ -7861,8 +8133,25 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder}){
         <div><strong>איש קשר:</strong> {viewQ.contact_person||"—"}</div>
       </div>
     </Modal>}
+
+    <h2 style={{fontSize:18,fontWeight:800,margin:"28px 0 12px",color:"#0E3651"}}>היסטוריית הזמנות</h2>
+    <input className="hb3-inp" style={{maxWidth:420,marginBottom:12}} placeholder="חיפוש: לקוח / מספר הזמנה / תיאור פריט" value={histQ} onChange={e=>setHistQ(e.target.value)}/>
+    <div style={{display:"grid",gap:8}}>
+      {filteredOrders.map(o=><div key={o.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,padding:12,display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontWeight:800}}>#{o.bina_doc_id||"—"} · {o.bina_cust_name||"—"}</div>
+          <div style={{fontSize:13,color:"#64748b",marginTop:4}}>{o.title||""} · {(o.order_items||[]).length} פריטים · {o.created_at?new Date(o.created_at).toLocaleDateString("he-IL"):""}</div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <button type="button" onClick={()=>duplicateOrder(o)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #BFE6E3",background:"#EDF8F7",color:"#0E3651",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:40}}>📋 שכפל</button>
+          <button type="button" onClick={()=>printOrder(o)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>📄 PDF</button>
+        </div>
+      </div>)}
+      {!filteredOrders.length&&<div style={{padding:24,textAlign:"center",color:"#94a3b8"}}>אין הזמנות תואמות</div>}
+    </div>
   </div>;
 }
+
 
 function CreateOrderModal({open,onClose,onSuccess,clients,sb}){
   const [step,setStep]=useState(1);
@@ -16754,13 +17043,13 @@ function TvGalleryManager(){
 const PRINTOS_DEPT_LS_KEY="printos_department";
 const MYDAY_ADMIN_EMAILS=["kfir.dfus@gmail.com","natalie.zem@gmail.com"];
 const MYDAY_DEFAULT_DEPTS=[
-  {name:"פורמט רחב",color:"#378ADD",has_rip:true,sort_order:1},
-  {name:"דיגיטלי צבעוני",color:"#1D9E75",has_rip:true,sort_order:2},
-  {name:"דיגיטלי שחור לבן",color:"#6B7280",has_rip:true,sort_order:3},
-  {name:"אופסט",color:"#7F77DD",has_rip:true,sort_order:4},
-  {name:"ביגוד ומוצרי פרסום",color:"#BA7517",has_rip:true,sort_order:5},
-  {name:"עבודות חוץ",color:"#C2410C",has_rip:false,sort_order:6},
-  {name:"משלוחים",color:"#0891B2",has_rip:false,sort_order:7},
+  {name:"פורמט רחב",color:"#62C7C2",has_rip:true,sort_order:1,bina_item_code:"8"},
+  {name:"דיגיטלי צבעוני",color:"#3EA9A4",has_rip:true,sort_order:2,bina_item_code:"3"},
+  {name:"דיגיטלי שחור לבן",color:"#6B7F92",has_rip:true,sort_order:3,bina_item_code:"4"},
+  {name:"אופסט",color:"#0E3651",has_rip:true,sort_order:4,bina_item_code:"5"},
+  {name:"ביגוד ומוצרי פרסום",color:"#EC008C",has_rip:true,sort_order:5,bina_item_code:"2"},
+  {name:"מתקני תצוגה ומוצרים נלווים",color:"#00AEEF",has_rip:false,sort_order:6,bina_item_code:"7"},
+  {name:"עבודות חוץ",color:"#D97706",has_rip:false,sort_order:7,bina_item_code:"6"},
 ];
 const ITEM_OPEN_STATUS="בעבודה";
 const ITEM_DONE_STATUS="מוכן";
@@ -17612,7 +17901,7 @@ function App(){
       await archiveStaleCompleted();
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
+      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,default_payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
       setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
@@ -18160,7 +18449,7 @@ function App(){
 
       {tab==="work-files"&&isA&&<WorkFilesAdminTab user={user}/>}
 
-      {tab==="quotes-lifecycle"&&isA&&<QuotesLifecycleTab clients={clients} sb={sb} onConvertToOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}}/>}
+      {tab==="quotes-lifecycle"&&isA&&<QuotesLifecycleTab clients={clients} sb={sb} onConvertToOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}} onDuplicateOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}}/>}
 
       {tab==="alut-dashboard"&&isA&&<AlutDashboard user={user}/>}
 
@@ -18351,9 +18640,23 @@ function App(){
                   {c.email&&<span style={{color:"var(--text2)",fontSize:12}}>✉️ {c.email}</span>}
                   {c.address&&<span style={{color:"var(--text2)",fontSize:12}}>📍 {c.address}</span>}
                   {c.payment_terms&&<span style={{background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20}}>{c.payment_terms}</span>}
+                  {c.default_payment_terms&&!c.payment_terms&&<span style={{background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20}}>{c.default_payment_terms}</span>}
                   {(c.delivery_contact_name||c.delivery_contact_phone)&&<span style={{color:"#0e7490",fontSize:12}}>🚚 {c.delivery_contact_name||c.delivery_contact_phone}</span>}
                 </div>
               </div>
+              <button type="button" onClick={async()=>{
+                try{
+                  const{data:last,error}=await supabaseClient.from("orders").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,created_at,remark,order_items(id,description,quantity,unit_price,discount_pct,bina_item_code,price_entry_mode,line_total,line_number)").eq("bina_cust_id",c.bina_customer_id).order("created_at",{ascending:false}).limit(1);
+                  if(error)throw error;
+                  const o=(last||[])[0];
+                  if(!o){openOrderQuoteModal("order",{client:c,paymentTerms:c.default_payment_terms||c.payment_terms||""});return;}
+                  const items=(o.order_items||[]).sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
+                    const d=HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===String(it.bina_item_code||""))||null;
+                    return {description:it.description||"",quantity:it.quantity,unitPrice:it.unit_price,discount:it.discount_pct,binaItemCode:it.bina_item_code||"",deptName:d?d.name:"",lineTotal:it.line_total};
+                  });
+                  openOrderQuoteModal("order",{mode:"order",skipFileRequired:true,duplicatedFromOrderId:o.bina_doc_id,sourceCreatedAt:o.created_at,title:o.title||"",agent:o.sales_agent||"",contactName:o.contact_person||"",client:c,bina_cust_id:o.bina_cust_id,remark:o.remark||"",items,paymentTerms:c.default_payment_terms||c.payment_terms||""});
+                }catch(e){window.alert(e.message||String(e));}
+              }} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #BFE6E3",background:"#EDF8F7",color:"#0E3651",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>📋 שכפל</button>
               <button type="button" onClick={()=>setEditClientDelivery(c)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #0e7490",background:"#ecfeff",color:"#0e7490",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🚚 משלוח</button>
             </div>
           </Card>)}
@@ -18629,181 +18932,112 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 <script>
 // Embedded before </body> in index.html — window.openDocumentPDF
 window.openDocumentPDF = function(doc) {
-  // doc = { docType, binaDocId, title, client, items, agent, createdAt, remark }
-
   function escapeHtml(unsafe) {
-    return String(unsafe || '')
+    return String(unsafe || "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
   }
-
-  const isQuote = doc.docType === 'quote';
-  const docTypeText = isQuote ? 'הצעת מחיר' : 'הזמנת עבודה';
-  const docTypeShort = isQuote ? 'הצעה' : 'הזמנה';
-
+  const isQuote = doc.docType === "quote";
+  const docTypeText = isQuote ? "הצעת מחיר" : "הזמנת עבודה";
   const subtotal = (doc.items || []).reduce(function (sum, it) {
+    if (it.lineTotal != null && it.lineTotal !== "") return sum + Number(it.lineTotal);
     const qty = Number(it.quantity) || 0;
     const price = Number(it.unitPrice) || 0;
     const disc = Number(it.discount) || 0;
-    return sum + (qty * price * (1 - disc / 100));
+    return sum + qty * price * (1 - disc / 100);
   }, 0);
-  const VAT_RATE = 0.18;
-  const vat = subtotal * VAT_RATE;
+  const vat = subtotal * 0.18;
   const total = subtotal + vat;
-
   const formatDate = function (dateStr) {
     const d = dateStr ? new Date(dateStr) : new Date();
-    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+    return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
   };
-  const formatCurrency = function (n) {
-    return '₪' + Number(n || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatNum = function (n) {
+    return Number(n || 0).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
-
   const today = formatDate(doc.createdAt);
-  const validUntil = (function () {
-    const d = doc.createdAt ? new Date(doc.createdAt) : new Date();
-    d.setDate(d.getDate() + 30);
-    return formatDate(d);
-  })();
-
+  const logoUrl = (typeof window !== "undefined" && window.location && window.location.origin)
+    ? window.location.origin + "/natalie-logo.png"
+    : "/natalie-logo.png";
   const itemsRows = (doc.items || []).map(function (it, idx) {
     const qty = Number(it.quantity) || 0;
     const price = Number(it.unitPrice) || 0;
     const disc = Number(it.discount) || 0;
-    const lineTotal = qty * price * (1 - disc / 100);
-    return '<tr>' +
-      '<td class="num line-num">' + (idx + 1) + '</td>' +
-      '<td class="desc">' + escapeHtml(it.description || '') + '</td>' +
-      '<td class="num">' + qty + '</td>' +
-      '<td class="amount">' + formatCurrency(price) + '</td>' +
-      '<td class="num">' + (disc > 0 ? disc + '%' : '—') + '</td>' +
-      '<td class="amount">' + formatCurrency(lineTotal) + '</td>' +
-      '</tr>';
-  }).join('');
-
-  const html = '<!DOCTYPE html>\n' +
-'<html lang="he" dir="rtl">\n' +
-'<head>\n' +
-'<meta charset="UTF-8">\n' +
-'<title>' + docTypeText + ' #' + doc.binaDocId + '</title>\n' +
-'<style>\n' +
-'  * { box-sizing: border-box; margin: 0; padding: 0; }\n' +
-'  body { font-family: \'Heebo\', \'Segoe UI\', Arial, sans-serif; color: #1E3A52; background: #f5f5f5; direction: rtl; line-height: 1.5; padding: 20px; }\n' +
-'  .page { max-width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 40px 50px; box-shadow: 0 2px 16px rgba(0,0,0,0.1); position: relative; }\n' +
-'  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #3DB5B1; padding-bottom: 24px; margin-bottom: 32px; }\n' +
-'  .logo-text { font-size: 28px; font-weight: 900; color: #1E3A52; letter-spacing: 2px; }\n' +
-'  .logo-sub { font-size: 13px; color: #3DB5B1; font-weight: 600; margin-top: 2px; }\n' +
-'  .doc-title-area { text-align: left; }\n' +
-'  .doc-type-label { font-size: 11px; color: #3DB5B1; text-transform: uppercase; letter-spacing: 3px; font-weight: 700; margin-bottom: 4px; }\n' +
-'  .doc-title-num { font-size: 32px; font-weight: 800; color: #1E3A52; line-height: 1; }\n' +
-'  .doc-num-prefix { font-size: 22px; color: #3DB5B1; font-weight: 600; }\n' +
-'  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; padding: 20px; background: #f8fafa; border-radius: 8px; border-right: 4px solid #3DB5B1; }\n' +
-'  .meta-block { font-size: 13px; }\n' +
-'  .meta-label { color: #3DB5B1; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }\n' +
-'  .meta-value { color: #1E3A52; font-weight: 600; font-size: 14px; }\n' +
-'  .meta-sub { color: #6b7280; font-size: 12px; margin-top: 2px; }\n' +
-'  .work-title { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 24px; padding: 16px 20px; background: linear-gradient(135deg, #3DB5B1 0%, #1E3A52 100%); border-radius: 8px; }\n' +
-'  .items { width: 100%; border-collapse: collapse; margin-bottom: 32px; font-size: 13px; }\n' +
-'  .items thead th { background: #1E3A52; color: #fff; padding: 12px 14px; text-align: right; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }\n' +
-'  .items tbody td { padding: 14px; border-bottom: 1px solid #e5e7eb; color: #1E3A52; }\n' +
-'  .items tbody tr:last-child td { border-bottom: 2px solid #3DB5B1; }\n' +
-'  .items tbody tr:nth-child(even) { background: #f8fafa; }\n' +
-'  .items td.num { text-align: center; font-variant-numeric: tabular-nums; }\n' +
-'  .items td.amount { text-align: left; font-weight: 600; font-variant-numeric: tabular-nums; }\n' +
-'  .items td.desc { font-weight: 500; }\n' +
-'  .items .line-num { color: #6b7280; font-weight: 700; }\n' +
-'  .totals { display: flex; justify-content: flex-end; margin-bottom: 32px; }\n' +
-'  .totals-table { min-width: 320px; border-collapse: collapse; }\n' +
-'  .totals-table tr td { padding: 8px 16px; font-size: 14px; color: #1E3A52; }\n' +
-'  .totals-table tr td:first-child { text-align: right; color: #6b7280; }\n' +
-'  .totals-table tr td:last-child { text-align: left; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 120px; }\n' +
-'  .totals-table tr.vat td { border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; }\n' +
-'  .totals-table tr.grand td { padding-top: 16px; font-size: 22px; font-weight: 800; color: #1E3A52; }\n' +
-'  .totals-table tr.grand td:last-child { color: #3DB5B1; }\n' +
-'  .remark { background: #fffbeb; border-right: 4px solid #f59e0b; padding: 14px 18px; border-radius: 8px; margin-bottom: 32px; font-size: 13px; color: #78350f; }\n' +
-'  .remark-label { font-weight: 700; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }\n' +
-'  .validity { text-align: center; padding: 12px; background: #f0fdfa; border: 1px dashed #3DB5B1; border-radius: 8px; margin-bottom: 32px; color: #1E3A52; font-size: 13px; font-weight: 600; }\n' +
-'  .footer { border-top: 2px solid #3DB5B1; padding-top: 20px; margin-top: 40px; text-align: center; color: #6b7280; font-size: 12px; line-height: 1.8; }\n' +
-'  .footer-name { font-weight: 700; color: #1E3A52; font-size: 14px; margin-bottom: 4px; }\n' +
-'  .footer-divider { color: #3DB5B1; margin: 0 8px; }\n' +
-'  @media print { body { background: #fff; padding: 0; } .page { box-shadow: none; padding: 20mm; } .no-print { display: none !important; } }\n' +
-'  .toolbar { position: fixed; top: 16px; left: 16px; background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; gap: 8px; z-index: 1000; }\n' +
-'  .btn { padding: 10px 20px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }\n' +
-'  .btn-print { background: #3DB5B1; color: #fff; }\n' +
-'  .btn-close { background: #e5e7eb; color: #1E3A52; }\n' +
-'</style>\n' +
-'</head>\n' +
-'<body>\n' +
-'<div class="toolbar no-print">\n' +
-'  <button class="btn btn-print" onclick="window.print()">🖨️ הדפס / שמור כ-PDF</button>\n' +
-'  <button class="btn btn-close" onclick="window.close()">✕ סגור</button>\n' +
-'</div>\n' +
-'<div class="page">\n' +
-'  <div class="header">\n' +
-'    <div>\n' +
-'      <div class="logo-text">NATALIE</div>\n' +
-'      <div class="logo-sub">פתרונות הדפסה</div>\n' +
-'    </div>\n' +
-'    <div class="doc-title-area">\n' +
-'      <div class="doc-type-label">' + docTypeText + '</div>\n' +
-'      <div class="doc-title-num"><span class="doc-num-prefix">#</span>' + doc.binaDocId + '</div>\n' +
-'    </div>\n' +
-'  </div>\n' +
-'  <div class="meta">\n' +
-'    <div class="meta-block">\n' +
-'      <div class="meta-label">לכבוד</div>\n' +
-'      <div class="meta-value">' + escapeHtml((doc.client && doc.client.name) || '—') + '</div>\n' +
-(doc.client && doc.client.contactPerson ? '      <div class="meta-sub">לידי: ' + escapeHtml(doc.client.contactPerson) + '</div>\n' : '') +
-(doc.client && doc.client.phone ? '      <div class="meta-sub">📞 ' + escapeHtml(doc.client.phone) + '</div>\n' : '') +
-(doc.client && doc.client.email ? '      <div class="meta-sub">✉ ' + escapeHtml(doc.client.email) + '</div>\n' : '') +
-(doc.client && doc.client.address ? '      <div class="meta-sub">📍 ' + escapeHtml(doc.client.address) + '</div>\n' : '') +
-'    </div>\n' +
-'    <div class="meta-block">\n' +
-'      <div class="meta-label">פרטי המסמך</div>\n' +
-'      <div class="meta-value">תאריך: ' + today + '</div>\n' +
-(doc.agent ? '      <div class="meta-sub">סוכן: ' + escapeHtml(doc.agent) + '</div>\n' : '') +
-'      <div class="meta-sub">מספר ' + docTypeShort + ': #' + doc.binaDocId + '</div>\n' +
-'    </div>\n' +
-'  </div>\n' +
-(doc.title ? '  <div class="work-title">' + escapeHtml(doc.title) + '</div>\n' : '') +
-'  <table class="items">\n' +
-'    <thead>\n' +
-'      <tr>\n' +
-'        <th style="width:40px">#</th>\n' +
-'        <th>תיאור הפריט</th>\n' +
-'        <th style="width:80px">כמות</th>\n' +
-'        <th style="width:100px">מחיר ליחידה</th>\n' +
-'        <th style="width:80px">הנחה %</th>\n' +
-'        <th style="width:120px">סה&quot;כ</th>\n' +
-'      </tr>\n' +
-'    </thead>\n' +
-'    <tbody>\n' +
-itemsRows +
-'    </tbody>\n' +
-'  </table>\n' +
-'  <div class="totals">\n' +
-'    <table class="totals-table">\n' +
-'      <tr class="subtotal"><td>סה&quot;כ לפני מע&quot;מ:</td><td>' + formatCurrency(subtotal) + '</td></tr>\n' +
-'      <tr class="vat"><td>מע&quot;מ 18%:</td><td>' + formatCurrency(vat) + '</td></tr>\n' +
-'      <tr class="grand"><td>סה&quot;כ לתשלום:</td><td>' + formatCurrency(total) + '</td></tr>\n' +
-'    </table>\n' +
-'  </div>\n' +
-(doc.remark ? '  <div class="remark"><div class="remark-label">הערות:</div><div>' + escapeHtml(doc.remark) + '</div></div>\n' : '') +
-(isQuote ? '  <div class="validity">⏰ הצעה זו תקפה עד תאריך ' + validUntil + ' (30 יום מיום ההצעה)</div>\n' : '') +
-'  <div class="footer">\n' +
-'    <div class="footer-name">נטלי פתרונות הדפסה בע&quot;מ</div>\n' +
-'    <div><span>ח.פ. 517205332</span><span class="footer-divider">|</span><span>שד\' הר ציון 104, תל אביב</span><span class="footer-divider">|</span><span>03-6815703</span></div>\n' +
-'  </div>\n' +
-'</div>\n' +
-'</body>\n' +
-'</html>';
-
-  const win = window.open('', '_blank', 'width=900,height=1000');
+    const lineTotal = it.lineTotal != null && it.lineTotal !== "" ? Number(it.lineTotal) : qty * price * (1 - disc / 100);
+    return "<tr><td>" + escapeHtml(it.description || "") + "</td><td class='num'>" + qty + "</td><td class='num'>" + formatNum(price) + "</td><td class='num'>" + formatNum(lineTotal) + "</td></tr>";
+  }).join("");
+  const validity = isQuote ? "<br>הצעה זו תקפה 30 יום מתאריך הנפקתה." : "";
+  const html = "<!DOCTYPE html><html lang='he' dir='rtl'><head><meta charset='UTF-8'><title>" + docTypeText + " #" + escapeHtml(doc.binaDocId) + "</title>" +
+    "<link href='https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;800&display=swap' rel='stylesheet'>" +
+    "<style>" +
+    "*{box-sizing:border-box;margin:0;padding:0}" +
+    "html,body{height:100%}" +
+    "body{font-family:Heebo,Arial,sans-serif;direction:rtl;color:#0E3651;background:#e8eef0}" +
+    ".page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:13mm 14mm 10mm;position:relative;display:flex;flex-direction:column;box-shadow:0 2px 16px rgba(14,54,81,.12)}" +
+    ".corner{position:absolute;width:14px;height:14px;border:1px solid #DBE4E9}" +
+    ".c-tr{top:8mm;right:8mm;border-left:none;border-bottom:none}" +
+    ".c-bl{bottom:8mm;left:8mm;border-right:none;border-top:none}" +
+    ".spine{position:absolute;left:4mm;top:50%;transform:translateY(-50%);writing-mode:vertical-rl;font-size:8px;color:#B8C7D1;letter-spacing:.12em}" +
+    ".head{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:11px;border-bottom:1px solid #E2EEED}" +
+    ".logo{height:52px;max-width:180px;object-fit:contain}" +
+    ".doc-title{text-align:left;font-size:13px;font-weight:700;color:#2A807C}" +
+    ".doc-num{font-size:28px;font-weight:800;color:#0E3651;direction:ltr;text-align:left}" +
+    ".parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:11px 0 13px;border-bottom:1px solid #E2EEED}" +
+    ".p-lab{font-size:10px;font-weight:800;letter-spacing:.08em;color:#2A807C;text-transform:uppercase;margin-bottom:4px}" +
+    ".p-val{font-size:13px;font-weight:700}" +
+    ".p-sub{font-size:12px;color:#6B7F92;margin-top:2px}" +
+    "table.items{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}" +
+    "table.items th{text-align:right;padding:7px 9px;border-bottom:1px solid #E2EEED;color:#2A807C;font-size:11px}" +
+    "table.items td{padding:7px 9px;vertical-align:top}" +
+    "table.items tbody tr:nth-child(even){background:#FBFDFD}" +
+    ".num{text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    ".grow{flex:1}" +
+    ".totals{margin-top:10px;align-self:flex-end;min-width:240px}" +
+    ".totals div{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}" +
+    ".totals .grand{font-size:16px;font-weight:800;border-top:2px solid #0E3651;margin-top:4px;padding-top:8px}" +
+    ".meta2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:auto;padding-top:12px}" +
+    ".legal{background:#FBFDFD;padding:8px 10px;font-size:10.5px;color:#6B7F92;margin-top:8px}" +
+    ".foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:10px;padding-top:8px;border-top:1px solid #E2EEED;font-size:11px;color:#6B7F92}" +
+    ".cmyk{display:flex;gap:3px}" +
+    ".cmyk i{display:block;width:24px;height:5px}" +
+    ".no-print{position:fixed;top:12px;left:12px;display:flex;gap:8px;z-index:9}" +
+    ".no-print button{padding:10px 16px;border:none;border-radius:8px;font-family:inherit;font-weight:700;cursor:pointer}" +
+    ".btn-p{background:#62C7C2;color:#fff}" +
+    ".btn-c{background:#E2EEED;color:#0E3651}" +
+    "@media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}.no-print{display:none!important}@page{size:A4;margin:0}}" +
+    "</style></head><body>" +
+    "<div class='no-print'><button class='btn-p' onclick='window.print()'>הדפס / שמור PDF</button><button class='btn-c' onclick='window.close()'>סגור</button></div>" +
+    "<div class='page'>" +
+    "<div class='corner c-tr'></div><div class='corner c-bl'></div>" +
+    "<div class='spine'>natalie-print.com · הופק במערכת PrintOS</div>" +
+    "<div class='head'><img class='logo' src='" + logoUrl + "' alt='NATALIE' onerror=\"this.style.display='none'\">" +
+    "<div><div class='doc-title'>" + docTypeText + "</div><div class='doc-num'>" + escapeHtml(doc.binaDocId) + "</div></div></div>" +
+    "<div class='parties'><div><div class='p-lab'>לכבוד</div><div class='p-val'>" + escapeHtml((doc.client && doc.client.name) || "—") + "</div>" +
+    (doc.client && doc.client.contactPerson ? "<div class='p-sub'>לידי: " + escapeHtml(doc.client.contactPerson) + "</div>" : "") +
+    (doc.client && doc.client.address ? "<div class='p-sub'>" + escapeHtml(doc.client.address) + "</div>" : "") +
+    (doc.client && doc.client.phone ? "<div class='p-sub'>" + escapeHtml(doc.client.phone) + "</div>" : "") +
+    "</div><div><div class='p-lab'>מאת</div><div class='p-val'>נטלי פתרונות הדפסה בע״מ</div>" +
+    "<div class='p-sub'>ח.פ 517205332</div><div class='p-sub'>שד׳ הר ציון 104, תל אביב</div>" +
+    "<div class='p-sub'>03-6815703</div><div class='p-sub'>תאריך: " + today + "</div>" +
+    (doc.agent ? "<div class='p-sub'>סוכן: " + escapeHtml(doc.agent) + "</div>" : "") +
+    "</div></div>" +
+    (doc.title ? "<div style='font-weight:800;margin-top:10px'>" + escapeHtml(doc.title) + "</div>" : "") +
+    "<table class='items'><thead><tr><th>תיאור</th><th>כמות</th><th>מחיר יחידה</th><th>סה״כ</th></tr></thead><tbody>" + itemsRows + "</tbody></table>" +
+    "<div class='grow'></div>" +
+    "<div class='totals'><div><span>סה״כ לפני מע״מ</span><span>" + formatNum(subtotal) + "</span></div>" +
+    "<div><span>מע״מ 18%</span><span>" + formatNum(vat) + "</span></div>" +
+    "<div class='grand'><span>סה״כ לתשלום</span><span>₪" + formatNum(total) + "</span></div></div>" +
+    "<div class='meta2'><div><div class='p-lab'>תנאי תשלום</div><div>" + escapeHtml(doc.paymentTerms || "—") + "</div></div>" +
+    "<div><div class='p-lab'>מועד אספקה</div><div>" + escapeHtml(doc.dueDate || "—") + "</div></div></div>" +
+    "<div class='legal'>המחירים אינם כוללים מע״מ אלא אם צוין אחרת.<br>[עו״ד: להשלים תנאים כלליים]" + validity + "</div>" +
+    "<div class='foot'><div>natalie-print.com</div><div class='cmyk'><i style='background:#00AEEF'></i><i style='background:#EC008C'></i><i style='background:#FFF200'></i><i style='background:#0E3651'></i></div></div>" +
+    "</div></body></html>";
+  const win = window.open("", "_blank", "width=900,height=1100");
   if (!win) {
-    alert('הדפדפן חסם פתיחת חלון. אנא אשר חלונות קופצים לאתר זה.');
+    alert("הדפדפן חסם פתיחת חלון. אנא אשר חלונות קופצים לאתר זה.");
     return;
   }
   win.document.write(html);

@@ -1,0 +1,112 @@
+window.openDocumentPDF = function(doc) {
+  function escapeHtml(unsafe) {
+    return String(unsafe || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+  const isQuote = doc.docType === "quote";
+  const docTypeText = isQuote ? "הצעת מחיר" : "הזמנת עבודה";
+  const subtotal = (doc.items || []).reduce(function (sum, it) {
+    if (it.lineTotal != null && it.lineTotal !== "") return sum + Number(it.lineTotal);
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const disc = Number(it.discount) || 0;
+    return sum + qty * price * (1 - disc / 100);
+  }, 0);
+  const vat = subtotal * 0.18;
+  const total = subtotal + vat;
+  const formatDate = function (dateStr) {
+    const d = dateStr ? new Date(dateStr) : new Date();
+    return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+  };
+  const formatNum = function (n) {
+    return Number(n || 0).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  const today = formatDate(doc.createdAt);
+  const logoUrl = (typeof window !== "undefined" && window.location && window.location.origin)
+    ? window.location.origin + "/natalie-logo.png"
+    : "/natalie-logo.png";
+  const itemsRows = (doc.items || []).map(function (it, idx) {
+    const qty = Number(it.quantity) || 0;
+    const price = Number(it.unitPrice) || 0;
+    const disc = Number(it.discount) || 0;
+    const lineTotal = it.lineTotal != null && it.lineTotal !== "" ? Number(it.lineTotal) : qty * price * (1 - disc / 100);
+    return "<tr><td>" + escapeHtml(it.description || "") + "</td><td class='num'>" + qty + "</td><td class='num'>" + formatNum(price) + "</td><td class='num'>" + formatNum(lineTotal) + "</td></tr>";
+  }).join("");
+  const validity = isQuote ? "<br>הצעה זו תקפה 30 יום מתאריך הנפקתה." : "";
+  const html = "<!DOCTYPE html><html lang='he' dir='rtl'><head><meta charset='UTF-8'><title>" + docTypeText + " #" + escapeHtml(doc.binaDocId) + "</title>" +
+    "<link href='https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;800&display=swap' rel='stylesheet'>" +
+    "<style>" +
+    "*{box-sizing:border-box;margin:0;padding:0}" +
+    "html,body{height:100%}" +
+    "body{font-family:Heebo,Arial,sans-serif;direction:rtl;color:#0E3651;background:#e8eef0}" +
+    ".page{width:210mm;min-height:297mm;margin:12px auto;background:#fff;padding:13mm 14mm 10mm;position:relative;display:flex;flex-direction:column;box-shadow:0 2px 16px rgba(14,54,81,.12)}" +
+    ".corner{position:absolute;width:14px;height:14px;border:1px solid #DBE4E9}" +
+    ".c-tr{top:8mm;right:8mm;border-left:none;border-bottom:none}" +
+    ".c-bl{bottom:8mm;left:8mm;border-right:none;border-top:none}" +
+    ".spine{position:absolute;left:4mm;top:50%;transform:translateY(-50%);writing-mode:vertical-rl;font-size:8px;color:#B8C7D1;letter-spacing:.12em}" +
+    ".head{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:11px;border-bottom:1px solid #E2EEED}" +
+    ".logo{height:52px;max-width:180px;object-fit:contain}" +
+    ".doc-title{text-align:left;font-size:13px;font-weight:700;color:#2A807C}" +
+    ".doc-num{font-size:28px;font-weight:800;color:#0E3651;direction:ltr;text-align:left}" +
+    ".parties{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:11px 0 13px;border-bottom:1px solid #E2EEED}" +
+    ".p-lab{font-size:10px;font-weight:800;letter-spacing:.08em;color:#2A807C;text-transform:uppercase;margin-bottom:4px}" +
+    ".p-val{font-size:13px;font-weight:700}" +
+    ".p-sub{font-size:12px;color:#6B7F92;margin-top:2px}" +
+    "table.items{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}" +
+    "table.items th{text-align:right;padding:7px 9px;border-bottom:1px solid #E2EEED;color:#2A807C;font-size:11px}" +
+    "table.items td{padding:7px 9px;vertical-align:top}" +
+    "table.items tbody tr:nth-child(even){background:#FBFDFD}" +
+    ".num{text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap}" +
+    ".grow{flex:1}" +
+    ".totals{margin-top:10px;align-self:flex-end;min-width:240px}" +
+    ".totals div{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}" +
+    ".totals .grand{font-size:16px;font-weight:800;border-top:2px solid #0E3651;margin-top:4px;padding-top:8px}" +
+    ".meta2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:auto;padding-top:12px}" +
+    ".legal{background:#FBFDFD;padding:8px 10px;font-size:10.5px;color:#6B7F92;margin-top:8px}" +
+    ".foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:10px;padding-top:8px;border-top:1px solid #E2EEED;font-size:11px;color:#6B7F92}" +
+    ".cmyk{display:flex;gap:3px}" +
+    ".cmyk i{display:block;width:24px;height:5px}" +
+    ".no-print{position:fixed;top:12px;left:12px;display:flex;gap:8px;z-index:9}" +
+    ".no-print button{padding:10px 16px;border:none;border-radius:8px;font-family:inherit;font-weight:700;cursor:pointer}" +
+    ".btn-p{background:#62C7C2;color:#fff}" +
+    ".btn-c{background:#E2EEED;color:#0E3651}" +
+    "@media print{body{background:#fff}.page{margin:0;box-shadow:none;width:auto;min-height:auto}.no-print{display:none!important}@page{size:A4;margin:0}}" +
+    "</style></head><body>" +
+    "<div class='no-print'><button class='btn-p' onclick='window.print()'>הדפס / שמור PDF</button><button class='btn-c' onclick='window.close()'>סגור</button></div>" +
+    "<div class='page'>" +
+    "<div class='corner c-tr'></div><div class='corner c-bl'></div>" +
+    "<div class='spine'>natalie-print.com · הופק במערכת PrintOS</div>" +
+    "<div class='head'><img class='logo' src='" + logoUrl + "' alt='NATALIE' onerror=\"this.style.display='none'\">" +
+    "<div><div class='doc-title'>" + docTypeText + "</div><div class='doc-num'>" + escapeHtml(doc.binaDocId) + "</div></div></div>" +
+    "<div class='parties'><div><div class='p-lab'>לכבוד</div><div class='p-val'>" + escapeHtml((doc.client && doc.client.name) || "—") + "</div>" +
+    (doc.client && doc.client.contactPerson ? "<div class='p-sub'>לידי: " + escapeHtml(doc.client.contactPerson) + "</div>" : "") +
+    (doc.client && doc.client.address ? "<div class='p-sub'>" + escapeHtml(doc.client.address) + "</div>" : "") +
+    (doc.client && doc.client.phone ? "<div class='p-sub'>" + escapeHtml(doc.client.phone) + "</div>" : "") +
+    "</div><div><div class='p-lab'>מאת</div><div class='p-val'>נטלי פתרונות הדפסה בע״מ</div>" +
+    "<div class='p-sub'>ח.פ 517205332</div><div class='p-sub'>שד׳ הר ציון 104, תל אביב</div>" +
+    "<div class='p-sub'>03-6815703</div><div class='p-sub'>תאריך: " + today + "</div>" +
+    (doc.agent ? "<div class='p-sub'>סוכן: " + escapeHtml(doc.agent) + "</div>" : "") +
+    "</div></div>" +
+    (doc.title ? "<div style='font-weight:800;margin-top:10px'>" + escapeHtml(doc.title) + "</div>" : "") +
+    "<table class='items'><thead><tr><th>תיאור</th><th>כמות</th><th>מחיר יחידה</th><th>סה״כ</th></tr></thead><tbody>" + itemsRows + "</tbody></table>" +
+    "<div class='grow'></div>" +
+    "<div class='totals'><div><span>סה״כ לפני מע״מ</span><span>" + formatNum(subtotal) + "</span></div>" +
+    "<div><span>מע״מ 18%</span><span>" + formatNum(vat) + "</span></div>" +
+    "<div class='grand'><span>סה״כ לתשלום</span><span>₪" + formatNum(total) + "</span></div></div>" +
+    "<div class='meta2'><div><div class='p-lab'>תנאי תשלום</div><div>" + escapeHtml(doc.paymentTerms || "—") + "</div></div>" +
+    "<div><div class='p-lab'>מועד אספקה</div><div>" + escapeHtml(doc.dueDate || "—") + "</div></div></div>" +
+    "<div class='legal'>המחירים אינם כוללים מע״מ אלא אם צוין אחרת.<br>[עו״ד: להשלים תנאים כלליים]" + validity + "</div>" +
+    "<div class='foot'><div>natalie-print.com</div><div class='cmyk'><i style='background:#00AEEF'></i><i style='background:#EC008C'></i><i style='background:#FFF200'></i><i style='background:#0E3651'></i></div></div>" +
+    "</div></body></html>";
+  const win = window.open("", "_blank", "width=900,height=1100");
+  if (!win) {
+    alert("הדפדפן חסם פתיחת חלון. אנא אשר חלונות קופצים לאתר זה.");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+};

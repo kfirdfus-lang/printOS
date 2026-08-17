@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts'
+import { rejectDisallowedInternalOrigin } from '../_shared/cors.ts'
 
 const BINA_API_URL = 'https://webfiles.binaw.com/post/PostJsonDocV2.aspx'
 const DEFAULT_DEPT = 'חדש'
@@ -53,6 +54,18 @@ function num(v: unknown): number | null {
   if (v === undefined || v === null || v === '') return null
   const n = Number(v)
   return Number.isFinite(n) ? n : null
+}
+
+/** orderStatus / orderState מבינה — שמירה כ-text (ריק → null) */
+function binaOrderStatusFields(order: Record<string, unknown>): {
+  bina_order_status: string | null
+  bina_order_state: string | null
+} {
+  const statusRaw = order.orderStatus
+  const stateRaw = order.orderState
+  const status = statusRaw != null && String(statusRaw).trim() !== '' ? String(statusRaw).trim() : null
+  const state = stateRaw != null && String(stateRaw).trim() !== '' ? String(stateRaw).trim() : null
+  return { bina_order_status: status, bina_order_state: state }
 }
 
 function normalizeName(name: string): string {
@@ -288,11 +301,17 @@ async function syncTaskItemsForBinaOrder(
 }
 
 Deno.serve(async (req) => {
+  const originBlock = rejectDisallowedInternalOrigin(req)
+  if (originBlock) return originBlock
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    const url = new URL(req.url)
+    const debugFirstOrderInResponse = url.searchParams.get('debug') === '1'
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const binaToken = Deno.env.get('BINA_TOKEN')!
@@ -361,6 +380,8 @@ Deno.serve(async (req) => {
       orders = binaData
     }
 
+    const binaOrders = orders
+
     let created = 0
     let skipped = 0
     let taskItemsSynced = 0
@@ -396,6 +417,10 @@ Deno.serve(async (req) => {
         if (existing?.id) {
           skipped++
           await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
+          await supabase
+            .from('tasks')
+            .update(binaOrderStatusFields(order as Record<string, unknown>))
+            .eq('id', existing.id)
           const ok = await syncTaskItemsForBinaOrder(
             supabase,
             existing.id as string,
@@ -452,6 +477,7 @@ Deno.serve(async (req) => {
           discount_amount: num(o.orderDiscount),
           sales_agent: o.orderSalesMan ? String(o.orderSalesMan) : null,
           bina_order_date: parseHebrewDateForDB(o.orderDate),
+          ...binaOrderStatusFields(o),
         }
 
         await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
@@ -495,6 +521,9 @@ Deno.serve(async (req) => {
         errors,
         errorDetails: errors > 0 ? errorDetails : undefined,
         dateRange: { from: fromStr, to: toStr },
+        ...(debugFirstOrderInResponse && binaOrders.length > 0
+          ? { _debug_first_bina_order: binaOrders[0] }
+          : {}),
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

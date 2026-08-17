@@ -23,22 +23,10 @@ on conflict (name) do update
       has_rip        = excluded.has_rip,
       sort_order     = excluded.sort_order;
 
--- 2. תנאי תשלום ברמת הלקוח
+-- 2. תנאי תשלום — clients.payment_terms כבר קיים ומלא.
+--    רק חותמת זמן לעדכון מהמסך.
 alter table public.clients
-  add column if not exists default_payment_terms text,
   add column if not exists payment_terms_updated_at timestamptz;
-
-do $$
-begin
-  if exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'clients' and column_name = 'payment_terms'
-  ) then
-    update public.clients
-      set default_payment_terms = payment_terms
-    where default_payment_terms is null and payment_terms is not null;
-  end if;
-end $$;
 
 -- 3. מקור המחיר ברמת הפריט + קוד מחלקה לשכפול
 alter table public.order_items

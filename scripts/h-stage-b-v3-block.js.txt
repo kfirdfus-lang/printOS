@@ -34,7 +34,7 @@ function hb3FilledItems(items){
 }
 function hb3ClientTerms(c){
   if(!c)return "";
-  return c.default_payment_terms||c.payment_terms||"";
+  return c.payment_terms||"";
 }
 function hb3BuildPdfDoc({kind,binaDocId,title,client,contactName,items,agent,remark,paymentTerms,dueDate,priceMode}){
   return {
@@ -265,7 +265,6 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     const val=(paymentTerms||"").trim()||null;
     try{
       await supabaseClient.from("clients").update({
-        default_payment_terms:val,
         payment_terms:val,
         payment_terms_updated_at:new Date().toISOString(),
       }).eq("id",selectedClient.id);

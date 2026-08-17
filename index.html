@@ -7336,7 +7336,7 @@ function hb3FilledItems(items){
 }
 function hb3ClientTerms(c){
   if(!c)return "";
-  return c.default_payment_terms||c.payment_terms||"";
+  return c.payment_terms||"";
 }
 function hb3BuildPdfDoc({kind,binaDocId,title,client,contactName,items,agent,remark,paymentTerms,dueDate,priceMode}){
   return {
@@ -7567,7 +7567,6 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,initialMode="
     const val=(paymentTerms||"").trim()||null;
     try{
       await supabaseClient.from("clients").update({
-        default_payment_terms:val,
         payment_terms:val,
         payment_terms_updated_at:new Date().toISOString(),
       }).eq("id",selectedClient.id);
@@ -17901,7 +17900,7 @@ function App(){
       await archiveStaleCompleted();
       const isA=cu.role==="admin";
       const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,default_payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
+      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
       setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
@@ -18640,7 +18639,6 @@ function App(){
                   {c.email&&<span style={{color:"var(--text2)",fontSize:12}}>✉️ {c.email}</span>}
                   {c.address&&<span style={{color:"var(--text2)",fontSize:12}}>📍 {c.address}</span>}
                   {c.payment_terms&&<span style={{background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20}}>{c.payment_terms}</span>}
-                  {c.default_payment_terms&&!c.payment_terms&&<span style={{background:"var(--blue-light)",color:"var(--blue)",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:20}}>{c.default_payment_terms}</span>}
                   {(c.delivery_contact_name||c.delivery_contact_phone)&&<span style={{color:"#0e7490",fontSize:12}}>🚚 {c.delivery_contact_name||c.delivery_contact_phone}</span>}
                 </div>
               </div>
@@ -18649,12 +18647,12 @@ function App(){
                   const{data:last,error}=await supabaseClient.from("orders").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,created_at,remark,order_items(id,description,quantity,unit_price,discount_pct,bina_item_code,price_entry_mode,line_total,line_number)").eq("bina_cust_id",c.bina_customer_id).order("created_at",{ascending:false}).limit(1);
                   if(error)throw error;
                   const o=(last||[])[0];
-                  if(!o){openOrderQuoteModal("order",{client:c,paymentTerms:c.default_payment_terms||c.payment_terms||""});return;}
+                  if(!o){openOrderQuoteModal("order",{client:c,paymentTerms:c.payment_terms||""});return;}
                   const items=(o.order_items||[]).sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
                     const d=HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===String(it.bina_item_code||""))||null;
                     return {description:it.description||"",quantity:it.quantity,unitPrice:it.unit_price,discount:it.discount_pct,binaItemCode:it.bina_item_code||"",deptName:d?d.name:"",lineTotal:it.line_total};
                   });
-                  openOrderQuoteModal("order",{mode:"order",skipFileRequired:true,duplicatedFromOrderId:o.bina_doc_id,sourceCreatedAt:o.created_at,title:o.title||"",agent:o.sales_agent||"",contactName:o.contact_person||"",client:c,bina_cust_id:o.bina_cust_id,remark:o.remark||"",items,paymentTerms:c.default_payment_terms||c.payment_terms||""});
+                  openOrderQuoteModal("order",{mode:"order",skipFileRequired:true,duplicatedFromOrderId:o.bina_doc_id,sourceCreatedAt:o.created_at,title:o.title||"",agent:o.sales_agent||"",contactName:o.contact_person||"",client:c,bina_cust_id:o.bina_cust_id,remark:o.remark||"",items,paymentTerms:c.payment_terms||""});
                 }catch(e){window.alert(e.message||String(e));}
               }} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #BFE6E3",background:"#EDF8F7",color:"#0E3651",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>📋 שכפל</button>
               <button type="button" onClick={()=>setEditClientDelivery(c)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #0e7490",background:"#ecfeff",color:"#0e7490",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🚚 משלוח</button>

@@ -829,16 +829,20 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .gmail-pilot-filters button{border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:#69808F;padding:4px 6px;border-radius:6px}
 .gmail-pilot-filters button.on{color:#0E3651;background:#EDF8F7}
 .gmail-pilot-list{background:#fff;border:1px solid #EDF2F5;border-radius:12px;overflow:hidden}
-.gmail-pilot-row{display:block;width:100%;background:#fff;border:none;border-bottom:1px solid #EDF2F5;padding:12px 14px;cursor:pointer;text-align:right;font-family:inherit}
-.gmail-pilot-row.read{background:#FAFCFD}
-.gmail-pilot-row:hover{background:#FAFCFD}
+.gmail-pilot-row{display:block;width:100%;background:#fff;border:none;border-bottom:1px solid #EDF2F5;padding:12px 14px;cursor:pointer;text-align:right;font-family:inherit;box-shadow:inset -3px 0 0 #62C7C2}
+.gmail-pilot-row.read{background:#FAFCFD;box-shadow:none}
+.gmail-pilot-row:hover{background:#EDF8F7}
+.gmail-pilot-row.read:hover{background:#F4F7F9}
 .gmail-pilot-row-top{display:flex;align-items:center;gap:8px}
-.gmail-pilot-dot{width:6px;height:6px;border-radius:50%;background:#3B82F6;flex-shrink:0}
-.gmail-pilot-from{font-size:14px;font-weight:500;color:#0E3651;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gmail-pilot-row.read .gmail-pilot-from{font-weight:400}
+.gmail-pilot-dot{width:8px;height:8px;border-radius:50%;background:#3B82F6;flex-shrink:0;box-shadow:0 0 0 3px rgba(59,130,246,.22)}
+.gmail-pilot-from{font-size:14px;font-weight:700;color:#0E3651;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gmail-pilot-row.read .gmail-pilot-from{font-weight:400;color:#69808F}
 .gmail-pilot-time{font-size:12px;color:#69808F;flex-shrink:0}
-.gmail-pilot-subj{font-size:14px;font-weight:400;color:#0E3651;margin-top:3px}
+.gmail-pilot-row.read .gmail-pilot-time{color:#9AA8B2}
+.gmail-pilot-subj{font-size:14px;font-weight:700;color:#0E3651;margin-top:3px}
+.gmail-pilot-row.read .gmail-pilot-subj{font-weight:400;color:#69808F}
 .gmail-pilot-snip{font-size:13px;color:#69808F;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gmail-pilot-row.read .gmail-pilot-snip{color:#9AA8B2}
 .gmail-pilot-tag{display:inline-block;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:700;margin-right:6px}
 .gmail-pilot-skel{height:72px;border-bottom:1px solid #EDF2F5;background:linear-gradient(90deg,#EDF2F5 0%,#fff 50%,#EDF2F5 100%);background-size:200% 100%;animation:gmailSkel 1.2s ease infinite}
 @keyframes gmailSkel{0%{background-position:100% 0}100%{background-position:-100% 0}}
@@ -17804,11 +17808,20 @@ function gmailB64UrlToBytes(b64){
   return bytes;
 }
 
+function gmailNormEmail(s){
+  return String(s||"").replace(/\s+/g,"").toLowerCase();
+}
+function gmailEmailsFromValue(v){
+  const raw=String(v||"");
+  if(!raw.trim())return[];
+  const found=raw.match(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi)||[];
+  return found.map(gmailNormEmail).filter(Boolean);
+}
 function gmailParseFrom(from){
   const s=String(from||"").trim();
   const m=s.match(/^(.*)<([^>]+)>\s*$/);
-  if(m)return{name:(m[1].replace(/["']/g,"").trim()||m[2].trim()),email:m[2].trim().toLowerCase()};
-  if(s.includes("@"))return{name:s,email:s.toLowerCase()};
+  if(m)return{name:(m[1].replace(/["']/g,"").trim()||m[2].trim()),email:gmailNormEmail(m[2])};
+  if(s.includes("@"))return{name:s,email:gmailNormEmail(s)};
   return{name:s,email:""};
 }
 function gmailFormatWhen(dateStr,internalDate){
@@ -17827,10 +17840,10 @@ function gmailFmtSize(n){
   return (x/(1024*1024)).toFixed(1)+" MB";
 }
 function gmailMatchClient(clients,email){
-  const e=String(email||"").trim().toLowerCase();
-  if(!e)return null;
+  const e=gmailNormEmail(email);
+  if(!e||e.indexOf("@")<0)return null;
   const fields=["email","orders_email_primary","orders_email_secondary","collection_email_primary","collection_email_secondary","delivery_email"];
-  const hits=(clients||[]).filter(c=>fields.some(f=>String(c[f]||"").trim().toLowerCase()===e));
+  const hits=(clients||[]).filter(c=>fields.some(f=>gmailEmailsFromValue(c[f]).indexOf(e)>=0));
   return hits.length===1?hits[0]:null;
 }
 function gmailClassDisplay(row){
@@ -18162,7 +18175,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder}){
         const parsed=gmailParseFrom(m.from);
         return<button key={m.id} type="button" className={"gmail-pilot-row"+(m.unread?"":" read")} onClick={()=>openMsg(m.id)}>
           <div className="gmail-pilot-row-top">
-            {m.unread?<span className="gmail-pilot-dot"/>:<span style={{width:6,flexShrink:0}}/>}
+            {m.unread?<span className="gmail-pilot-dot"/>:<span style={{width:8,flexShrink:0}}/>}
             <span className="gmail-pilot-from">{parsed.name||"(ללא שולח)"}</span>
             {m.hasAttachments?<span title="קובץ מצורף">📎</span>:null}
             <span style={{position:"relative"}} onClick={e=>e.stopPropagation()}>{renderTag(m.id)}{tagMenuEl(m.id)}</span>

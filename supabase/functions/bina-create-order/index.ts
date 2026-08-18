@@ -53,6 +53,7 @@ interface CreateOrderRequest {
   status?: string;
   payment?: OrderPayment;
   salesAgent?: string;
+  dueDate?: string;
 }
 
 interface BinaResponse {
@@ -343,6 +344,12 @@ Deno.serve(async (req) => {
             total_inc_vat: totalIncVat,
             discount_amount: discountAmount,
             bina_order_date: createdYmd,
+            due_date: body.dueDate && /^\d{4}-\d{2}-\d{2}/.test(String(body.dueDate).trim())
+              ? String(body.dueDate).trim().slice(0, 10)
+              : null,
+            scheduled_for_date: body.dueDate && /^\d{4}-\d{2}-\d{2}/.test(String(body.dueDate).trim())
+              ? String(body.dueDate).trim().slice(0, 10)
+              : null,
             bina_cust_id: typeof body.client.binaCustomerId === 'number'
               ? body.client.binaCustomerId
               : parseInt(String(body.client.binaCustomerId), 10),

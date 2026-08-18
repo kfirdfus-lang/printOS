@@ -258,7 +258,6 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     if(!selectedClient.bina_customer_id)return "הלקוח לא מקושר לבינה";
     if(!filled.length)return "נא למלא לפחות פריט אחד";
     if(isOrder&&!dueDate)return "נא למלא דדליין להזמנה";
-    if(isOrder&&!workFile&&!prefill?.skipFileRequired)return "נא לצרף קובץ עבודה להזמנה";
     return null;
   };
 
@@ -354,6 +353,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       title:title||("הזמנה ל"+(selectedClient.name||"לקוח")),
       remark:remark||"",
       salesAgent:(agent||"").trim()||undefined,
+      dueDate:dueDate||undefined,
     };
     const{data,error:invE}=await supabaseClient.functions.invoke("bina-create-order",{body:payload});
     if(invE)throw new Error(invE.message||String(invE));
@@ -365,7 +365,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       const taskPatch={sales_agent:(agent||"").trim()||null};
       const ag=(agent||"").trim();
       if(ag)taskPatch.assignee=ag;
-      if(dueDate)taskPatch.due_date=dueDate;
+      if(dueDate){taskPatch.due_date=dueDate;taskPatch.scheduled_for_date=dueDate;}
       if(duplicatedFrom)taskPatch.duplicated_from_order_id=duplicatedFrom;
       try{await sb("tasks?id=eq."+result.taskId,{method:"PATCH",body:JSON.stringify(taskPatch)});}catch(e){console.warn(e);}
     }
@@ -618,7 +618,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
               <input className="hb3-inp" type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}/>
             </div>
             <div>
-              <label className="hb3-lab">קובץ עבודה {prefill?.skipFileRequired?"":"*"}</label>
+              <label className="hb3-lab">קובץ עבודה</label>
               <input type="file" onChange={e=>setWorkFile(e.target.files?.[0]||null)}/>
               {workFile&&<div style={{fontSize:12,color:"#2A807C",marginTop:4}}>{workFile.name}</div>}
             </div>

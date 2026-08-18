@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/oauth/gmail/:path*", "destination": "/index.html" }
+  ]
+}

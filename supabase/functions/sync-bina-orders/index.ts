@@ -68,6 +68,26 @@ function binaOrderStatusFields(order: Record<string, unknown>): {
   return { bina_order_status: status, bina_order_state: state }
 }
 
+function normalizeBinaSalesAgentServer(val: unknown): string | null {
+  const v = String(val ?? '').trim()
+  if (!v) return null
+  if (v === 'כפיר' || /^כפיר\b/.test(v)) return 'כפיר צמח'
+  if (/^נטלי\b/.test(v)) return 'נטלי'
+  if (/^ברק\b/.test(v)) return 'ברק'
+  return v
+}
+
+function deptFromOrderItems(order: Record<string, unknown>): string | null {
+  const nested = order.Order as { items?: unknown[] } | undefined
+  if (!nested?.items || !Array.isArray(nested.items)) return null
+  for (const raw of nested.items) {
+    const item = raw as Record<string, unknown>
+    const code = String(item.itemId ?? '').trim()
+    if (DEPARTMENT_CODES[code]) return DEPARTMENT_CODES[code]
+  }
+  return null
+}
+
 function normalizeName(name: string): string {
   if (!name) return ''
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -410,24 +430,78 @@ Deno.serve(async (req) => {
         // כולל משימות בארכיון — כדי שלא תיווצר כפילות אחרי ארכוב (במקום מחיקה).
         const { data: existing } = await supabase
           .from('tasks')
-          .select('id')
+          .select('id, dept, has_items, total_amount, total_inc_vat, discount_amount, sales_agent, source, due_date, bina_order_date')
           .eq('bina_order_id', binaOrderId)
           .maybeSingle()
 
         if (existing?.id) {
           skipped++
           await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
+
           await supabase
             .from('tasks')
             .update(binaOrderStatusFields(order as Record<string, unknown>))
             .eq('id', existing.id)
-          const ok = await syncTaskItemsForBinaOrder(
-            supabase,
-            existing.id as string,
-            Number(binaOrderId),
-            order as Record<string, unknown>,
-          )
-          if (ok && orderHasItemsPayload) taskItemsSynced++
+
+          const o = order as Record<string, unknown>
+          const deptFromItemsName = deptFromOrderItems(o)
+
+          let dueDate = null
+          if (order.orderDeliveryDate) {
+            const parts = order.orderDeliveryDate.split('/')
+            if (parts.length === 3) {
+              dueDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+            }
+          }
+
+          const totalAmount = num(o.orderTotalAfterDiscount) ?? num(o.orderTotal)
+          const totalIncVat = num(o.orderTotalIncVat)
+          const discountAmount = num(o.orderDiscount)
+          const normalizedSalesAgent = normalizeBinaSalesAgentServer(o.orderSalesMan)
+
+          // לא לדרוס task_items שיש להם כבר department.
+          const { data: existingItems } = await supabase
+            .from('task_items')
+            .select('id, department')
+            .eq('task_id', existing.id)
+
+          const hasDeptItems =
+            (existingItems || []).some((it) => String((it as any).department || '').trim() !== '')
+
+          if (!hasDeptItems) {
+            const ok = await syncTaskItemsForBinaOrder(
+              supabase,
+              existing.id as string,
+              Number(binaOrderId),
+              order as Record<string, unknown>,
+            )
+            if (ok && orderHasItemsPayload) taskItemsSynced++
+          } else {
+            // אם has_items לא מסומן, נרשום true בלבד (בלי לשנות פריטים).
+            if (!existing.has_items) {
+              await supabase.from('tasks').update({ has_items: true }).eq('id', existing.id)
+            }
+          }
+
+          // להשלים שדות ריקים בלבד.
+          const patch: Record<string, unknown> = {}
+          const existingDept = existing.dept != null ? String(existing.dept).trim() : ''
+          if (!existingDept && deptFromItemsName) patch.dept = deptFromItemsName
+          if (existing.total_amount == null && totalAmount != null) patch.total_amount = totalAmount
+          if (existing.total_inc_vat == null && totalIncVat != null) patch.total_inc_vat = totalIncVat
+          if (existing.discount_amount == null && discountAmount != null) patch.discount_amount = discountAmount
+          if (!existing.source || String(existing.source).trim() === '') patch.source = 'bina'
+          if ((!existing.sales_agent || String(existing.sales_agent).trim() === '') && normalizedSalesAgent)
+            patch.sales_agent = normalizedSalesAgent
+          const parsedBinaOrderDate = o.orderDate ? parseHebrewDateForDB(o.orderDate) : null
+          if ((!existing.bina_order_date || String(existing.bina_order_date).trim() === '') && parsedBinaOrderDate)
+            patch.bina_order_date = parsedBinaOrderDate
+          if ((!existing.due_date || String(existing.due_date).trim() === '') && dueDate) patch.due_date = dueDate
+
+          if (Object.keys(patch).length > 0) {
+            await supabase.from('tasks').update(patch).eq('id', existing.id)
+          }
+
           continue
         }
 
@@ -475,7 +549,7 @@ Deno.serve(async (req) => {
           total_amount: num(o.orderTotalAfterDiscount) ?? num(o.orderTotal),
           total_inc_vat: num(o.orderTotalIncVat),
           discount_amount: num(o.orderDiscount),
-          sales_agent: o.orderSalesMan ? String(o.orderSalesMan) : null,
+          sales_agent: normalizeBinaSalesAgentServer(o.orderSalesMan),
           bina_order_date: parseHebrewDateForDB(o.orderDate),
           ...binaOrderStatusFields(o),
         }

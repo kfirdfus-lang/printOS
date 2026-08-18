@@ -5,6 +5,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { fetchBinaViaQuotaGuard } from '../_shared/bina-proxy-fetch.ts';
 import { rejectDisallowedInternalOrigin } from '../_shared/cors.ts';
+import { DEPARTMENT_CODES } from '../_shared/bina-task-refresh.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,6 +64,23 @@ interface BinaResponse {
 
 // ---------- Helpers ----------
 
+function normalizeBinaSalesAgentServer(val: unknown): string | null {
+  const v = String(val ?? '').trim()
+  if (!v) return null
+  if (v === 'כפיר' || /^כפיר\b/.test(v)) return 'כפיר צמח'
+  if (/^נטלי\b/.test(v)) return 'נטלי'
+  if (/^ברק\b/.test(v)) return 'ברק'
+  return v
+}
+
+function ymdLocal(d: Date): string {
+  // date type expects YYYY-MM-DD. Keep it in local time to avoid UTC off-by-one.
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
 function buildBinaPayload(req: CreateOrderRequest, token: string) {
   const requestId = Math.floor(Math.random() * 2_000_000_000);
 
@@ -104,10 +122,8 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
     })),
   };
 
-  const salesAgent = req.salesAgent?.trim();
-  if (salesAgent) {
-    payload.orderSalesMan = salesAgent;
-  }
+  const salesAgent = normalizeBinaSalesAgentServer(req.salesAgent);
+  if (salesAgent) payload.orderSalesMan = salesAgent;
 
   if (req.payment) {
     payload.Payments = {
@@ -139,6 +155,8 @@ function validateRequest(req: CreateOrderRequest): string | null {
     if (!it.description) return `פריט ${i + 1}: חסר תיאור`;
     if (!it.quantity || it.quantity <= 0) return `פריט ${i + 1}: כמות לא תקינה`;
     if (it.unitPrice == null || it.unitPrice < 0) return `פריט ${i + 1}: מחיר לא תקין`;
+    const itemCode = String(it.itemId).trim()
+    if (!DEPARTMENT_CODES[itemCode]) return `פריט ${i + 1}: מחלקה לא תקינה (bina itemId=${itemCode})`;
   }
 
   return null;
@@ -200,6 +218,53 @@ Deno.serve(async (req) => {
     const { tokenId: _, ...payloadForLog } = payload as { tokenId: string };
     console.log('[bina-create-order] שולח לבינה:', JSON.stringify(payloadForLog));
 
+    // נבנה את task + task_items מלאים מיד (הסנכרון הוא גיבוי בלבד).
+    const salesAgentNormalized = normalizeBinaSalesAgentServer(body.salesAgent)
+    const firstItemCode = String(body.items?.[0]?.itemId ?? '').trim()
+    const firstDept = DEPARTMENT_CODES[firstItemCode] ?? 'כללי'
+    const createdYmd = ymdLocal(new Date())
+
+    let totalAmount = 0
+    let discountAmount = 0
+    for (const it of body.items) {
+      const qty = Number(it.quantity) || 0
+      const unit = Number(it.unitPrice) || 0
+      const discPct = Number(it.discount) || 0
+
+      const pre = qty * unit
+      const post = pre * (1 - discPct / 100)
+
+      totalAmount += post
+      discountAmount += pre - post
+    }
+    // tasks.total_amount מוגדר "לפני מע״מ / אחרי הנחה"
+    totalAmount = Math.round(totalAmount * 100) / 100
+    discountAmount = Math.round(discountAmount * 100) / 100
+    const totalIncVat = Math.round(totalAmount * 1.18 * 100) / 100
+
+    const taskItemsRows = body.items.map((it, idx) => {
+      const itemCode = String(it.itemId).trim()
+      const deptName = DEPARTMENT_CODES[itemCode] ?? firstDept
+      const qty = Number(it.quantity) || 0
+      const unit = Number(it.unitPrice) || 0
+      const discPct = Number(it.discount) || 0
+      const pre = qty * unit
+      const post = pre * (1 - discPct / 100)
+
+      return {
+        bina_order_id: 0 as number, // placeholder; replaced after docId
+        task_id: '' as unknown as string, // placeholder; replaced after task insert
+        line_number: idx + 1,
+        bina_item_code: itemCode,
+        department: deptName,
+        description: String(it.description || '').trim(),
+        quantity: qty,
+        price: unit,
+        total: Math.round(post * 100) / 100,
+        status: 'בעבודה',
+      }
+    })
+
     const result = await fetchBinaViaQuotaGuard(BINA_URL, payload);
 
     const sanitizedPreview = result.text.slice(0, 500).replace(/U22g\w+/g, '[TOKEN_REDACTED]')
@@ -259,23 +324,58 @@ Deno.serve(async (req) => {
             title: body.title || `הזמנה ${binaData.docId}`,
             client_name: body.client.name,
             status: 'חדש',
-            dept: 'כללי',
+            dept: firstDept,
             priority: 'בינונית',
-            source: 'manual',
+            source: 'bina',
             bina_order_id: String(binaData.docId),
+            has_items: true,
+            contact: body.client.contactPerson || '',
             notes: body.remark || '',
-            sales_agent: body.salesAgent?.trim() || null,
+            sales_agent: salesAgentNormalized,
+            total_amount: totalAmount,
+            total_inc_vat: totalIncVat,
+            discount_amount: discountAmount,
+            bina_order_date: createdYmd,
+            bina_cust_id: typeof body.client.binaCustomerId === 'number'
+              ? body.client.binaCustomerId
+              : parseInt(String(body.client.binaCustomerId), 10),
+            bina_cust_address: body.client.address || null,
+            bina_cust_city: body.client.city || null,
           })
           .select('id')
           .single();
 
-        if (!taskErr && task) {
-          taskId = task.id;
-        } else if (taskErr) {
+        if (taskErr || !task?.id) {
           console.error('[bina-create-order] שגיאה ביצירת task:', taskErr);
+          return new Response(
+            JSON.stringify({ error: taskErr?.message || 'Failed to insert task' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+
+        taskId = task.id;
+
+        const rows = taskItemsRows.map((r) => ({
+          ...r,
+          task_id: taskId,
+          bina_order_id: Number(binaData.docId),
+        }))
+
+        const { error: itemsErr } = await supabase.from('task_items').insert(rows);
+        if (itemsErr) {
+          // Roll back the freshly-created task to avoid leaving the system in a broken state.
+          await supabase.from('tasks').delete().eq('id', taskId);
+          return new Response(
+            JSON.stringify({ error: itemsErr.message || 'Failed to insert task_items' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
         }
       } catch (e) {
         console.error('[bina-create-order] חריגה ביצירת task:', e);
+        return new Response(
+          JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
       }
     }
 

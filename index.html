@@ -825,6 +825,11 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .gmail-pilot-meta{font-size:11px;color:var(--text3);margin-top:6px}
 .gmail-pilot-detail{background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
 .gmail-pilot-att{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.gmail-pilot-cats{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.gmail-pilot-cat{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:#fff;color:var(--text2);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.gmail-pilot-cat.on{background:var(--blue-light);border-color:#93c5fd;color:var(--blue)}
+.gmail-pilot-cat-n{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#2563eb;color:#fff;font-size:11px;line-height:18px;text-align:center}
+.gmail-pilot-cat:not(.on) .gmail-pilot-cat-n{background:#64748b}
 </style>
 </head>
 <body>
@@ -17767,8 +17772,11 @@ function gmailB64UrlToBytes(b64){
 }
 
 function GmailInboxTab({user,notify}){
+  const GMAIL_CATS=[{id:"primary",ic:"📥",lb:"ראשי"},{id:"promotions",ic:"🏷️",lb:"פרסומי"},{id:"social",ic:"👥",lb:"חברתי"},{id:"updates",ic:"🔔",lb:"עדכונים"}];
   const [status,setStatus]=useState({loading:true,connected:false,email:null});
-  const [q,setQ]=useState("in:inbox");
+  const [category,setCategory]=useState("primary");
+  const [unread,setUnread]=useState({primary:0,promotions:0,social:0,updates:0});
+  const [q,setQ]=useState("");
   const [messages,setMessages]=useState([]);
   const [nextPage,setNextPage]=useState(null);
   const [busy,setBusy]=useState(false);
@@ -17796,19 +17804,21 @@ function GmailInboxTab({user,notify}){
       notify("שגיאה בסטטוס Gmail: "+(e.message||String(e)),"#DC2626");
     }
   };
-  const loadList=async(pageToken)=>{
+  const loadList=async(pageToken,cat)=>{
+    const useCat=cat||category;
     setBusy(true);
     try{
-      const data=await callInbox({action:"list",q:q||"in:inbox",pageToken:pageToken||"",maxResults:25});
+      const data=await callInbox({action:"list",category:useCat,q:q||"",pageToken:pageToken||"",maxResults:25});
       setMessages(Array.isArray(data.messages)?data.messages:[]);
       setNextPage(data.nextPageToken||null);
+      if(data.unread)setUnread({primary:data.unread.primary||0,promotions:data.unread.promotions||0,social:data.unread.social||0,updates:data.unread.updates||0});
     }catch(e){
       notify("שגיאה בטעינת המיילים: "+(e.message||String(e)),"#DC2626");
     }
     setBusy(false);
   };
   useEffect(()=>{if(uid)loadStatus();},[uid]);
-  useEffect(()=>{if(status.connected)loadList("");},[status.connected]);
+  useEffect(()=>{if(status.connected)loadList("");},[status.connected,category]);
   const connect=async()=>{
     setBusy(true);
     try{
@@ -17858,6 +17868,15 @@ function GmailInboxTab({user,notify}){
       notify("שגיאה בהורדת הקובץ: "+(e.message||String(e)),"#DC2626");
     }
   };
+  const catTabs=<div className="gmail-pilot-cats">
+    {GMAIL_CATS.map(c=>{
+      const n=unread[c.id]||0;
+      return<button key={c.id} type="button" className={"gmail-pilot-cat"+(category===c.id?" on":"")} onClick={()=>{setDetail(null);setCategory(c.id);}}>
+        <span>{c.ic} {c.lb}</span>
+        {n>0&&<span className="gmail-pilot-cat-n">{n>99?"99+":n}</span>}
+      </button>;
+    })}
+  </div>;
   if(status.loading)return<div style={{padding:40,textAlign:"center"}}><Spinner sz={28}/></div>;
   if(!status.connected)return<div className="gmail-pilot">
     <h1 style={{fontSize:22,fontWeight:800,margin:"0 0 8px"}}>📧 מייל</h1>
@@ -17869,6 +17888,7 @@ function GmailInboxTab({user,notify}){
     </Card>
   </div>;
   if(detail)return<div className="gmail-pilot">
+    {catTabs}
     <button type="button" onClick={()=>setDetail(null)} style={{background:"none",border:"none",color:"var(--blue)",fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:"0 0 12px"}}>← חזרה לרשימה</button>
     {detailBusy?<div style={{padding:30,textAlign:"center"}}><Spinner sz={24}/></div>:<div className="gmail-pilot-detail">
       <div style={{fontSize:18,fontWeight:800,marginBottom:8}}>{detail.subject}</div>
@@ -17890,8 +17910,9 @@ function GmailInboxTab({user,notify}){
       <button type="button" onClick={disconnect} disabled={busy} style={{padding:"8px 12px",borderRadius:8,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12}}>נתק</button>
     </div>
     <div className="gmail-pilot-banner">פיילוט קריאה בלבד — אין שליחה, מחיקה או שינוי.</div>
+    {catTabs}
     <div className="gmail-pilot-toolbar">
-      <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")loadList("");}} placeholder="חיפוש (in:inbox, from:, subject:)" style={{flex:1,minWidth:200,padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}} dir="ltr"/>
+      <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")loadList("");}} placeholder="חיפוש בטאב הנוכחי (from:, has:attachment)" style={{flex:1,minWidth:200,padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontFamily:"inherit",fontSize:13}} dir="ltr"/>
       <button type="button" onClick={()=>loadList("")} disabled={busy} style={{padding:"10px 14px",borderRadius:10,border:"none",background:"var(--blue)",color:"#fff",fontWeight:700,cursor:busy?"wait":"pointer",fontFamily:"inherit"}}>{busy?"⏳":"רענן"}</button>
     </div>
     {busy&&messages.length===0?<div style={{padding:30,textAlign:"center"}}><Spinner sz={24}/></div>:<div className="gmail-pilot-list">
@@ -17901,7 +17922,7 @@ function GmailInboxTab({user,notify}){
         <div className="gmail-pilot-snip">{m.snippet}</div>
         <div className="gmail-pilot-meta">{m.date}</div>
       </button>)}
-      {!messages.length&&!busy&&<div style={{padding:40,textAlign:"center",color:"var(--text3)"}}>אין מיילים להצגה</div>}
+      {!messages.length&&!busy&&<div style={{padding:40,textAlign:"center",color:"var(--text3)"}}>אין מיילים בטאב הזה</div>}
     </div>}
     {nextPage&&<button type="button" onClick={()=>loadList(nextPage)} disabled={busy} style={{marginTop:12,padding:"8px 14px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>עמוד הבא</button>}
   </div>;

@@ -15,6 +15,42 @@ import {
 } from "../_shared/gmail.ts";
 
 const READ_ACTIONS = new Set(["list", "get", "attachment"]);
+
+const CATEGORY_QUERY: Record<string, string> = {
+  primary: "category:primary",
+  promotions: "category:promotions",
+  social: "category:social",
+  updates: "category:updates",
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  CATEGORY_PERSONAL: "primary",
+  CATEGORY_PROMOTIONS: "promotions",
+  CATEGORY_SOCIAL: "social",
+  CATEGORY_UPDATES: "updates",
+};
+
+function buildListQuery(body: Record<string, unknown>): string {
+  const cat = String(body.category || "primary").trim();
+  const catQ = CATEGORY_QUERY[cat] || CATEGORY_QUERY.primary;
+  const userQ = String(body.q || "").trim();
+  if (!userQ) return catQ;
+  if (/\bcategory:/.test(userQ)) return userQ;
+  return `${catQ} ${userQ}`;
+}
+
+async function unreadByCategory(token: string): Promise<Record<string, number>> {
+  const counts = { primary: 0, promotions: 0, social: 0, updates: 0 };
+  const res = await gmailGet(token, "users/me/labels");
+  if (!res.ok) return counts;
+  const labels = ((res.data as { labels?: { id?: string; messagesUnread?: number }[] }).labels) || [];
+  for (const lab of labels) {
+    const key = CATEGORY_LABEL[String(lab.id || "")];
+    if (!key) continue;
+    counts[key as keyof typeof counts] = Number(lab.messagesUnread) || 0;
+  }
+  return counts;
+}
 const BLOCKED_ACTIONS = new Set(["send", "delete", "modify", "trash", "untrash", "insert"]);
 
 Deno.serve(async (req) => {
@@ -54,11 +90,14 @@ Deno.serve(async (req) => {
 async function handleList(token: string, body: Record<string, unknown>) {
   const maxResults = Math.min(Math.max(Number(body.maxResults) || 25, 1), 50);
   const pageToken = String(body.pageToken || "").trim();
-  const q = String(body.q || "in:inbox").trim() || "in:inbox";
+  const q = buildListQuery(body);
   const qs = new URLSearchParams({ maxResults: String(maxResults), q });
   if (pageToken) qs.set("pageToken", pageToken);
 
-  const listed = await gmailGet(token, `users/me/messages?${qs.toString()}`);
+  const [listed, unread] = await Promise.all([
+    gmailGet(token, `users/me/messages?${qs.toString()}`),
+    unreadByCategory(token),
+  ]);
   if (!listed.ok) return json({ error: "gmail list failed", details: listed.data }, listed.status);
 
   const raw = listed.data as { messages?: { id: string; threadId: string }[]; nextPageToken?: string; resultSizeEstimate?: number };
@@ -69,6 +108,7 @@ async function handleList(token: string, body: Record<string, unknown>) {
     messages: messages.filter(Boolean),
     nextPageToken: raw.nextPageToken || null,
     resultSizeEstimate: raw.resultSizeEstimate || 0,
+    unread,
   });
 }
 

@@ -133,6 +133,80 @@ export async function gmailGet(
   return { ok: true, data };
 }
 
+type GmailResult = { ok: true; data: unknown } | { ok: false; status: number; data: unknown };
+
+async function gmailGetChunked(accessToken: string, paths: string[]): Promise<GmailResult[]> {
+  const out: GmailResult[] = [];
+  for (let i = 0; i < paths.length; i += 10) {
+    const slice = paths.slice(i, i + 10);
+    const part = await Promise.all(slice.map((p) => gmailGet(accessToken, p)));
+    out.push(...part);
+  }
+  return out;
+}
+
+function parseGmailBatch(raw: string, expected: number): GmailResult[] {
+  const results: GmailResult[] = Array.from({ length: expected }, () => ({ ok: false, status: 500, data: null }));
+  const first = (raw.split(/\r?\n/, 1)[0] || "").trim();
+  if (!first.startsWith("--")) return results;
+  const boundary = first.replace(/^--/, "").replace(/--$/, "");
+  const chunks = raw.split("--" + boundary);
+  for (const chunk of chunks) {
+    if (!chunk.trim() || chunk.trim() === "--") continue;
+    const idMatch = chunk.match(/Content-ID:\s*<?(?:response-)?item[-_]?(\d+)>?/i);
+    const statusMatch = chunk.match(/HTTP\/1\.[01]\s+(\d+)/);
+    const status = statusMatch ? Number(statusMatch[1]) : 0;
+    const jsonStart = chunk.indexOf("{");
+    const jsonEnd = chunk.lastIndexOf("}");
+    let data: unknown = null;
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      try {
+        data = JSON.parse(chunk.slice(jsonStart, jsonEnd + 1));
+      } catch {
+        data = null;
+      }
+    }
+    const idx = idMatch ? Number(idMatch[1]) : -1;
+    const entry: GmailResult = status >= 200 && status < 300 && data != null
+      ? { ok: true, data }
+      : { ok: false, status: status || 500, data };
+    if (idx >= 0 && idx < expected) results[idx] = entry;
+  }
+  return results;
+}
+
+/** One multipart batch GET, or chunked parallel GETs if batch fails. */
+export async function gmailBatchGet(accessToken: string, paths: string[]): Promise<GmailResult[]> {
+  if (paths.length === 0) return [];
+  if (paths.length === 1) return [await gmailGet(accessToken, paths[0])];
+  const boundary = "batch_" + crypto.randomUUID().replace(/-/g, "");
+  let body = "";
+  paths.forEach((path, i) => {
+    const p = path.startsWith("/") ? path : "/gmail/v1/" + path.replace(/^\/+/, "");
+    body += `--${boundary}\r\n`;
+    body += "Content-Type: application/http\r\n";
+    body += `Content-ID: <item${i}>\r\n\r\n`;
+    body += `GET ${p} HTTP/1.1\r\n\r\n`;
+  });
+  body += `--${boundary}--\r\n`;
+  try {
+    const res = await fetch("https://www.googleapis.com/batch/gmail/v1", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/mixed; boundary=${boundary}`,
+      },
+      body,
+    });
+    if (!res.ok) return await gmailGetChunked(accessToken, paths);
+    const parsed = parseGmailBatch(await res.text(), paths.length);
+    if (parsed.every((r) => !r.ok)) return await gmailGetChunked(accessToken, paths);
+    return parsed;
+  } catch {
+    return await gmailGetChunked(accessToken, paths);
+  }
+}
+
 export function headerMap(payload: { headers?: { name?: string; value?: string }[] } | null | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const h of payload?.headers || []) {

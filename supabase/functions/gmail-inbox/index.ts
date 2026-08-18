@@ -6,6 +6,7 @@ import {
   corsHeaders,
   extractAttachments,
   extractBodies,
+  gmailBatchGet,
   gmailGet,
   getValidAccessToken,
   headerMap,
@@ -19,7 +20,7 @@ const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_TOO_LARGE =
   "הקובץ גדול מדי (מעל 25MB) — יש להוריד אותו מג'ימייל";
 
-const READ_ACTIONS = new Set(["list", "get", "attachment"]);
+const READ_ACTIONS = new Set(["list", "get", "attachment", "counts"]);
 
 const CATEGORY_QUERY: Record<string, string> = {
   primary: "category:primary",
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
 
   const action = String(body.action || "").trim();
   if (BLOCKED_ACTIONS.has(action) || !READ_ACTIONS.has(action)) {
-    return json({ error: "read-only pilot — only list/get/attachment are allowed" }, 400);
+    return json({ error: "read-only pilot — only list/get/attachment/counts are allowed" }, 400);
   }
 
   try {
@@ -84,6 +85,7 @@ Deno.serve(async (req) => {
     if ("error" in tok) return tok.error;
 
     if (action === "list") return await handleList(tok.token, body);
+    if (action === "counts") return json({ unread: await unreadByCategory(tok.token) });
     if (action === "get") return await handleGet(tok.token, body);
     if (action === "attachment") return await handleAttachment(tok.token, body);
     return json({ error: "unknown action" }, 400);
@@ -93,43 +95,36 @@ Deno.serve(async (req) => {
 });
 
 async function handleList(token: string, body: Record<string, unknown>) {
-  const maxResults = Math.min(Math.max(Number(body.maxResults) || 25, 1), 50);
+  const maxResults = Math.min(Math.max(Number(body.maxResults) || 15, 1), 50);
   const pageToken = String(body.pageToken || "").trim();
   const q = buildListQuery(body);
   const qs = new URLSearchParams({ maxResults: String(maxResults), q });
   if (pageToken) qs.set("pageToken", pageToken);
 
-  const [listed, unread] = await Promise.all([
-    gmailGet(token, `users/me/messages?${qs.toString()}`),
-    unreadByCategory(token),
-  ]);
+  const listed = await gmailGet(token, `users/me/messages?${qs.toString()}`);
   if (!listed.ok) return json({ error: "gmail list failed", details: listed.data }, listed.status);
 
   const raw = listed.data as { messages?: { id: string; threadId: string }[]; nextPageToken?: string; resultSizeEstimate?: number };
   const ids = (raw.messages || []).map((m) => m.id).filter(Boolean);
-  const messages = await Promise.all(ids.map((id) => loadMeta(token, id)));
+  const headerQs = "format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=To";
+  const paths = ids.map((id) => `users/me/messages/${encodeURIComponent(id)}?${headerQs}`);
+  const metas = await gmailBatchGet(token, paths);
+  const messages = metas.map((res, i) => {
+    if (!res.ok) return null;
+    return mapMeta(res.data, ids[i]);
+  });
 
   return json({
     messages: messages.filter(Boolean),
     nextPageToken: raw.nextPageToken || null,
     resultSizeEstimate: raw.resultSizeEstimate || 0,
-    unread,
   });
 }
 
-async function loadMeta(token: string, id: string) {
-  const qs = new URLSearchParams({
-    format: "metadata",
-    metadataHeaders: "From",
-  });
-  qs.append("metadataHeaders", "Subject");
-  qs.append("metadataHeaders", "Date");
-  qs.append("metadataHeaders", "To");
-  const res = await gmailGet(token, `users/me/messages/${encodeURIComponent(id)}?${qs.toString()}`);
-  if (!res.ok) return null;
-  const msg = res.data as {
-    id: string;
-    threadId: string;
+function mapMeta(raw: unknown, fallbackId: string) {
+  const msg = raw as {
+    id?: string;
+    threadId?: string;
     snippet?: string;
     internalDate?: string;
     labelIds?: string[];
@@ -137,7 +132,7 @@ async function loadMeta(token: string, id: string) {
   };
   const h = headerMap(msg.payload);
   return {
-    id: msg.id,
+    id: msg.id || fallbackId,
     threadId: msg.threadId,
     from: h.from || "",
     to: h.to || "",

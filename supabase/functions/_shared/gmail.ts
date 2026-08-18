@@ -197,3 +197,12 @@ export function extractAttachments(payload: MimePart | undefined): {
       attachmentId: p.body!.attachmentId!,
     }));
 }
+
+/** True when a metadata/full payload has a named file or attachmentId (list-row paperclip). */
+export function payloadHasAttachments(payload: MimePart | undefined): boolean {
+  return flattenParts(payload).some((p) => {
+    if ((p.filename || "").trim()) return true;
+    if (p.body?.attachmentId) return true;
+    return false;
+  });
+}

@@ -17855,8 +17855,10 @@ function GmailInboxTab({user,notify}){
     setDetailBusy(false);
   };
   const downloadAtt=async(att)=>{
+    const tooBig="הקובץ גדול מדי (מעל 25MB) — יש להוריד אותו מג'ימייל";
     try{
-      const data=await callInbox({action:"attachment",messageId:detail.id,attachmentId:att.attachmentId,filename:att.filename});
+      if((Number(att.size)||0)>25*1024*1024){notify(tooBig,"#DC2626");return;}
+      const data=await callInbox({action:"attachment",messageId:detail.id,attachmentId:att.attachmentId,filename:att.filename,size:att.size||0});
       const bytes=gmailB64UrlToBytes(data.data);
       const blob=new Blob([bytes],{type:att.mimeType||"application/octet-stream"});
       const a=document.createElement("a");
@@ -17865,7 +17867,8 @@ function GmailInboxTab({user,notify}){
       a.click();
       setTimeout(()=>URL.revokeObjectURL(a.href),1500);
     }catch(e){
-      notify("שגיאה בהורדת הקובץ: "+(e.message||String(e)),"#DC2626");
+      const msg=e&&e.message?e.message:String(e);
+      notify(/too large|413|25MB|גדול מדי/.test(msg)?tooBig:("שגיאה בהורדת הקובץ: "+msg),"#DC2626");
     }
   };
   const catTabs=<div className="gmail-pilot-cats">
@@ -17917,7 +17920,7 @@ function GmailInboxTab({user,notify}){
     </div>
     {busy&&messages.length===0?<div style={{padding:30,textAlign:"center"}}><Spinner sz={24}/></div>:<div className="gmail-pilot-list">
       {messages.map(m=><button key={m.id} type="button" className={"gmail-pilot-row"+(m.unread?" unread":"")} onClick={()=>openMsg(m.id)}>
-        <div className="gmail-pilot-from">{m.from||"(ללא שולח)"}</div>
+        <div className="gmail-pilot-from">{m.from||"(ללא שולח)"}{m.hasAttachments?" 📎":""}</div>
         <div className="gmail-pilot-subj">{m.subject}</div>
         <div className="gmail-pilot-snip">{m.snippet}</div>
         <div className="gmail-pilot-meta">{m.date}</div>

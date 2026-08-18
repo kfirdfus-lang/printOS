@@ -10,9 +10,14 @@ import {
   getValidAccessToken,
   headerMap,
   json,
+  payloadHasAttachments,
   requireAdmin,
   serviceClient,
 } from "../_shared/gmail.ts";
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_TOO_LARGE =
+  "הקובץ גדול מדי (מעל 25MB) — יש להוריד אותו מג'ימייל";
 
 const READ_ACTIONS = new Set(["list", "get", "attachment"]);
 
@@ -128,7 +133,7 @@ async function loadMeta(token: string, id: string) {
     snippet?: string;
     internalDate?: string;
     labelIds?: string[];
-    payload?: { headers?: { name?: string; value?: string }[] };
+    payload?: { headers?: { name?: string; value?: string }[]; filename?: string; mimeType?: string; body?: { attachmentId?: string; size?: number }; parts?: unknown[] };
   };
   const h = headerMap(msg.payload);
   return {
@@ -140,6 +145,7 @@ async function loadMeta(token: string, id: string) {
     date: h.date || "",
     snippet: msg.snippet || "",
     unread: (msg.labelIds || []).includes("UNREAD"),
+    hasAttachments: payloadHasAttachments(msg.payload as { filename?: string; body?: { attachmentId?: string }; parts?: unknown[] }),
     internalDate: msg.internalDate || null,
   };
 }
@@ -179,6 +185,8 @@ async function handleAttachment(token: string, body: Record<string, unknown>) {
   const attachmentId = String(body.attachmentId || "").trim();
   const filename = String(body.filename || "attachment").trim() || "attachment";
   if (!messageId || !attachmentId) return json({ error: "missing messageId or attachmentId" }, 400);
+  const declared = Number(body.size) || 0;
+  if (declared > MAX_ATTACHMENT_BYTES) return json({ error: ATTACHMENT_TOO_LARGE }, 413);
   const res = await gmailGet(
     token,
     `users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
@@ -186,6 +194,7 @@ async function handleAttachment(token: string, body: Record<string, unknown>) {
   if (!res.ok) return json({ error: "gmail attachment failed", details: res.data }, res.status);
   const att = res.data as { data?: string; size?: number };
   if (!att.data) return json({ error: "empty attachment" }, 404);
-  if ((att.size || 0) > 12 * 1024 * 1024) return json({ error: "attachment too large" }, 413);
-  return json({ filename, data: att.data, size: att.size || 0 });
+  const size = Number(att.size) || Math.ceil((att.data.length * 3) / 4);
+  if (size > MAX_ATTACHMENT_BYTES) return json({ error: ATTACHMENT_TOO_LARGE }, 413);
+  return json({ filename, data: att.data, size });
 }

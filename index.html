@@ -7419,7 +7419,12 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   const loadDepts=async()=>{
     try{
       const{data,error:e}=await supabaseClient.from("department_settings").select("*").order("sort_order");
-      if(!e&&data?.length)setDepts(data);
+      if(!e&&data?.length){
+        setDepts(data.map(row=>{
+          const fb=HB3_DEPT_FALLBACK.find(x=>x.name===row.name);
+          return {...row,bina_item_code:String(row.bina_item_code||fb?.bina_item_code||"")};
+        }));
+      }
     }catch(err){console.warn(err);}
   };
 
@@ -7517,8 +7522,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       const ni=prev.map((it,i)=>i===idx?{...it,[field]:value}:it);
       const it=ni[idx];
       if(field==="deptName"){
-        const d=depts.find(x=>x.name===value);
-        it.binaItemCode=d?.bina_item_code||"";
+        const d=depts.find(x=>x.name===value)||HB3_DEPT_FALLBACK.find(x=>x.name===value);
+        it.binaItemCode=d?.bina_item_code?String(d.bina_item_code):"";
       }
       if(priceMode==="unit"&&(field==="quantity"||field==="unitPrice"||field==="discount"))it.lineTotal=hb3LineTotal(it);
       if(priceMode==="total"&&(field==="quantity"||field==="lineTotal"||field==="discount"))it.unitPrice=hb3UnitFromTotal(it);
@@ -7609,7 +7614,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     const lineTotal=priceMode==="total"?Number(it.lineTotal)||hb3LineTotal(it):hb3LineTotal(it);
     const unitPrice=qty?lineTotal/qty:0;
     return {
-      itemId:String(it.binaItemCode||("LINE-"+(idx+1))),
+      itemId:String(it.binaItemCode||(HB3_DEPT_FALLBACK.find(d=>d.name===it.deptName)||{}).bina_item_code||("LINE-"+(idx+1))),
       description:it.description||("פריט "+(idx+1)),
       quantity:qty,
       unitPrice,

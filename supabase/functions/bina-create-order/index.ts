@@ -81,6 +81,16 @@ function ymdLocal(d: Date): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
+/** קוד 2–8 או שם מחלקה → { code, department }. לא מזוהה → department=null, בלי לחסום. */
+function resolveDept(itemId: unknown): { code: string | null; department: string | null } {
+  const raw = String(itemId ?? '').trim()
+  if (!raw) return { code: null, department: null }
+  if (DEPARTMENT_CODES[raw]) return { code: raw, department: DEPARTMENT_CODES[raw] }
+  const byName = Object.entries(DEPARTMENT_CODES).find(([, name]) => name === raw)
+  if (byName) return { code: byName[0], department: byName[1] }
+  return { code: null, department: null }
+}
+
 function buildBinaPayload(req: CreateOrderRequest, token: string) {
   const requestId = Math.floor(Math.random() * 2_000_000_000);
 
@@ -111,7 +121,7 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
       custOrderId: req.client.customerOrderId || '',
     },
     docItems: req.items.map((it) => ({
-      ItemId: it.itemId,
+      ItemId: resolveDept(it.itemId).code || it.itemId,
       ItemDesc: it.description,
       ItemQty: it.quantity,
       // בינה מתעלמים מ-docWithvat:0 - אנחנו ממירים למחיר כולל מע"מ (18%)
@@ -155,8 +165,6 @@ function validateRequest(req: CreateOrderRequest): string | null {
     if (!it.description) return `פריט ${i + 1}: חסר תיאור`;
     if (!it.quantity || it.quantity <= 0) return `פריט ${i + 1}: כמות לא תקינה`;
     if (it.unitPrice == null || it.unitPrice < 0) return `פריט ${i + 1}: מחיר לא תקין`;
-    const itemCode = String(it.itemId).trim()
-    if (!DEPARTMENT_CODES[itemCode]) return `פריט ${i + 1}: מחלקה לא תקינה (bina itemId=${itemCode})`;
   }
 
   return null;
@@ -220,8 +228,8 @@ Deno.serve(async (req) => {
 
     // נבנה את task + task_items מלאים מיד (הסנכרון הוא גיבוי בלבד).
     const salesAgentNormalized = normalizeBinaSalesAgentServer(body.salesAgent)
-    const firstItemCode = String(body.items?.[0]?.itemId ?? '').trim()
-    const firstDept = DEPARTMENT_CODES[firstItemCode] ?? 'כללי'
+    const resolvedItems = body.items.map((it) => resolveDept(it.itemId))
+    const firstDept = resolvedItems.find((r) => r.department)?.department ?? 'כללי'
     const createdYmd = ymdLocal(new Date())
 
     let totalAmount = 0
@@ -243,8 +251,7 @@ Deno.serve(async (req) => {
     const totalIncVat = Math.round(totalAmount * 1.18 * 100) / 100
 
     const taskItemsRows = body.items.map((it, idx) => {
-      const itemCode = String(it.itemId).trim()
-      const deptName = DEPARTMENT_CODES[itemCode] ?? firstDept
+      const resolved = resolvedItems[idx]
       const qty = Number(it.quantity) || 0
       const unit = Number(it.unitPrice) || 0
       const discPct = Number(it.discount) || 0
@@ -255,8 +262,8 @@ Deno.serve(async (req) => {
         bina_order_id: 0 as number, // placeholder; replaced after docId
         task_id: '' as unknown as string, // placeholder; replaced after task insert
         line_number: idx + 1,
-        bina_item_code: itemCode,
-        department: deptName,
+        bina_item_code: resolved?.code ?? null,
+        department: resolved?.department ?? null,
         description: String(it.description || '').trim(),
         quantity: qty,
         price: unit,

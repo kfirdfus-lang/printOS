@@ -1,9 +1,13 @@
-// Shared helpers for the Gmail read-only pilot.
-// Never call Gmail send / delete / modify from these functions.
+// Shared helpers for Gmail (read, modify labels, send).
+// Never call Gmail delete or trash.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+export const GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+export const GMAIL_SCOPES = [GMAIL_MODIFY_SCOPE, GMAIL_SEND_SCOPE].join(" ");
+/** @deprecated use GMAIL_MODIFY_SCOPE — kept for token rows created under readonly pilot */
+export const GMAIL_READONLY_SCOPE = GMAIL_MODIFY_SCOPE;
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,6 +135,45 @@ export async function gmailGet(
   }
   if (!res.ok) return { ok: false, status: res.status, data };
   return { ok: true, data };
+}
+
+export async function gmailPost(
+  accessToken: string,
+  path: string,
+  payload: unknown,
+): Promise<{ ok: true; data: unknown } | { ok: false; status: number; data: unknown }> {
+  const url = path.startsWith("https://")
+    ? path
+    : `https://gmail.googleapis.com/gmail/v1/${path.replace(/^\/+/, "")}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!res.ok) return { ok: false, status: res.status, data };
+  return { ok: true, data };
+}
+
+export async function gmailModifyLabels(
+  accessToken: string,
+  messageId: string,
+  addLabelIds: string[] = [],
+  removeLabelIds: string[] = [],
+): Promise<{ ok: true; data: unknown } | { ok: false; status: number; data: unknown }> {
+  return gmailPost(accessToken, `users/me/messages/${encodeURIComponent(messageId)}/modify`, {
+    addLabelIds,
+    removeLabelIds,
+  });
 }
 
 type GmailResult = { ok: true; data: unknown } | { ok: false; status: number; data: unknown };

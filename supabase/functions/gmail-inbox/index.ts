@@ -1,5 +1,5 @@
-// Gmail pilot — read-only inbox (list / get / attachment).
-// No send, delete, or modify.
+// Gmail inbox — list / get / attachment / label modify / snooze.
+// No delete, no trash.
 
 import { rejectDisallowedInternalOrigin } from "../_shared/cors.ts";
 import {
@@ -8,6 +8,7 @@ import {
   extractBodies,
   gmailBatchGet,
   gmailGet,
+  gmailModifyLabels,
   getValidAccessToken,
   headerMap,
   json,
@@ -20,13 +21,21 @@ const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_TOO_LARGE =
   "הקובץ גדול מדי (מעל 25MB) — יש להוריד אותו מג'ימייל";
 
-const READ_ACTIONS = new Set(["list", "get", "attachment", "counts"]);
+const READ_ACTIONS = new Set([
+  "list", "get", "attachment", "counts", "snooze_list",
+]);
+const MODIFY_ACTIONS = new Set([
+  "mark_read", "mark_unread", "star", "unstar", "archive", "snooze",
+]);
+const BLOCKED_ACTIONS = new Set(["send", "delete", "trash", "untrash", "insert"]);
 
 const CATEGORY_QUERY: Record<string, string> = {
   primary: "category:primary",
   promotions: "category:promotions",
   social: "category:social",
   updates: "category:updates",
+  starred: "is:starred",
+  snoozed: "label:Snoozed",
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -41,7 +50,7 @@ function buildListQuery(body: Record<string, unknown>): string {
   const catQ = CATEGORY_QUERY[cat] || CATEGORY_QUERY.primary;
   const userQ = String(body.q || "").trim();
   if (!userQ) return catQ;
-  if (/\bcategory:/.test(userQ)) return userQ;
+  if (/\bcategory:|is:starred|label:/.test(userQ)) return userQ;
   return `${catQ} ${userQ}`;
 }
 
@@ -57,7 +66,6 @@ async function unreadByCategory(token: string): Promise<Record<string, number>> 
   }
   return counts;
 }
-const BLOCKED_ACTIONS = new Set(["send", "delete", "modify", "trash", "untrash", "insert"]);
 
 Deno.serve(async (req) => {
   const originBlock = rejectDisallowedInternalOrigin(req);
@@ -73,8 +81,11 @@ Deno.serve(async (req) => {
   }
 
   const action = String(body.action || "").trim();
-  if (BLOCKED_ACTIONS.has(action) || !READ_ACTIONS.has(action)) {
-    return json({ error: "read-only pilot — only list/get/attachment/counts are allowed" }, 400);
+  if (BLOCKED_ACTIONS.has(action)) {
+    return json({ error: "delete and trash are not allowed" }, 400);
+  }
+  if (!READ_ACTIONS.has(action) && !MODIFY_ACTIONS.has(action)) {
+    return json({ error: "unknown action" }, 400);
   }
 
   try {
@@ -85,9 +96,19 @@ Deno.serve(async (req) => {
     if ("error" in tok) return tok.error;
 
     if (action === "list") return await handleList(tok.token, body);
-    if (action === "counts") return json({ unread: await unreadByCategory(tok.token) });
-    if (action === "get") return await handleGet(tok.token, body);
+    if (action === "counts") {
+      const unread = await unreadByCategory(tok.token);
+      return json({ unread, primaryUnread: unread.primary || 0 });
+    }
+    if (action === "get") return await handleGet(tok.token, body, sb);
     if (action === "attachment") return await handleAttachment(tok.token, body);
+    if (action === "mark_read") return await handleModify(tok.token, body, [], ["UNREAD"]);
+    if (action === "mark_unread") return await handleModify(tok.token, body, ["UNREAD"], []);
+    if (action === "star") return await handleModify(tok.token, body, ["STARRED"], []);
+    if (action === "unstar") return await handleModify(tok.token, body, [], ["STARRED"]);
+    if (action === "archive") return await handleModify(tok.token, body, [], ["INBOX"]);
+    if (action === "snooze") return await handleSnooze(tok.token, sb, body);
+    if (action === "snooze_list") return await handleSnoozeList(sb);
     return json({ error: "unknown action" }, 400);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
@@ -130,6 +151,7 @@ function mapMeta(raw: unknown, fallbackId: string) {
     labelIds?: string[];
     payload?: { headers?: { name?: string; value?: string }[]; filename?: string; mimeType?: string; body?: { attachmentId?: string; size?: number }; parts?: unknown[] };
   };
+  const labels = msg.labelIds || [];
   const h = headerMap(msg.payload);
   return {
     id: msg.id || fallbackId,
@@ -139,13 +161,18 @@ function mapMeta(raw: unknown, fallbackId: string) {
     subject: h.subject || "(ללא נושא)",
     date: h.date || "",
     snippet: msg.snippet || "",
-    unread: (msg.labelIds || []).includes("UNREAD"),
+    unread: labels.includes("UNREAD"),
+    starred: labels.includes("STARRED"),
     hasAttachments: payloadHasAttachments(msg.payload as { filename?: string; body?: { attachmentId?: string }; parts?: unknown[] }),
     internalDate: msg.internalDate || null,
   };
 }
 
-async function handleGet(token: string, body: Record<string, unknown>) {
+async function handleGet(
+  token: string,
+  body: Record<string, unknown>,
+  sb: ReturnType<typeof serviceClient>,
+) {
   const messageId = String(body.messageId || "").trim();
   if (!messageId) return json({ error: "missing messageId" }, 400);
   const res = await gmailGet(token, `users/me/messages/${encodeURIComponent(messageId)}?format=full`);
@@ -159,6 +186,12 @@ async function handleGet(token: string, body: Record<string, unknown>) {
   };
   const h = headerMap(msg.payload);
   const bodies = extractBodies(msg.payload);
+  const labels = msg.labelIds || [];
+
+  if (labels.includes("UNREAD") && body.autoMarkRead !== false) {
+    await gmailModifyLabels(token, messageId, [], ["UNREAD"]);
+  }
+
   return json({
     id: msg.id,
     threadId: msg.threadId,
@@ -168,7 +201,10 @@ async function handleGet(token: string, body: Record<string, unknown>) {
     subject: h.subject || "(ללא נושא)",
     date: h.date || "",
     snippet: msg.snippet || "",
-    unread: (msg.labelIds || []).includes("UNREAD"),
+    unread: false,
+    starred: labels.includes("STARRED"),
+    messageIdHeader: h["message-id"] || "",
+    references: h.references || "",
     text: bodies.text,
     html: bodies.html,
     attachments: extractAttachments(msg.payload),
@@ -192,4 +228,56 @@ async function handleAttachment(token: string, body: Record<string, unknown>) {
   const size = Number(att.size) || Math.ceil((att.data.length * 3) / 4);
   if (size > MAX_ATTACHMENT_BYTES) return json({ error: ATTACHMENT_TOO_LARGE }, 413);
   return json({ filename, data: att.data, size });
+}
+
+async function handleModify(
+  token: string,
+  body: Record<string, unknown>,
+  add: string[],
+  remove: string[],
+) {
+  const messageId = String(body.messageId || "").trim();
+  if (!messageId) return json({ error: "missing messageId" }, 400);
+  const res = await gmailModifyLabels(token, messageId, add, remove);
+  if (!res.ok) return json({ error: "gmail modify failed", details: res.data }, res.status);
+  return json({ ok: true, id: messageId });
+}
+
+async function handleSnooze(
+  token: string,
+  sb: ReturnType<typeof serviceClient>,
+  body: Record<string, unknown>,
+) {
+  const messageId = String(body.messageId || "").trim();
+  const threadId = String(body.threadId || "").trim() || null;
+  const until = String(body.snooze_until || "").trim();
+  if (!messageId || !until) return json({ error: "missing messageId or snooze_until" }, 400);
+  const untilDate = Date.parse(until);
+  if (Number.isNaN(untilDate) || untilDate <= Date.now()) {
+    return json({ error: "snooze_until must be in the future" }, 400);
+  }
+
+  const archived = await gmailModifyLabels(token, messageId, [], ["INBOX"]);
+  if (!archived.ok) return json({ error: "archive for snooze failed", details: archived.data }, archived.status);
+
+  const { error } = await sb.from("gmail_snoozed").upsert({
+    message_id: messageId,
+    thread_id: threadId,
+    snooze_until: new Date(untilDate).toISOString(),
+    note: String(body.note || "").trim() || null,
+    released: false,
+  }, { onConflict: "message_id" });
+  if (error) return json({ error: error.message }, 500);
+  return json({ ok: true, message_id: messageId, snooze_until: new Date(untilDate).toISOString() });
+}
+
+async function handleSnoozeList(sb: ReturnType<typeof serviceClient>) {
+  const { data, error } = await sb.from("gmail_snoozed")
+    .select("message_id,thread_id,snooze_until,note,created_at")
+    .eq("released", false)
+    .gte("snooze_until", new Date().toISOString())
+    .order("snooze_until", { ascending: true })
+    .limit(100);
+  if (error) return json({ rows: [], error: error.message });
+  return json({ rows: data || [] });
 }

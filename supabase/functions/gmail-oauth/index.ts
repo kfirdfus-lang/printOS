@@ -1,9 +1,11 @@
-// Gmail pilot — OAuth start / callback / status / disconnect.
-// Read-only scope only. Tokens stay in gmail_connections (service role).
+// Gmail — OAuth start / callback / status / disconnect.
+// Scopes: gmail.modify + gmail.send (user reconnects after scope change).
 
 import { rejectDisallowedInternalOrigin } from "../_shared/cors.ts";
 import {
-  GMAIL_READONLY_SCOPE,
+  GMAIL_MODIFY_SCOPE,
+  GMAIL_SCOPES,
+  GMAIL_SEND_SCOPE,
   corsHeaders,
   gmailGet,
   json,
@@ -26,8 +28,8 @@ Deno.serve(async (req) => {
   }
 
   const action = String(body.action || "").trim();
-  if (["send", "delete", "modify"].includes(action)) {
-    return json({ error: "read-only pilot — send/delete/modify are not implemented" }, 400);
+  if (["send", "delete", "trash"].includes(action)) {
+    return json({ error: "use gmail-send or gmail-inbox for mail actions" }, 400);
   }
 
   try {
@@ -63,13 +65,18 @@ async function handleStart(sb: ReturnType<typeof serviceClient>, userId: unknown
   url.searchParams.set("client_id", env.clientId);
   url.searchParams.set("redirect_uri", env.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", GMAIL_READONLY_SCOPE);
+  url.searchParams.set("scope", GMAIL_SCOPES);
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("include_granted_scopes", "false");
   url.searchParams.set("state", state);
 
   return json({ url: url.toString() });
+}
+
+function scopesOk(granted: string): boolean {
+  const parts = granted.split(/\s+/).filter(Boolean);
+  return parts.includes(GMAIL_MODIFY_SCOPE) && parts.includes(GMAIL_SEND_SCOPE);
 }
 
 async function handleCallback(sb: ReturnType<typeof serviceClient>, body: Record<string, unknown>) {
@@ -109,8 +116,10 @@ async function handleCallback(sb: ReturnType<typeof serviceClient>, body: Record
   }
 
   const granted = String(tokenData.scope || "");
-  if (granted && !granted.split(/\s+/).includes(GMAIL_READONLY_SCOPE)) {
-    return json({ error: "unexpected oauth scope" }, 400);
+  if (granted && !scopesOk(granted)) {
+    return json({
+      error: "missing gmail.modify or gmail.send — disconnect in Google, reconnect in PrintOS, and approve all permissions",
+    }, 400);
   }
 
   const profile = await gmailGet(tokenData.access_token, "users/me/profile");
@@ -135,7 +144,7 @@ async function handleCallback(sb: ReturnType<typeof serviceClient>, body: Record
     access_token: tokenData.access_token,
     refresh_token: refreshToken,
     token_expiry: tokenExpiry,
-    scope: granted || GMAIL_READONLY_SCOPE,
+    scope: granted || GMAIL_SCOPES,
     connected_at: now,
     updated_at: now,
   }, { onConflict: "user_id" });
@@ -153,10 +162,13 @@ async function handleStatus(sb: ReturnType<typeof serviceClient>, userId: unknow
     .eq("user_id", admin.user.id)
     .maybeSingle();
   if (error) return json({ error: error.message }, 500);
+  const scope = String(data?.scope || "");
   return json({
     connected: !!data,
     email: data?.google_email || null,
     connected_at: data?.connected_at || null,
+    has_modify: scope.includes("gmail.modify"),
+    has_send: scope.includes("gmail.send"),
   });
 }
 

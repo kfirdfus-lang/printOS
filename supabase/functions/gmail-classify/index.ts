@@ -89,18 +89,24 @@ Deno.serve(async (req) => {
     if (action === "lookup") return await handleLookup(sb, body);
     if (action === "correct") return await handleCorrect(sb, body);
     if (action === "classify") return await handleClassify(sb, admin.user.id, body);
+    if (action === "mark_handled") return await handleHandled(sb, admin.user, body, true);
+    if (action === "mark_unhandled") return await handleHandled(sb, admin.user, body, false);
+    if (action === "save_alias") return await handleSaveAlias(sb, body);
+    if (action === "list_aliases") return await handleListAliases(sb);
     return json({ error: "unknown action" }, 400);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });
 
+const CLASS_FIELDS =
+  "message_id,thread_id,category,confidence,reason,client_name,extracted_data,user_corrected_category,classified_at,handled,handled_at,handled_by,handled_reason,created_order_id";
+
 async function handleLookup(sb: ReturnType<typeof serviceClient>, body: Record<string, unknown>) {
   const ids = Array.isArray(body.message_ids) ? body.message_ids.map((x) => String(x || "")).filter(Boolean) : [];
   if (!ids.length) return json({ rows: [] });
-  const { data, error } = await sb.from("gmail_classifications").select(
-    "message_id,thread_id,category,confidence,reason,client_name,extracted_data,user_corrected_category,classified_at",
-  ).in("message_id", ids.slice(0, 80));
+  const { data, error } = await sb.from("gmail_classifications").select(CLASS_FIELDS)
+    .in("message_id", ids.slice(0, 80));
   if (error) return json({ rows: [], error: error.message });
   return json({ rows: data || [] });
 }
@@ -112,9 +118,7 @@ async function handleCorrect(sb: ReturnType<typeof serviceClient>, body: Record<
   const { data, error } = await sb.from("gmail_classifications").update({
     user_corrected_category: category,
     corrected_at: new Date().toISOString(),
-  }).eq("message_id", messageId).select(
-    "message_id,thread_id,category,confidence,reason,client_name,extracted_data,user_corrected_category,classified_at",
-  ).maybeSingle();
+  }).eq("message_id", messageId).select(CLASS_FIELDS).maybeSingle();
   if (error) return json({ error: error.message }, 500);
   return json({ row: data });
 }
@@ -128,9 +132,8 @@ async function handleClassify(
   if (!incoming.length) return json({ rows: [] });
 
   const ids = incoming.map((m) => String((m as { id?: string }).id || "")).filter(Boolean);
-  const { data: existing } = await sb.from("gmail_classifications").select(
-    "message_id,thread_id,category,confidence,reason,client_name,extracted_data,user_corrected_category,classified_at",
-  ).in("message_id", ids);
+  const { data: existing } = await sb.from("gmail_classifications").select(CLASS_FIELDS)
+    .in("message_id", ids);
   const have = new Set((existing || []).map((r: { message_id: string }) => r.message_id));
   const todo = incoming.filter((m) => {
     const id = String((m as { id?: string }).id || "");
@@ -193,11 +196,58 @@ async function classifyOne(
     model_used: MODEL,
     classified_at: new Date().toISOString(),
   };
-  const { data, error } = await sb.from("gmail_classifications").upsert(row, { onConflict: "message_id" }).select(
-    "message_id,thread_id,category,confidence,reason,client_name,extracted_data,user_corrected_category,classified_at",
-  ).maybeSingle();
+  const { data, error } = await sb.from("gmail_classifications").upsert(row, { onConflict: "message_id" }).select(CLASS_FIELDS).maybeSingle();
   if (error) return { ...row, user_corrected_category: null };
   return data;
+}
+
+async function handleHandled(
+  sb: ReturnType<typeof serviceClient>,
+  user: { id: string; name: string | null },
+  body: Record<string, unknown>,
+  handled: boolean,
+) {
+  const messageId = String(body.message_id || "").trim();
+  if (!messageId) return json({ error: "missing message_id" }, 400);
+  const patch = handled
+    ? {
+      handled: true,
+      handled_at: new Date().toISOString(),
+      handled_by: user.name || user.id,
+      handled_reason: String(body.reason || "manual").trim() || "manual",
+      created_order_id: body.created_order_id ? String(body.created_order_id) : null,
+    }
+    : {
+      handled: false,
+      handled_at: null,
+      handled_by: null,
+      handled_reason: null,
+      created_order_id: null,
+    };
+  const { data, error } = await sb.from("gmail_classifications").update(patch).eq("message_id", messageId)
+    .select(CLASS_FIELDS).maybeSingle();
+  if (error) return json({ error: error.message }, 500);
+  return json({ row: data });
+}
+
+async function handleSaveAlias(sb: ReturnType<typeof serviceClient>, body: Record<string, unknown>) {
+  const clientId = String(body.client_id || "").trim();
+  const email = String(body.email || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!clientId || !email || !email.includes("@")) {
+    return json({ error: "invalid client_id or email" }, 400);
+  }
+  const { error } = await sb.from("client_email_aliases").upsert(
+    { client_id: clientId, email },
+    { onConflict: "email" },
+  );
+  if (error) return json({ error: error.message }, 500);
+  return json({ ok: true, email, client_id: clientId });
+}
+
+async function handleListAliases(sb: ReturnType<typeof serviceClient>) {
+  const { data, error } = await sb.from("client_email_aliases").select("email,client_id").limit(5000);
+  if (error) return json({ rows: [], error: error.message });
+  return json({ rows: data || [] });
 }
 
 function clampConf(v: unknown): number {

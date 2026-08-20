@@ -819,6 +819,8 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .gmail-pilot-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex:1}
 .gmail-pilot-toolbar input{flex:1;min-width:180px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #DBE4E9;font-family:inherit;font-size:13px}
 .gmail-pilot-iconbtn{width:40px;height:40px;border-radius:8px;border:1px solid #DBE4E9;background:#fff;cursor:pointer;font-family:inherit;font-weight:700;color:#0E3651}
+.gmail-pilot-iconbtn.spinning{animation:spin .8s linear infinite}
+.gmail-pilot-iconbtn:disabled{opacity:.55;cursor:wait}
 .gmail-pilot-disconnect{height:40px;padding:0 12px;border-radius:8px;border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;font-family:inherit;font-weight:600;font-size:12px}
 .gmail-pilot-cats{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
 .gmail-pilot-cat{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 12px;border-radius:8px;border:1px solid #DBE4E9;background:#fff;color:#69808F;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
@@ -17864,8 +17866,10 @@ function WorkFilesAdminTab({user}){
 
 
 function gmailB64UrlToBytes(b64){
-  const pad=String(b64||"").replace(/-/g,"+").replace(/_/g,"/");
-  const bin=atob(pad);
+  let s=String(b64||"").replace(/-/g,"+").replace(/_/g,"/");
+  const mod=s.length%4;
+  if(mod)s+="====".slice(mod);
+  const bin=atob(s);
   const bytes=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
   return bytes;
@@ -18085,7 +18089,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   const cacheKey=(cat,query)=>cat+"\0"+(query||"");
   const loadList=async(pageToken,opts)=>{
     const useCat=(opts&&opts.cat)||category;
-    const query=buildSearchQ();
+    const query=opts&&opts.query!==undefined?String(opts.query||""):buildSearchQ(opts&&opts.quickFilter);
     const key=cacheKey(useCat,query);
     const append=!!pageToken;
     if(!append&&!opts?.silent)setBusy(true);
@@ -18217,10 +18221,24 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/01";
   },[]);
   const QUICK_FILTERS=[{id:"attach",q:"has:attachment",lb:"📎 עם קבצים"},{id:"star",q:"is:starred",lb:"⭐ מסומנים"},{id:"unread",q:"is:unread",lb:"📩 לא נקראו"},{id:"month",q:"after:"+monthStart,lb:"🗓️ החודש"}];
-  const buildSearchQ=()=>{
-    const parts=[q.trim(),quickFilter.trim()].filter(Boolean);
+  const buildSearchQ=(qf)=>{
+    const parts=[q.trim(),String(qf!==undefined?qf:quickFilter).trim()].filter(Boolean);
     return parts.join(" ").trim();
   };
+  const refreshInbox=async(opts)=>{
+    if(busy)return;
+    cacheRef.current[cacheKey(category,buildSearchQ())]=null;
+    await loadList("",{silent:!!(opts&&opts.silent)});
+    loadCounts();
+  };
+  useEffect(()=>{
+    if(!status.connected||view!=="inbox")return;
+    const id=setInterval(()=>{
+      if(document.hidden)return;
+      refreshInbox({silent:true});
+    },120000);
+    return ()=>clearInterval(id);
+  },[status.connected,view,category,quickFilter,q]);
   const patchMsgLocal=(id,patch)=>{
     setMessages(prev=>prev.map(m=>m.id===id?{...m,...patch}:m));
     if(detail&&detail.id===id)setDetail(d=>d?{...d,...patch}:d);
@@ -18299,15 +18317,22 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   const downloadAtt=async(att)=>{
     const tooBig="הקובץ גדול מדי (מעל 25MB) — יש להוריד אותו מג'ימייל";
     try{
+      if(!detail||!detail.id)throw new Error("אין מייל פתוח");
+      if(!att||!att.attachmentId)throw new Error("חסר מזהה קובץ");
       if((Number(att.size)||0)>25*1024*1024){notify(tooBig,"#DC2626");return;}
       const data=await callInbox({action:"attachment",messageId:detail.id,attachmentId:att.attachmentId,filename:att.filename,size:att.size||0});
+      if(!data||!data.data)throw new Error("השרת החזיר קובץ ריק");
       const bytes=gmailB64UrlToBytes(data.data);
+      if(!bytes.length)throw new Error("המרת הקובץ נכשלה");
       const blob=new Blob([bytes],{type:att.mimeType||"application/octet-stream"});
+      const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
-      a.href=URL.createObjectURL(blob);
-      a.download=att.filename||"attachment";
+      a.href=url;
+      a.download=att.filename||data.filename||"attachment";
+      a.style.display="none";
+      document.body.appendChild(a);
       a.click();
-      setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+      setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},2000);
     }catch(e){
       const msg=e&&e.message?e.message:String(e);
       notify(/too large|413|25MB|גדול מדי/.test(msg)?tooBig:("שגיאה בהורדת הקובץ: "+msg),"#DC2626");
@@ -18502,7 +18527,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     <div className="gmail-pilot-toolbar">
       <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){cacheRef.current[cacheKey(category,buildSearchQ())]=null;loadList("");}}} placeholder="חיפוש (from:, has:attachment)"/>
       <button type="button" className="gmail-pilot-iconbtn" onClick={()=>{setShowSettings(true);setSigDraft(emailSig||GMAIL_DEFAULT_SIG);}} title="הגדרות">⚙️</button>
-      <button type="button" className="gmail-pilot-iconbtn" onClick={()=>{cacheRef.current[cacheKey(category,buildSearchQ())]=null;loadList("");loadCounts();}} disabled={busy} title="רענן">↻</button>
+      <button type="button" className={"gmail-pilot-iconbtn"+(busy?" spinning":"")} onClick={()=>refreshInbox()} disabled={busy} title="רענן">↻</button>
     </div>
     <button type="button" className="gmail-pilot-disconnect" onClick={disconnect} disabled={busy}>נתק</button>
   </div>;
@@ -18511,9 +18536,10 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     <div className="gmail-pilot-qfilters">
       {QUICK_FILTERS.map(f=><button key={f.id} type="button" className={quickFilter===f.q?"on":""} onClick={()=>{
         const next=quickFilter===f.q?"":f.q;
+        const query=[q.trim(),next.trim()].filter(Boolean).join(" ");
         setQuickFilter(next);
-        cacheRef.current[cacheKey(category,[q.trim(),next.trim()].filter(Boolean).join(" "))]=null;
-        setTimeout(()=>loadList(""),0);
+        cacheRef.current[cacheKey(category,query)]=null;
+        loadList("",{query});
       }}>{f.lb}</button>)}
     </div>
   </>;

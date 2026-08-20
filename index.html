@@ -8288,9 +8288,10 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
           const deptLbl=itemDeptLabel(r);
           return <div key={r.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
             <div style={{minWidth:0}}>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"baseline"}}>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
                 <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{fmtDate(r.bina_order_date||r.created_at)}</span>
                 <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{r.client_name||"—"}</span>
+                {!r.is_archive&&<span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px",lineHeight:1.4}}>פעילה</span>}
               </div>
               <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
                 הזמנה {r.bina_order_id!=null?"#"+r.bina_order_id:"—"}
@@ -8322,6 +8323,7 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
 
     {viewRow&&<Modal open={true} onClose={()=>setViewRow(null)} title={"הזמנה #"+(viewRow.bina_order_id||"—")} maxWidth={640}>
       <div style={{fontSize:14,lineHeight:1.7,color:"#0E3651"}}>
+        {!viewRow.is_archive&&<div style={{marginBottom:10}}><span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px"}}>פעילה</span></div>}
         <div><strong>לקוח:</strong> {viewRow.client_name||"—"}</div>
         <div><strong>תאריך:</strong> {fmtDate(viewRow.bina_order_date||viewRow.created_at)}</div>
         <div><strong>כותרת:</strong> {viewRow.title||"—"}</div>

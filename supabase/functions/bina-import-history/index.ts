@@ -116,10 +116,13 @@ async function insertArchiveItems(
   taskId: string,
   binaOrderId: number,
   order: Record<string, unknown>,
-): Promise<boolean> {
+): Promise<{ ok: boolean; count: number }> {
   const nested = order.Order as { items?: unknown[] } | undefined;
   const rawItems = nested?.items && Array.isArray(nested.items) ? nested.items : [];
-  if (!rawItems.length) return true;
+  if (!rawItems.length) {
+    await supabase.from("tasks").update({ has_items: false }).eq("id", taskId);
+    return { ok: true, count: 0 };
+  }
 
   const rows: Record<string, unknown>[] = [];
   let fallbackLine = 0;
@@ -127,31 +130,34 @@ async function insertArchiveItems(
     fallbackLine += 1;
     const item = raw as Record<string, unknown>;
     const itemCode = String(item.itemId ?? "").trim();
-    if (!itemCode || !DEPARTMENT_CODES[itemCode]) continue;
+    const mappedDept = itemCode && DEPARTMENT_CODES[itemCode] ? DEPARTMENT_CODES[itemCode] : null;
     const ln = Number(item.itemLineNumber);
     rows.push({
       task_id: taskId,
       bina_order_id: binaOrderId,
       line_number: Number.isFinite(ln) ? ln : fallbackLine,
-      bina_item_code: itemCode,
-      department: DEPARTMENT_CODES[itemCode],
+      bina_item_code: mappedDept ? itemCode : null,
+      department: mappedDept,
       description: String(item.itemDesc ?? "").trim() || "—",
       quantity: Number(item.itemQty) || 0,
       price: Number(item.itemPrice) || 0,
       total: Number(item.itemTotal) || 0,
-      status: "מוכן",
+      status: "הושלם",
     });
   }
-  if (!rows.length) return true;
+  if (!rows.length) {
+    await supabase.from("tasks").update({ has_items: false }).eq("id", taskId);
+    return { ok: true, count: 0 };
+  }
   const { error } = await supabase.from("task_items").upsert(rows, {
     onConflict: "bina_order_id,line_number",
   });
   if (error) {
     console.error("[bina-import-history] task_items:", error.message);
-    return false;
+    return { ok: false, count: 0 };
   }
   await supabase.from("tasks").update({ has_items: true }).eq("id", taskId);
-  return true;
+  return { ok: true, count: rows.length };
 }
 
 Deno.serve(async (req) => {
@@ -234,9 +240,60 @@ Deno.serve(async (req) => {
   if (bd.Orders && Array.isArray(bd.Orders)) orders = bd.Orders as Record<string, unknown>[];
   else if (Array.isArray(binaData)) orders = binaData as Record<string, unknown>[];
 
+  const debug = body.debug === true || body.debug === 1 || body.debug === "1";
+  if (debug) {
+    const withItems: Record<string, unknown>[] = [];
+    const withoutItems: Record<string, unknown>[] = [];
+    const itemIdSamples = new Set<string>();
+    let itemsTotal = 0;
+    let mappedItems = 0;
+    let unmappedItems = 0;
+
+    for (const order of orders) {
+      const nested = order.Order as { items?: unknown[] } | undefined;
+      const items = nested?.items && Array.isArray(nested.items) ? nested.items : null;
+      const altItems = Array.isArray(order.items) ? (order.items as unknown[]) : null;
+      const raw = items || altItems;
+      if (raw && raw.length) {
+        itemsTotal += raw.length;
+        for (const rawItem of raw) {
+          const code = String((rawItem as { itemId?: unknown }).itemId ?? "").trim();
+          if (code) itemIdSamples.add(code);
+          if (code && DEPARTMENT_CODES[code]) mappedItems++;
+          else unmappedItems++;
+        }
+        if (withItems.length < 1) withItems.push(order);
+      } else if (withoutItems.length < 1) {
+        withoutItems.push(order);
+      }
+    }
+
+    return json({
+      debug: true,
+      from_date: fromDate,
+      to_date: toDate,
+      fetched: orders.length,
+      ordersWithNestedItems: orders.filter((o) => {
+        const n = o.Order as { items?: unknown[] } | undefined;
+        return Array.isArray(n?.items) && n!.items!.length > 0;
+      }).length,
+      ordersWithTopLevelItems: orders.filter((o) => Array.isArray(o.items) && (o.items as unknown[]).length > 0).length,
+      itemsTotal,
+      mappedItems,
+      unmappedItems,
+      itemIdSamples: [...itemIdSamples].slice(0, 30),
+      sampleOrderKeys: orders[0] ? Object.keys(orders[0]) : [],
+      sampleOrderFull: orders[0] || null,
+      sampleWithItemsFull: withItems[0] || null,
+      sampleWithoutItemsFull: withoutItems[0] || null,
+    });
+  }
+
   let fetched = orders.length;
   let created = 0;
   let skipped = 0;
+  let itemsBackfilled = 0;
+  let itemsCreated = 0;
   let failed = 0;
   const errorDetails: string[] = [];
   const nowIso = new Date().toISOString();
@@ -252,12 +309,23 @@ Deno.serve(async (req) => {
 
       const { data: existing } = await supabase
         .from("tasks")
-        .select("id")
+        .select("id, is_archive")
         .eq("bina_order_id", binaOrderId)
         .maybeSingle();
 
       if (existing?.id) {
-        skipped++;
+        if (existing.is_archive) {
+          const r = await insertArchiveItems(supabase, existing.id as string, Number(binaOrderId), order);
+          if (!r.ok) {
+            failed++;
+            errorDetails.push(`Order ${binaOrderId}: items backfill failed`);
+          } else {
+            skipped++;
+            itemsBackfilled += r.count;
+          }
+        } else {
+          skipped++;
+        }
         continue;
       }
 
@@ -312,7 +380,13 @@ Deno.serve(async (req) => {
       }
 
       created++;
-      await insertArchiveItems(supabase, inserted.id as string, Number(binaOrderId), order);
+      const r = await insertArchiveItems(supabase, inserted.id as string, Number(binaOrderId), order);
+      if (!r.ok) {
+        failed++;
+        errorDetails.push(`Order ${binaOrderId}: items insert failed`);
+      } else {
+        itemsCreated += r.count;
+      }
     } catch (e) {
       failed++;
       errorDetails.push(e instanceof Error ? e.message : String(e));
@@ -326,6 +400,9 @@ Deno.serve(async (req) => {
     fetched,
     created,
     skipped,
+    items_created: itemsCreated,
+    items_backfilled: itemsBackfilled,
+    items: itemsCreated + itemsBackfilled,
     failed,
     errorDetails: failed ? errorDetails.slice(0, 30) : undefined,
   };

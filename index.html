@@ -1150,14 +1150,14 @@ const DEPTS=["פורמט רחב","דיגיטלי צבעוני","דיגיטלי �
 const TASK_DONE_STATUSES=["הושלם","הושלמה"];
 const RECENTLY_COMPLETED_MS=3*24*60*60*1000;
 const threeDaysAgoIso=()=>new Date(Date.now()-RECENTLY_COMPLETED_MS).toISOString();
-const isTaskActive=t=>!t.archived_at&&!TASK_DONE_STATUSES.includes(t.status);
+const isTaskActive=t=>!t.is_archive&&!t.archived_at&&!TASK_DONE_STATUSES.includes(t.status);
 const isTaskRecentlyCompleted=t=>{
-  if(t.archived_at||!TASK_DONE_STATUSES.includes(t.status)||!t.completed_at)return false;
+  if(t.is_archive||t.archived_at||!TASK_DONE_STATUSES.includes(t.status)||!t.completed_at)return false;
   return new Date(t.completed_at).getTime()>=Date.now()-RECENTLY_COMPLETED_MS;
 };
 const archiveStaleCompleted=async()=>{
   try{
-    await sb(`tasks?archived_at=is.null&completed_at=lt.${threeDaysAgoIso()}&status=in.(הושלם,הושלמה)&delivery_status=not.in.(ready,in_transit)`,{method:"PATCH",body:JSON.stringify({archived_at:new Date().toISOString()})});
+    await sb(`tasks?is_archive=eq.false&archived_at=is.null&completed_at=lt.${threeDaysAgoIso()}&status=in.(הושלם,הושלמה)&delivery_status=not.in.(ready,in_transit)`,{method:"PATCH",body:JSON.stringify({archived_at:new Date().toISOString()})});
   }catch(e){console.warn("archiveStaleCompleted",e);}
 };
 const taskSchedDateKey=t=>t.scheduled_for_date?String(t.scheduled_for_date).split("T")[0]:null;
@@ -6534,7 +6534,7 @@ function renderDeliveryPdfContent(deliveries,grouped,dateStr){
 async function generateDeliveryPdf(dateStr){
   await loadCityRegions();
   const drivers=await sb("drivers?is_active=eq.true&order=name.asc");
-  const data=await sb(`tasks?scheduled_delivery_date=eq.${dateStr}&delivery_status=in.(ready,in_transit)&order=delivery_order.asc.nullslast`);
+  const data=await sb(`tasks?is_archive=eq.false&scheduled_delivery_date=eq.${dateStr}&delivery_status=in.(ready,in_transit)&order=delivery_order.asc.nullslast`);
   let deliveries=Array.isArray(data)?data:[];
   if(!deliveries.length){
     window.alert("אין משלוחים בתאריך שנבחר");
@@ -6605,7 +6605,7 @@ function ShipmentsDashboard({user,clients,onOpenDeliveryNote,refreshAll}){
     try{
       const drs=await sb("drivers?is_active=eq.true&order=name.asc");
       setDrivers(Array.isArray(drs)?drs:[]);
-      const data=await sb("tasks?delivery_status=in.(ready,in_transit,delivered)&or=(archived_at.is.null,delivery_status.in.(ready,in_transit))&order=scheduled_delivery_date.asc,delivery_order.asc");
+      const data=await sb("tasks?is_archive=eq.false&delivery_status=in.(ready,in_transit,delivered)&or=(archived_at.is.null,delivery_status.in.(ready,in_transit))&order=scheduled_delivery_date.asc,delivery_order.asc");
       let enriched=Array.isArray(data)?data:[];
       if(enriched.length>0){
         const taskIds=enriched.map(t=>t.id);
@@ -7707,7 +7707,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     if(!files.length)return;
     let taskId=taskIdHint||null;
     if(!taskId){
-      const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",String(binaOrderId)).is("archived_at",null).limit(1);
+      const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",String(binaOrderId)).limit(1);
       taskId=found?.[0]?.id||null;
     }
     for(let i=0;i<files.length;i++){
@@ -8822,7 +8822,7 @@ function DepartmentDashboard({user,allTasks,taskItems,isA,deptFilter}){
   const todayMs=today.getTime();
   const yesterdayMs=todayMs-86400000;
   const weekStartMs=todayMs-(today.getDay()*86400000);
-  const openTasks=tasks.filter(t=>!t.archived_at&&t.status!=="הושלם"&&t.status!=="הושלמה");
+  const openTasks=tasks.filter(t=>!t.is_archive&&!t.archived_at&&t.status!=="הושלם"&&t.status!=="הושלמה");
   const urgentTasks=openTasks.filter(t=>{
     if(t.priority==="גבוהה"||t.priority==="דחוף")return true;
     if(t.due_date){
@@ -16602,7 +16602,7 @@ function GlobalSearch({onClose,onNavigate}){
       try{
         const [c,t,o,q,dn,al]=await Promise.all([
           supabaseClient.from("clients").select("id,name,contact_name,phone,email,bina_customer_id").limit(2000),
-          supabaseClient.from("tasks").select("id,title,client_name,assignee,dept,status").is("archived_at",null).limit(2000),
+          supabaseClient.from("tasks").select("id,title,client_name,assignee,dept,status").eq("is_archive",false).is("archived_at",null).limit(2000),
           supabaseClient.from("orders").select("id,bina_doc_id,title,bina_cust_name,task_id").limit(1000),
           supabaseClient.from("quotes").select("id,bina_doc_id,title,bina_cust_name").limit(1000),
           supabaseClient.from("delivery_notes").select("id,delivery_number,customer_name,customer_address,customer_phone,task_id").limit(1000),
@@ -16928,9 +16928,9 @@ function TvDashboard(){
     const {data:settings}=await supabaseClient.from("tv_dashboard_settings").select("monthly_target").eq("id",1).maybeSingle();
     const monthlyTarget=parseFloat(settings?.monthly_target)||400000;
     const [{data:monthTasks},{data:alutOrders},{data:todayShipped},{data:newClients}]=await Promise.all([
-      supabaseClient.from("tasks").select("id,created_at,total_inc_vat,total_amount,sales_agent,client_name").gte("created_at",monthStart.toISOString()).is("archived_at",null),
+      supabaseClient.from("tasks").select("id,created_at,total_inc_vat,total_amount,sales_agent,client_name").eq("is_archive",false).gte("created_at",monthStart.toISOString()).is("archived_at",null),
       supabaseClient.from("alut_orders").select("id,total_price").gte("created_at",monthStart.toISOString()),
-      supabaseClient.from("tasks").select("id").eq("delivery_status","in_transit").gte("updated_at",today.toISOString()),
+      supabaseClient.from("tasks").select("id").eq("is_archive",false).eq("delivery_status","in_transit").gte("updated_at",today.toISOString()),
       supabaseClient.from("clients").select("id").gte("created_at",monthStart.toISOString()),
     ]);
     const todayTasks=(monthTasks||[]).filter(t=>new Date(t.created_at)>=today);
@@ -16986,11 +16986,12 @@ function TvDashboard(){
     const today=new Date().toISOString().split("T")[0];
     const [{data:shipments},{data:openTasks},{data:alutInPrint}]=await Promise.all([
       supabaseClient.from("tasks").select("id,client_name,delivery_address_snapshot,delivery_status")
+        .eq("is_archive",false)
         .eq("scheduled_delivery_date",today)
         .in("delivery_status",["ready","in_transit"])
         .order("delivery_order",{ascending:true,nullsFirst:false})
         .limit(8),
-      supabaseClient.from("tasks").select("id").in("status",["ממתין","בביצוע","תקוע"]).is("archived_at",null),
+      supabaseClient.from("tasks").select("id").eq("is_archive",false).in("status",["ממתין","בביצוע","תקוע"]).is("archived_at",null),
       supabaseClient.from("alut_order_items").select("id").in("status",["sent_to_natalie","in_print"]),
     ]);
     setOperational({
@@ -17319,7 +17320,7 @@ async function linkPendingWorkFiles(){
     for(const p of pending){
       const oid=String(p.bina_order_id||"").trim();
       if(!oid)continue;
-      const{data:tasks}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).is("archived_at",null).limit(1);
+      const{data:tasks}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).limit(1);
       const task=tasks?.[0];
       if(!task)continue;
       const patch={
@@ -17545,9 +17546,10 @@ function MyDayScreen({user,onRefreshAll}){
       await linkPendingWorkFiles();
       const{data,error}=await supabaseClient
         .from("task_items")
-        .select("*,tasks!inner(id,client_name,title,due_date,work_file_path,work_file_name,work_file_type,worker_note,bina_order_id,status,archived_at)")
+        .select("*,tasks!inner(id,client_name,title,due_date,work_file_path,work_file_name,work_file_type,worker_note,bina_order_id,status,archived_at,is_archive)")
         .eq("department",deptName)
         .in("status",[ITEM_OPEN_STATUS,ITEM_DONE_STATUS])
+        .eq("tasks.is_archive",false)
         .is("tasks.archived_at",null);
       if(error)throw error;
       const list=(data||[]).filter(it=>{
@@ -17674,7 +17676,7 @@ function WorkFilesAdminTab({user}){
     await linkPendingWorkFiles();
     const [pendRes,tasksRes]=await Promise.all([
       supabaseClient.from("pending_work_files").select("*").eq("status","waiting").order("created_at",{ascending:true}),
-      supabaseClient.from("tasks").select("id,title,client_name,bina_order_id,due_date,work_file_path,status,task_items(id,status)").is("archived_at",null).order("due_date",{ascending:true}).limit(300),
+      supabaseClient.from("tasks").select("id,title,client_name,bina_order_id,due_date,work_file_path,status,task_items(id,status)").eq("is_archive",false).is("archived_at",null).order("due_date",{ascending:true}).limit(300),
     ]);
     setPending(pendRes.data||[]);
     setNoFileTasks((tasksRes.data||[]).filter(t=>{
@@ -17702,7 +17704,7 @@ function WorkFilesAdminTab({user}){
         worker_note:form.worker_note.trim()||null,
         due_date:form.due_date,
       };
-      const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).is("archived_at",null).limit(1);
+      const{data:found}=await supabaseClient.from("tasks").select("id").eq("bina_order_id",oid).limit(1);
       const task=found?.[0];
       if(task){
         await applyWorkFileToTask(task.id,meta);
@@ -19017,8 +19019,8 @@ function App(){
     try{
       await archiveStaleCompleted();
       const isA=cu.role==="admin";
-      const tp="tasks?archived_at=is.null&order=created_at.desc";
-      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status&order=created_at.desc")]);
+      const tp="tasks?is_archive=eq.false&archived_at=is.null&order=created_at.desc";
+      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status,tasks!inner(id)&tasks.is_archive=eq.false&tasks.archived_at=is.null&order=created_at.desc")]);
       setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
@@ -19106,7 +19108,7 @@ function App(){
     const cu=u||user;
     if(!cu||cu.role!=="admin")return;
     try{
-      const a=await sb("tasks?archived_at=not.is.null&order=archived_at.desc");
+      const a=await sb("tasks?is_archive=eq.false&archived_at=not.is.null&order=archived_at.desc");
       setArchivedTasks(Array.isArray(a)?a:[]);
     }catch(e){setArchivedTasks([]);}
   };

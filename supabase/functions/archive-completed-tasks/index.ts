@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
   const { data: candidates, error: candidatesError } = await supabase
     .from("tasks")
     .select("id, delivery_status")
-    .is("archived_at", null)
+    .eq("is_archive", false).is("archived_at", null)
     .lt("updated_at", cutoffIso)
     .or(orClause);
 

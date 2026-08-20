@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
       .select('id')
       .not('bina_order_id', 'is', null)
       .is('completed_at', null)
-      .is('archived_at', null)
+      .eq('is_archive', false).is('archived_at', null)
 
     if (error) throw error
 

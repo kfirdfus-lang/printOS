@@ -812,7 +812,7 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .tv-gm-actions-row .btn-danger{color:#dc2626;border-color:#fee2e2}
 .image-preview{margin-bottom:15px;border-radius:8px;overflow:hidden;background:#f3f4f6;aspect-ratio:16/9}
 .image-preview img{width:100%;height:100%;object-fit:contain}
-.gmail-pilot{direction:rtl;max-width:1100px;color:#0E3651}
+.gmail-pilot{direction:rtl;max-width:900px;margin:0 auto;color:#0E3651}
 .gmail-pilot-banner{background:#EDF8F7;border:1px solid #DBE4E9;color:#2A807C;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:14px}
 .gmail-pilot-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .gmail-pilot-email{font-size:14px;font-weight:700;color:#0E3651}
@@ -829,7 +829,7 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .gmail-pilot-filters button{border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:#69808F;padding:4px 6px;border-radius:6px}
 .gmail-pilot-filters button.on{color:#0E3651;background:#EDF8F7}
 .gmail-pilot-list{background:#fff;border:1px solid #EDF2F5;border-radius:12px;overflow:hidden}
-.gmail-pilot-row{display:block;width:100%;background:#fff;border:none;border-bottom:1px solid #EDF2F5;padding:12px 14px;cursor:pointer;text-align:right;font-family:inherit;box-shadow:inset -3px 0 0 #62C7C2}
+.gmail-pilot-row{display:block;width:100%;background:#fff;border:none;border-bottom:1px solid #EDF2F5;padding:12px 14px;cursor:pointer;text-align:right;font-family:inherit;box-shadow:inset -3px 0 0 #62C7C2;position:relative}
 .gmail-pilot-row.read{background:#FAFCFD;box-shadow:none}
 .gmail-pilot-row:hover{background:#EDF8F7}
 .gmail-pilot-row.read:hover{background:#F4F7F9}
@@ -877,6 +877,29 @@ tr.alut-item-urgent:hover,tr.alut-item-urgent:hover td{background:#fde68a!import
 .gmail-pilot-domain-hint{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:8px 10px;font-size:12px;color:#1E40AF;margin-bottom:10px}
 .gmail-pilot-sent-row{display:block;width:100%;text-align:right;padding:12px 14px;border:none;border-bottom:1px solid #EDF2F5;background:#fff;cursor:pointer;font-family:inherit}
 .gmail-pilot-sent-row:hover{background:#FAFCFD}
+.gmail-pilot-row-actions{position:absolute;left:8px;top:50%;transform:translateY(-50%);display:none;gap:2px;background:#fff;border:1px solid #DBE4E9;border-radius:8px;padding:2px 4px;box-shadow:0 4px 12px rgba(14,54,81,.1);z-index:5}
+.gmail-pilot-row:hover .gmail-pilot-row-actions{display:flex}
+.gmail-pilot-row-act{width:28px;height:28px;border:none;background:none;cursor:pointer;font-size:14px;border-radius:6px;font-family:inherit;line-height:1}
+.gmail-pilot-row-act:hover{background:#EDF8F7}
+.gmail-pilot-newbtn{padding:10px 16px;border-radius:10px;border:none;background:#62C7C2;color:#fff;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;margin:0 0 12px}
+.gmail-pilot-search-hint{font-size:11px;color:#69808F;margin:-6px 0 10px}
+.gmail-pilot-qfilters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.gmail-pilot-qfilters button{height:32px;padding:0 10px;border-radius:8px;border:1px solid #DBE4E9;background:#fff;color:#69808F;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.gmail-pilot-qfilters button.on{background:#EDF8F7;color:#0E3651;border-color:#62C7C2}
+.gmail-pilot-detail-wrap{position:relative}
+.gmail-pilot-detail-scroll{padding-bottom:8px}
+.gmail-pilot-detail-sticky{position:sticky;bottom:0;background:#fff;border-top:1px solid #EDF2F5;padding:12px 0;margin-top:12px;z-index:4;box-shadow:0 -8px 16px rgba(255,255,255,.9)}
+.gmail-pilot-detail iframe{width:100%;border:1px solid #EDF2F5;border-radius:10px;margin-top:14px;background:#fff;padding:16px;box-sizing:border-box;display:block;min-height:500px;max-height:calc(100vh - 220px)}
+.gmail-pilot-fullscreen{position:fixed;inset:0;z-index:9999;background:#fff;overflow:auto;padding:16px;max-width:none!important}
+.gmail-pilot-fullscreen .gmail-pilot-detail iframe{max-height:calc(100vh - 120px)}
+.gmail-pilot-ac-wrap{position:relative}
+.gmail-pilot-ac-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #DBE4E9;border-radius:8px;box-shadow:0 8px 24px rgba(14,54,81,.12);z-index:30;max-height:200px;overflow:auto}
+.gmail-pilot-ac-item{display:block;width:100%;text-align:right;border:none;background:none;padding:8px 12px;cursor:pointer;font-family:inherit;font-size:13px}
+.gmail-pilot-ac-item:hover{background:#EDF8F7}
+.gmail-pilot-snooze-menu{position:absolute;background:#fff;border:1px solid #DBE4E9;border-radius:8px;box-shadow:0 8px 24px rgba(14,54,81,.12);z-index:40;min-width:220px;padding:4px}
+.gmail-pilot-snooze-menu button{display:block;width:100%;text-align:right;border:none;background:none;padding:8px 12px;cursor:pointer;font-family:inherit;font-size:13px}
+.gmail-pilot-snooze-menu button:hover{background:#EDF8F7}
+.gmail-pilot-settings textarea{min-height:120px}
 </style>
 </head>
 <body>
@@ -17898,11 +17921,35 @@ function gmailMatchClient(clients,email,aliasMap){
   if(domHits.length===1)return{client:domHits[0],byDomain:true};
   return{client:null,byDomain:false};
 }
+const GMAIL_DEFAULT_SIG="כפיר צמח\nנטלי פתרונות הדפסה בע״מ\n03-6815703 | natalie-print.com";
+function gmailIsPending(row){
+  return row==null||row.handled!==true;
+}
+function gmailWrapHtml(html){
+  const body=String(html||"");
+  return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><base target=\"_blank\"></head><body style=\"margin:0;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;\">"+body+"</body></html>";
+}
+function gmailEstimateIframeHeight(text,html,fullscreen){
+  const plain=String(text||"").trim();
+  const fromHtml=String(html||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+  const len=plain.length||fromHtml.length||200;
+  const max=fullscreen?Math.max(600,window.innerHeight-120):Math.max(500,window.innerHeight-220);
+  return Math.min(Math.max(500,Math.round(120+len*0.35)),max);
+}
+function gmailNextSundayMorning(from){
+  const d=new Date(from);
+  const day=d.getDay();
+  const add=day===0?7:(7-day);
+  d.setDate(d.getDate()+add);
+  d.setHours(8,0,0,0);
+  return d;
+}
 function gmailClassDisplay(row){
-  if(!row)return{id:null,low:false,handled:false};
+  if(!row)return{id:null,low:false,handled:false,pending:true};
   const id=row.user_corrected_category||row.category;
   const low=!row.user_corrected_category&&Number(row.confidence)<0.7;
-  return{id,low,handled:!!row.handled};
+  const handled=row.handled===true;
+  return{id,low,handled,pending:!handled};
 }
 
 function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
@@ -17937,7 +17984,17 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   const [confirmSend,setConfirmSend]=useState(null);
   const [attachPick,setAttachPick]=useState(null);
   const [emailSig,setEmailSig]=useState("");
+  const [autoSig,setAutoSig]=useState(true);
+  const [showSettings,setShowSettings]=useState(false);
+  const [sigDraft,setSigDraft]=useState("");
+  const [sigSaving,setSigSaving]=useState(false);
+  const [detailFullscreen,setDetailFullscreen]=useState(false);
+  const [rowMenu,setRowMenu]=useState(null);
+  const [snoozeMenuId,setSnoozeMenuId]=useState(null);
+  const [snoozeCustom,setSnoozeCustom]=useState(null);
+  const [quickFilter,setQuickFilter]=useState("");
   const cacheRef=useRef({});
+  const rowPressRef=useRef(null);
   const uid=user&&user.id;
   const mergeClass=rows=>{
     if(!Array.isArray(rows)||!rows.length)return;
@@ -18028,7 +18085,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   const cacheKey=(cat,query)=>cat+"\0"+(query||"");
   const loadList=async(pageToken,opts)=>{
     const useCat=(opts&&opts.cat)||category;
-    const query=q||"";
+    const query=buildSearchQ();
     const key=cacheKey(useCat,query);
     const append=!!pageToken;
     if(!append&&!opts?.silent)setBusy(true);
@@ -18064,9 +18121,13 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   useEffect(()=>{
     if(!status.connected||!uid)return;
     loadAliases();
+    loadSent();
     if(user?.email_signature!=null)setEmailSig(user.email_signature||"");
-    else supabaseClient.from("users").select("email_signature").eq("id",uid).maybeSingle().then(({data})=>{
-      if(data)setEmailSig(data.email_signature||"");
+    if(user?.gmail_auto_signature!=null)setAutoSig(!!user.gmail_auto_signature);
+    supabaseClient.from("users").select("email_signature,gmail_auto_signature").eq("id",uid).maybeSingle().then(({data})=>{
+      if(!data)return;
+      if(data.email_signature!=null)setEmailSig(data.email_signature||"");
+      if(data.gmail_auto_signature!=null)setAutoSig(!!data.gmail_auto_signature);
     }).catch(()=>{});
   },[status.connected,uid]);
   useEffect(()=>{
@@ -18124,41 +18185,111 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     }
     setDetailBusy(false);
   };
+  const effectiveSig=emailSig||GMAIL_DEFAULT_SIG;
+  const sigHtml=autoSig&&effectiveSig?("<br><br>--<br>"+effectiveSig.replace(/\n/g,"<br>")):"";
+  const contactSuggestions=useMemo(()=>{
+    const out=[];
+    const seen=new Set();
+    (clients||[]).forEach(c=>{
+      ["email","orders_email_primary","orders_email_secondary","billing_email","contact_email"].forEach(f=>{
+        gmailEmailsFromValue(c[f]).forEach(e=>{
+          if(!seen.has(e)){seen.add(e);out.push({label:(c.name||"")+" <"+e+">",email:e,name:c.name||""});}
+        });
+      });
+    });
+    Object.keys(aliasMap||{}).forEach(e=>{
+      if(!seen.has(e)){
+        seen.add(e);
+        const c=(clients||[]).find(x=>String(x.id)===String(aliasMap[e]));
+        out.push({label:(c?.name||e)+" <"+e+">",email:e,name:c?.name||""});
+      }
+    });
+    (sentRows||[]).forEach(r=>{
+      (r.to_addresses||[]).forEach(e=>{
+        const ne=gmailNormEmail(e);
+        if(ne&&!seen.has(ne)){seen.add(ne);out.push({label:ne,email:ne,name:""});}
+      });
+    });
+    return out;
+  },[clients,aliasMap,sentRows]);
+  const monthStart=useMemo(()=>{
+    const d=new Date();
+    return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/01";
+  },[]);
+  const QUICK_FILTERS=[{id:"attach",q:"has:attachment",lb:"📎 עם קבצים"},{id:"star",q:"is:starred",lb:"⭐ מסומנים"},{id:"unread",q:"is:unread",lb:"📩 לא נקראו"},{id:"month",q:"after:"+monthStart,lb:"🗓️ החודש"}];
+  const buildSearchQ=()=>{
+    const parts=[q.trim(),quickFilter.trim()].filter(Boolean);
+    return parts.join(" ").trim();
+  };
   const patchMsgLocal=(id,patch)=>{
     setMessages(prev=>prev.map(m=>m.id===id?{...m,...patch}:m));
     if(detail&&detail.id===id)setDetail(d=>d?{...d,...patch}:d);
   };
   const markUnread=async(id)=>{
-    try{await callInbox({action:"mark_unread",messageId:id});patchMsgLocal(id,{unread:true});loadCounts();}catch(e){notify("שגיאה: "+(e.message||String(e)),"#DC2626");}
+    const prev=messages.find(m=>m.id===id);
+    patchMsgLocal(id,{unread:true});
+    try{await callInbox({action:"mark_unread",messageId:id});loadCounts();}catch(e){
+      if(prev)patchMsgLocal(id,{unread:prev.unread});
+      notify("שגיאה: "+(e.message||String(e)),"#DC2626");
+    }
+  };
+  const markRead=async(id)=>{
+    const prev=messages.find(m=>m.id===id);
+    patchMsgLocal(id,{unread:false});
+    try{await callInbox({action:"mark_read",messageId:id});loadCounts();}catch(e){
+      if(prev)patchMsgLocal(id,{unread:prev.unread});
+      notify("שגיאה: "+(e.message||String(e)),"#DC2626");
+    }
   };
   const toggleStar=async(m)=>{
+    const prevStar=!!m.starred;
+    patchMsgLocal(m.id,{starred:!prevStar});
     try{
-      await callInbox({action:m.starred?"unstar":"star",messageId:m.id});
-      patchMsgLocal(m.id,{starred:!m.starred});
-    }catch(e){notify("שגיאה: "+(e.message||String(e)),"#DC2626");}
+      await callInbox({action:prevStar?"unstar":"star",messageId:m.id});
+    }catch(e){
+      patchMsgLocal(m.id,{starred:prevStar});
+      notify("שגיאה: "+(e.message||String(e)),"#DC2626");
+    }
   };
   const archiveMsg=async(id)=>{
+    const prevMsg=messages.find(m=>m.id===id);
+    setMessages(prev=>prev.filter(m=>m.id!==id));
+    if(detail&&detail.id===id)setDetail(null);
     try{
       await callInbox({action:"archive",messageId:id});
-      setMessages(prev=>prev.filter(m=>m.id!==id));
-      if(detail&&detail.id===id)setDetail(null);
       notify("הועבר לארכיון","#0891B2");
-    }catch(e){notify("שגיאה: "+(e.message||String(e)),"#DC2626");}
+    }catch(e){
+      if(prevMsg)setMessages(prev=>[prevMsg,...prev]);
+      notify("שגיאה: "+(e.message||String(e)),"#DC2626");
+    }
   };
-  const snoozeMsg=async(id,until)=>{
+  const snoozeMsg=async(id,until,note)=>{
     const m=detail||messages.find(x=>x.id===id);
+    const prevMsg=messages.find(x=>x.id===id);
+    setSnoozeMenuId(null);
+    setSnoozeCustom(null);
+    setMessages(prev=>prev.filter(x=>x.id!==id));
+    if(detail&&detail.id===id)setDetail(null);
     try{
-      await callInbox({action:"snooze",messageId:id,threadId:m?.threadId||"",snooze_until:until});
-      setMessages(prev=>prev.filter(x=>x.id!==id));
-      if(detail&&detail.id===id)setDetail(null);
+      await callInbox({action:"snooze",messageId:id,threadId:m?.threadId||"",snooze_until:until,note:note||""});
       loadSnoozed();
       notify("⏰ יוחזר לתיבה ב-"+new Date(until).toLocaleString("he-IL"),"#0891B2");
-    }catch(e){notify("שגיאה: "+(e.message||String(e)),"#DC2626");}
+    }catch(e){
+      if(prevMsg)setMessages(prev=>[prevMsg,...prev]);
+      notify("שגיאה: "+(e.message||String(e)),"#DC2626");
+    }
   };
   const setHandled=async(id,handled,extra)=>{
-    const rows=await callClass({action:handled?"mark_handled":"mark_unhandled",message_id:id,...extra||{}});
-    if(rows.length)mergeClass(rows);
-    else mergeClass([{message_id:id,handled}]);
+    const prev=classMap[id];
+    mergeClass([{message_id:id,...prev,handled:handled===true}]);
+    try{
+      const rows=await callClass({action:handled?"mark_handled":"mark_unhandled",message_id:id,...extra||{}});
+      if(rows.length)mergeClass(rows);
+      else if(handled)notify("✓ סומן כטופל","#16A34A");
+    }catch(e){
+      if(prev)mergeClass([prev]);else mergeClass([{message_id:id,handled:!handled}]);
+      notify("שגיאה: "+(e.message||String(e)),"#DC2626");
+    }
   };
   const tagLongPress=(id)=>{
     const t=setTimeout(()=>{setHandled(id,true,{reason:"manual"});notify("✓ סומן כטופל","#16A34A");},600);
@@ -18235,6 +18366,10 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     }
     setOrderBusy(false);
   };
+  const openComposeNew=()=>{
+    setDetail(null);
+    setCompose({mode:"new",to:"",cc:"",subject:"",bodyHtml:"<p><br></p>"+sigHtml,attachments:[],replyMessageId:null,inReplyTo:"",references:"",threadId:""});
+  };
   const openCompose=(mode)=>{
     if(!detail)return;
     const me=status.email||"";
@@ -18252,8 +18387,32 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
       subject=subject.startsWith("Fwd:")?subject:"Fwd: "+subject;
       bodyHtml="<p><br></p><blockquote style=\"border-right:3px solid #DBE4E9;margin:0;padding-right:12px;color:#69808F\">"+(detail.text||detail.snippet||"")+"</blockquote>";
     }
-    const sig=emailSig?("<br><br>--<br>"+emailSig.replace(/\n/g,"<br>")):"";
-    setCompose({mode,to:to.join(", "),cc:cc.join(", "),subject,bodyHtml:bodyHtml+sig,attachments:[],replyMessageId:detail.id,inReplyTo:detail.messageIdHeader||"",references:detail.references||detail.messageIdHeader||"",threadId:detail.threadId||""});
+    setCompose({mode,to:to.join(", "),cc:cc.join(", "),subject,bodyHtml:bodyHtml+sigHtml,attachments:[],replyMessageId:detail.id,inReplyTo:detail.messageIdHeader||"",references:detail.references||detail.messageIdHeader||"",threadId:detail.threadId||""});
+  };
+  const pickContact=(item)=>{
+    if(!compose)return;
+    const parts=compose.to.split(/[,;]/);
+    parts[parts.length-1]=item.email;
+    setCompose(c=>({...c,to:parts.map(x=>x.trim()).filter(Boolean).join(", ")}));
+  };
+  const filteredAc=useMemo(()=>{
+    if(!compose)return [];
+    const last=(compose.to||"").split(/[,;]/).pop()?.trim().toLowerCase()||"";
+    if(last.length<1)return [];
+    return contactSuggestions.filter(c=>c.email.includes(last)||(c.name||"").toLowerCase().includes(last)).slice(0,8);
+  },[compose,contactSuggestions]);
+  const saveSettings=async()=>{
+    setSigSaving(true);
+    try{
+      const {error}=await supabaseClient.from("users").update({email_signature:sigDraft,gmail_auto_signature:autoSig}).eq("id",uid);
+      if(error)throw error;
+      setEmailSig(sigDraft);
+      setShowSettings(false);
+      notify("ההגדרות נשמרו","#16A34A");
+    }catch(e){
+      notify("שגיאה בשמירה: "+(e.message||String(e)),"#DC2626");
+    }
+    setSigSaving(false);
   };
   const execSend=async()=>{
     if(!confirmSend)return;
@@ -18287,6 +18446,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
         printos_document_type:c.printosType||null,
         printos_document_id:c.printosId||null,
       });
+      if(c.replyMessageId)setHandled(c.replyMessageId,true,{reason:"replied"});
       setCompose(null);
       loadSent();
       notify("המייל נשלח","#16A34A");
@@ -18296,15 +18456,16 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     setBusy(false);
   };
   const shown=messages.filter(m=>{
-    const d=gmailClassDisplay(classMap[m.id]);
-    if(classFilter==="pending"&&d.handled)return false;
+    const row=classMap[m.id];
+    if(classFilter==="pending"&&!gmailIsPending(row))return false;
+    const d=gmailClassDisplay(row);
     if(classFilter!=="all"&&classFilter!=="pending"&&d.id!==classFilter)return false;
     return true;
   });
   const filterCounts=CLASS_FILTERS.reduce((acc,f)=>{
     if(f.id==="all"){acc[f.id]=messages.length;return acc;}
-    if(f.id==="pending"){acc[f.id]=messages.filter(m=>!gmailClassDisplay(classMap[m.id]).handled).length;return acc;}
-    acc[f.id]=messages.filter(m=>gmailClassDisplay(classMap[m.id]).id===f.id&&!gmailClassDisplay(classMap[m.id]).handled).length;
+    if(f.id==="pending"){acc[f.id]=messages.filter(m=>gmailIsPending(classMap[m.id])).length;return acc;}
+    acc[f.id]=messages.filter(m=>{const d=gmailClassDisplay(classMap[m.id]);return d.id===f.id&&gmailIsPending(classMap[m.id]);}).length;
     return acc;
   },{});
   const renderTag=(messageId)=>{
@@ -18331,7 +18492,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   const subTabs=<div className="gmail-pilot-subtabs">
     <button type="button" className={"gmail-pilot-subtab"+(view==="inbox"?" on":"")} onClick={()=>{setView("inbox");setDetail(null);}}>📥 תיבה</button>
     <button type="button" className={"gmail-pilot-subtab"+(view==="sent"?" on":"")} onClick={()=>{setView("sent");setDetail(null);}}>📤 נשלחו</button>
-    <button type="button" className={"gmail-pilot-subtab"+(view==="snoozed"?" on":"")} onClick={()=>{setView("snoozed");setDetail(null);}}>⏰ ממתינים</button>
+    <button type="button" className={"gmail-pilot-subtab"+(view==="snoozed"?" on":"")} onClick={()=>{setView("snoozed");setDetail(null);}}>⏰ דחויים</button>
   </div>;
   const primaryBanner=category==="primary"&&view==="inbox"?<div className={"gmail-pilot-banner-lg"+(primaryUnread?"":" done")}>
     📥 ראשי · {primaryUnread>0?(primaryUnread+" מיילים שלא נקראו"):"✓ עברת על הכל"}
@@ -18339,11 +18500,23 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
   const topBar=<div className="gmail-pilot-top">
     <div className="gmail-pilot-email">📧 {status.email||"Gmail"}</div>
     <div className="gmail-pilot-toolbar">
-      <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){cacheRef.current[cacheKey(category,q)]=null;loadList("");}}} placeholder="חיפוש (from:, has:attachment)"/>
-      <button type="button" className="gmail-pilot-iconbtn" onClick={()=>{cacheRef.current[cacheKey(category,q)]=null;loadList("");loadCounts();}} disabled={busy} title="רענן">↻</button>
+      <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){cacheRef.current[cacheKey(category,buildSearchQ())]=null;loadList("");}}} placeholder="חיפוש (from:, has:attachment)"/>
+      <button type="button" className="gmail-pilot-iconbtn" onClick={()=>{setShowSettings(true);setSigDraft(emailSig||GMAIL_DEFAULT_SIG);}} title="הגדרות">⚙️</button>
+      <button type="button" className="gmail-pilot-iconbtn" onClick={()=>{cacheRef.current[cacheKey(category,buildSearchQ())]=null;loadList("");loadCounts();}} disabled={busy} title="רענן">↻</button>
     </div>
     <button type="button" className="gmail-pilot-disconnect" onClick={disconnect} disabled={busy}>נתק</button>
   </div>;
+  const searchExtras=<>
+    <div className="gmail-pilot-search-hint">טיפ: from:פיצה · has:attachment · after:2026/08/01</div>
+    <div className="gmail-pilot-qfilters">
+      {QUICK_FILTERS.map(f=><button key={f.id} type="button" className={quickFilter===f.q?"on":""} onClick={()=>{
+        const next=quickFilter===f.q?"":f.q;
+        setQuickFilter(next);
+        cacheRef.current[cacheKey(category,[q.trim(),next.trim()].filter(Boolean).join(" "))]=null;
+        setTimeout(()=>loadList(""),0);
+      }}>{f.lb}</button>)}
+    </div>
+  </>;
   const filterRow=<div className="gmail-pilot-filters">
     {CLASS_FILTERS.map(f=>{
       const n=filterCounts[f.id]||0;
@@ -18362,75 +18535,57 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     </Card>
   </div>;
   const cls=detail?gmailClassDisplay(classMap[detail.id]):{id:null,handled:false};
-  const snoozeOpts=()=>{
+  const snoozePresets=()=>{
     const now=new Date();
     const tomorrow=new Date(now);tomorrow.setDate(tomorrow.getDate()+1);tomorrow.setHours(8,0,0,0);
-    const three=new Date(now);three.setDate(three.getDate()+3);three.setHours(8,0,0,0);
-    const week=new Date(now);week.setDate(week.getDate()+7);week.setHours(8,0,0,0);
-    return [{lb:"מחר בבוקר",iso:tomorrow.toISOString()},{lb:"בעוד 3 ימים",iso:three.toISOString()},{lb:"בשבוע הבא",iso:week.toISOString()}];
+    const dayAfter=new Date(now);dayAfter.setDate(dayAfter.getDate()+2);dayAfter.setHours(8,0,0,0);
+    const sunday=gmailNextSundayMorning(now);
+    return [{lb:"מחר בבוקר (08:00)",iso:tomorrow.toISOString()},{lb:"מחרתיים (08:00)",iso:dayAfter.toISOString()},{lb:"בשבוע הבא (יום א' 08:00)",iso:sunday.toISOString()}];
   };
-  if(detail)return<div className="gmail-pilot">
-    {topBar}{subTabs}{catTabs}
-    <button type="button" onClick={()=>{setDetail(null);setCompose(null);}} style={{background:"none",border:"none",color:"#3EA9A4",fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:"0 0 12px"}}>← חזרה לרשימה</button>
-    {detailBusy?<div className="gmail-pilot-list">{[1,2,3].map(i=><div key={i} className="gmail-pilot-skel"/>)}</div>:<div className="gmail-pilot-detail">
-      <h2>{detail.subject}</h2>
-      <div className="gmail-pilot-detail-meta">מאת: {detail.from}</div>
-      {detail.to?<div className="gmail-pilot-detail-meta">אל: {detail.to}</div>:null}
-      <div className="gmail-pilot-detail-meta">{detail.date}</div>
-      <div style={{marginTop:10,position:"relative"}}>{renderTag(detail.id)}{tagMenuEl(detail.id)}</div>
-      <div className="gmail-pilot-actions">
-        <button type="button" className="gmail-pilot-actbtn" onClick={()=>openCompose("reply")}>↩ השב</button>
-        <button type="button" className="gmail-pilot-actbtn" onClick={()=>openCompose("reply_all")}>↩↩ השב לכולם</button>
-        <button type="button" className="gmail-pilot-actbtn" onClick={()=>openCompose("forward")}>➡ העבר</button>
-        <button type="button" className="gmail-pilot-actbtn" onClick={()=>markUnread(detail.id)}>📩 לא נקרא</button>
-        <button type="button" className="gmail-pilot-actbtn" onClick={()=>toggleStar(detail)}>{detail.starred?"☆":"⭐"}</button>
-        <button type="button" className="gmail-pilot-actbtn" onClick={()=>archiveMsg(detail.id)}>📦 ארכוב</button>
-        {snoozeOpts().map(o=><button key={o.iso} type="button" className="gmail-pilot-actbtn" onClick={()=>snoozeMsg(detail.id,o.iso)}>⏰ {o.lb}</button>)}
-        {!cls.handled?<button type="button" className="gmail-pilot-actbtn" onClick={()=>setHandled(detail.id,true,{reason:"manual"})}>✓ סמן כטופל</button>:<button type="button" className="gmail-pilot-actbtn" onClick={()=>setHandled(detail.id,false)}>↺ החזר לטיפול</button>}
-      </div>
-      <div style={{height:1,background:"#EDF2F5",margin:"14px 0"}}/>
-      {detail.html?<iframe title="gmail-body" sandbox="" srcDoc={detail.html}/>:<pre style={{whiteSpace:"pre-wrap",fontFamily:"inherit",fontSize:14,marginTop:14,lineHeight:1.55,padding:16}}>{detail.text||detail.snippet||""}</pre>}
-      {detail.attachments&&detail.attachments.length>0&&<div className="gmail-pilot-att">
-        {detail.attachments.map(att=><button key={att.attachmentId} type="button" className="gmail-pilot-att-card" onClick={()=>downloadAtt(att)}>
-          <span>📄</span>
-          <span style={{flex:1,fontWeight:600,color:"#0E3651"}}>{att.filename}</span>
-          <span style={{color:"#69808F",fontSize:12}}>{gmailFmtSize(att.size)}</span>
-          <span>⬇</span>
-        </button>)}
-      </div>}
-      <div style={{marginTop:16}}>
-        <button type="button" className={"gmail-pilot-order-btn"+(cls.id==="order"&&!cls.handled?" hot":"")} onClick={createFromEmail} disabled={orderBusy}>{orderBusy?"⏳ מצרף קבצים...":"📋 צור הזמנה מהמייל"}</button>
-      </div>
-      {compose&&<div className="gmail-pilot-compose">
-        <label>אל</label><input value={compose.to} onChange={e=>setCompose(c=>({...c,to:e.target.value}))}/>
-        <label style={{marginTop:8}}>עותק</label><input value={compose.cc} onChange={e=>setCompose(c=>({...c,cc:e.target.value}))}/>
-        <label style={{marginTop:8}}>נושא</label><input value={compose.subject} onChange={e=>setCompose(c=>({...c,subject:e.target.value}))}/>
-        <div className="gmail-pilot-toolbar-row">
-          <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:"<p><strong>"+(c.bodyHtml||"")+"</strong></p>"}))}>מודגש</button>
-          <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:c.bodyHtml+" <em>טקסט</em>"}))}>נטוי</button>
-          <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:c.bodyHtml+' <a href="https://">קישור</a>'}))}>קישור</button>
-          <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:c.bodyHtml+"<ul><li>פריט</li></ul>"}))}>רשימה</button>
-          <button type="button" onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.multiple=true;inp.onchange=()=>{const files=[...(compose.attachments||[])];Array.from(inp.files||[]).forEach(f=>files.push({file:f}));setCompose(c=>({...c,attachments:files}));};inp.click();}}>📄 מהמחשב</button>
-          <button type="button" onClick={()=>{
-            const parsed=gmailParseFrom(detail.from);
-            const match=gmailMatchClient(clients,parsed.email,aliasMap);
-            const cid=match.client&&match.client.bina_customer_id;
-            const list=(quotes||[]).filter(q=>!cid||String(q.bina_cust_id)===String(cid)).slice(0,30);
-            const pick=window.prompt("הקלד מספר הצעה:\n"+list.map(q=>q.bina_doc_id+" — "+(q.title||"")).join("\n"));
-            const qo=list.find(q=>String(q.bina_doc_id)===String(pick));
-            if(!qo)return;
-            const doc=hb3BuildPdfDoc({kind:"quote",binaDocId:qo.bina_doc_id,title:qo.title||"",client:match.client||{name:qo.bina_cust_name||""},contactName:qo.contact_person||"",items:[],agent:qo.sales_agent||"",remark:qo.remark||"",paymentTerms:"",dueDate:"",priceMode:"unit"});
-            setCompose(c=>({...c,attachments:[...(c.attachments||[]),{printosDoc:doc}],printosType:"quote",printosId:String(qo.bina_doc_id)}));
-          }}>📋 מסמך מפרינטוס</button>
-        </div>
-        <textarea value={compose.bodyHtml.replace(/<[^>]+>/g,"")} onChange={e=>setCompose(c=>({...c,bodyHtml:"<p>"+e.target.value.replace(/\n/g,"<br>")+"</p>"+(emailSig?"<br><br>--<br>"+emailSig.replace(/\n/g,"<br>"):"")}))}/>
-        {(compose.attachments||[]).length>0&&<div className="gmail-pilot-attlist">{(compose.attachments||[]).map((a,i)=><div key={i} className="gmail-pilot-attpick">📎 {a.file?a.file.name:(a.printosDoc?"מסמך #"+a.printosDoc.binaDocId:"קובץ")}</div>)}</div>}
-        <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
-          <button type="button" className="gmail-pilot-actbtn" onClick={()=>setCompose(null)}>ביטול</button>
-          <button type="button" className="gmail-pilot-actbtn" style={{background:"#62C7C2",color:"#fff",borderColor:"#62C7C2"}} onClick={()=>setConfirmSend(compose)}>שלח</button>
-        </div>
-      </div>}
-    </div>}
+  const openSnoozeCustom=(id)=>{
+    setSnoozeMenuId(null);
+    const min=new Date(Date.now()+3600000);
+    min.setMinutes(min.getMinutes()-min.getTimezoneOffset());
+    setSnoozeCustom({id,until:min.toISOString().slice(0,16),note:""});
+  };
+  const renderSnoozeMenu=(id)=>snoozeMenuId!==id?null:<div className="gmail-pilot-snooze-menu" onClick={e=>e.stopPropagation()}>
+    {snoozePresets().map(o=><button key={o.iso} type="button" onClick={()=>snoozeMsg(id,o.iso)}>{o.lb}</button>)}
+    <button type="button" style={{borderTop:"1px solid #EDF2F5",marginTop:4}} onClick={()=>openSnoozeCustom(id)}>📅 בחר תאריך ושעה...</button>
+  </div>;
+  const renderComposePanel=()=>compose?<div className="gmail-pilot-compose">
+    <label>אל</label>
+    <div className="gmail-pilot-ac-wrap">
+      <input value={compose.to} onChange={e=>setCompose(c=>({...c,to:e.target.value}))}/>
+      {filteredAc.length>0&&<div className="gmail-pilot-ac-list">{filteredAc.map(c=><button key={c.email} type="button" className="gmail-pilot-ac-item" onClick={()=>pickContact(c)}>{c.label}</button>)}</div>}
+    </div>
+    <label style={{marginTop:8}}>עותק</label><input value={compose.cc} onChange={e=>setCompose(c=>({...c,cc:e.target.value}))}/>
+    <label style={{marginTop:8}}>נושא</label><input value={compose.subject} onChange={e=>setCompose(c=>({...c,subject:e.target.value}))}/>
+    <div className="gmail-pilot-toolbar-row">
+      <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:"<p><strong>"+(c.bodyHtml||"")+"</strong></p>"}))}>מודגש</button>
+      <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:c.bodyHtml+" <em>טקסט</em>"}))}>נטוי</button>
+      <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:c.bodyHtml+' <a href="https://">קישור</a>'}))}>קישור</button>
+      <button type="button" onClick={()=>setCompose(c=>({...c,bodyHtml:c.bodyHtml+"<ul><li>פריט</li></ul>"}))}>רשימה</button>
+      <button type="button" onClick={()=>{const inp=document.createElement("input");inp.type="file";inp.multiple=true;inp.onchange=()=>{const files=[...(compose.attachments||[])];Array.from(inp.files||[]).forEach(f=>files.push({file:f}));setCompose(c=>({...c,attachments:files}));};inp.click();}}>📄 מהמחשב</button>
+      {detail&&<button type="button" onClick={()=>{
+        const parsed=gmailParseFrom(detail.from);
+        const match=gmailMatchClient(clients,parsed.email,aliasMap);
+        const cid=match.client&&match.client.bina_customer_id;
+        const list=(quotes||[]).filter(q=>!cid||String(q.bina_cust_id)===String(cid)).slice(0,30);
+        const pick=window.prompt("הקלד מספר הצעה:\n"+list.map(q=>q.bina_doc_id+" — "+(q.title||"")).join("\n"));
+        const qo=list.find(q=>String(q.bina_doc_id)===String(pick));
+        if(!qo)return;
+        const doc=hb3BuildPdfDoc({kind:"quote",binaDocId:qo.bina_doc_id,title:qo.title||"",client:match.client||{name:qo.bina_cust_name||""},contactName:qo.contact_person||"",items:[],agent:qo.sales_agent||"",remark:qo.remark||"",paymentTerms:"",dueDate:"",priceMode:"unit"});
+        setCompose(c=>({...c,attachments:[...(c.attachments||[]),{printosDoc:doc}],printosType:"quote",printosId:String(qo.bina_doc_id)}));
+      }}>📋 מסמך מפרינטוס</button>}
+    </div>
+    <textarea value={compose.bodyHtml.replace(/<[^>]+>/g,"")} onChange={e=>setCompose(c=>({...c,bodyHtml:"<p>"+e.target.value.replace(/\n/g,"<br>")+"</p>"+sigHtml}))}/>
+    {(compose.attachments||[]).length>0&&<div className="gmail-pilot-attlist">{(compose.attachments||[]).map((a,i)=><div key={i} className="gmail-pilot-attpick">📎 {a.file?a.file.name:(a.printosDoc?"מסמך #"+a.printosDoc.binaDocId:"קובץ")}</div>)}</div>}
+    <div style={{display:"flex",gap:8,marginTop:12,justifyContent:"flex-end"}}>
+      <button type="button" className="gmail-pilot-actbtn" onClick={()=>setCompose(null)}>ביטול</button>
+      <button type="button" className="gmail-pilot-actbtn" style={{background:"#62C7C2",color:"#fff",borderColor:"#62C7C2"}} onClick={()=>setConfirmSend(compose)}>שלח</button>
+    </div>
+  </div>:null;
+  const renderModals=()=><>
     {confirmSend&&<Modal open={true} onClose={()=>setConfirmSend(null)} title="אישור שליחה" maxWidth={520}>
       <div style={{fontSize:13,lineHeight:1.7}}>
         <div><strong>אל:</strong> <span dir="ltr">{confirmSend.to}</span></div>
@@ -18444,6 +18599,84 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
         <button type="button" onClick={execSend} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"#0E3651",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>שלח עכשיו</button>
       </div>
     </Modal>}
+    {showSettings&&<Modal open={true} onClose={()=>setShowSettings(false)} title="⚙️ הגדרות מייל" maxWidth={480}>
+      <div className="gmail-pilot-settings">
+        <label style={{display:"block",fontWeight:700,marginBottom:6}}>חתימה</label>
+        <textarea className="gmail-pilot-settings" value={sigDraft} onChange={e=>setSigDraft(e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid #DBE4E9",fontFamily:"inherit",fontSize:13,boxSizing:"border-box"}}/>
+        <label style={{display:"flex",alignItems:"center",gap:8,marginTop:12,fontSize:13,cursor:"pointer"}}>
+          <input type="checkbox" checked={autoSig} onChange={e=>setAutoSig(e.target.checked)}/> הוסף חתימה אוטומטית
+        </label>
+        <div style={{display:"flex",gap:8,marginTop:16,justifyContent:"flex-end"}}>
+          <button type="button" onClick={()=>setShowSettings(false)} style={{padding:"10px 16px",borderRadius:8,border:"1px solid #DBE4E9",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+          <button type="button" onClick={saveSettings} disabled={sigSaving} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"#62C7C2",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{sigSaving?"שומר...":"שמור"}</button>
+        </div>
+      </div>
+    </Modal>}
+    {snoozeCustom&&<Modal open={true} onClose={()=>setSnoozeCustom(null)} title="⏰ דחה לטיפול" maxWidth={400}>
+      <label style={{display:"block",fontSize:12,color:"#69808F",marginBottom:4}}>תאריך ושעה</label>
+      <input type="datetime-local" value={snoozeCustom.until} min={new Date(Date.now()+3600000).toISOString().slice(0,16)} onChange={e=>setSnoozeCustom(s=>({...s,until:e.target.value}))} style={{width:"100%",padding:8,borderRadius:8,border:"1px solid #DBE4E9",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      <label style={{display:"block",fontSize:12,color:"#69808F",marginTop:12,marginBottom:4}}>הערה (אופציונלי)</label>
+      <input value={snoozeCustom.note} onChange={e=>setSnoozeCustom(s=>({...s,note:e.target.value}))} placeholder="למה דחית?" style={{width:"100%",padding:8,borderRadius:8,border:"1px solid #DBE4E9",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      <div style={{display:"flex",gap:8,marginTop:16,justifyContent:"flex-end"}}>
+        <button type="button" onClick={()=>setSnoozeCustom(null)} style={{padding:"10px 16px",borderRadius:8,border:"1px solid #DBE4E9",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+        <button type="button" onClick={()=>{const iso=new Date(snoozeCustom.until).toISOString();if(Date.parse(iso)<=Date.now()+3600000){notify("יש לבחור לפחות שעה מעכשיו","#DC2626");return;}snoozeMsg(snoozeCustom.id,iso,snoozeCustom.note);}} style={{padding:"10px 16px",borderRadius:8,border:"none",background:"#62C7C2",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>דחה</button>
+      </div>
+    </Modal>}
+    {rowMenu&&<Modal open={true} onClose={()=>setRowMenu(null)} title="פעולות" maxWidth={320}>
+      {(()=>{const m=messages.find(x=>x.id===rowMenu);if(!m)return null;return<div className="gmail-pilot-menu" style={{position:"static",boxShadow:"none",border:"none"}}>
+        <button type="button" onClick={()=>{toggleStar(m);setRowMenu(null);}}>{m.starred?"☆ הסר כוכב":"⭐ כוכב"}</button>
+        <button type="button" onClick={()=>{m.unread?markRead(m.id):markUnread(m.id);setRowMenu(null);}}>{m.unread?"📩 סמן כנקרא":"📩 לא נקרא"}</button>
+        <button type="button" onClick={()=>{setRowMenu(null);openSnoozeCustom(m.id);}}>⏰ דחה...</button>
+        <button type="button" onClick={()=>{archiveMsg(m.id);setRowMenu(null);}}>📥 ארכוב</button>
+        <button type="button" onClick={()=>{setHandled(m.id,true,{reason:"manual"});setRowMenu(null);}}>✓ סמן כטופל</button>
+      </div>;})()}
+    </Modal>}
+  </>;
+  const iframeH=detail?gmailEstimateIframeHeight(detail.text,detail.html,detailFullscreen):500;
+  if(detail)return<div className={"gmail-pilot"+(detailFullscreen?" gmail-pilot-fullscreen":"")}>
+    {topBar}{searchExtras}{subTabs}{catTabs}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <button type="button" onClick={()=>{setDetail(null);setCompose(null);setDetailFullscreen(false);}} style={{background:"none",border:"none",color:"#3EA9A4",fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:0}}>← חזרה לרשימה</button>
+      <button type="button" className="gmail-pilot-actbtn" onClick={()=>setDetailFullscreen(f=>!f)} title="מסך מלא">⛶</button>
+    </div>
+    {detailBusy?<div className="gmail-pilot-list">{[1,2,3].map(i=><div key={i} className="gmail-pilot-skel"/>)}</div>:<div className="gmail-pilot-detail-wrap">
+      <div className="gmail-pilot-detail gmail-pilot-detail-scroll">
+        <h2>{detail.subject}</h2>
+        <div className="gmail-pilot-detail-meta">מאת: {detail.from}</div>
+        {detail.to?<div className="gmail-pilot-detail-meta">אל: {detail.to}</div>:null}
+        <div className="gmail-pilot-detail-meta">{detail.date}</div>
+        <div style={{marginTop:10,position:"relative"}}>{renderTag(detail.id)}{tagMenuEl(detail.id)}</div>
+        {detail.html?<iframe title="gmail-body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={gmailWrapHtml(detail.html)} style={{height:iframeH+"px"}}/>:<pre style={{whiteSpace:"pre-wrap",fontFamily:"inherit",fontSize:14,marginTop:14,lineHeight:1.55,padding:16,minHeight:500}}>{detail.text||detail.snippet||""}</pre>}
+        {detail.attachments&&detail.attachments.length>0&&<div className="gmail-pilot-att">
+          {detail.attachments.map(att=><button key={att.attachmentId} type="button" className="gmail-pilot-att-card" onClick={()=>downloadAtt(att)}>
+            <span>📄</span>
+            <span style={{flex:1,fontWeight:600,color:"#0E3651"}}>{att.filename}</span>
+            <span style={{color:"#69808F",fontSize:12}}>{gmailFmtSize(att.size)}</span>
+            <span>⬇</span>
+          </button>)}
+        </div>}
+        <div style={{marginTop:16}}>
+          <button type="button" className={"gmail-pilot-order-btn"+(cls.id==="order"&&!cls.handled?" hot":"")} onClick={createFromEmail} disabled={orderBusy}>{orderBusy?"⏳ מצרף קבצים...":"📋 צור הזמנה מהמייל"}</button>
+        </div>
+        {renderComposePanel()}
+      </div>
+      <div className="gmail-pilot-detail-sticky">
+        <div className="gmail-pilot-actions">
+          <button type="button" className="gmail-pilot-actbtn" onClick={()=>openCompose("reply")}>↩ השב</button>
+          <button type="button" className="gmail-pilot-actbtn" onClick={()=>openCompose("reply_all")}>↩↩ השב לכולם</button>
+          <button type="button" className="gmail-pilot-actbtn" onClick={()=>openCompose("forward")}>➡ העבר</button>
+          <button type="button" className="gmail-pilot-actbtn" onClick={()=>detail.unread?markRead(detail.id):markUnread(detail.id)}>{detail.unread?"📩 סמן כנקרא":"📩 לא נקרא"}</button>
+          <button type="button" className="gmail-pilot-actbtn" onClick={()=>toggleStar(detail)}>{detail.starred?"☆":"⭐"}</button>
+          <button type="button" className="gmail-pilot-actbtn" onClick={()=>archiveMsg(detail.id)}>📥 ארכוב</button>
+          <span style={{position:"relative",display:"inline-block"}}>
+            <button type="button" className="gmail-pilot-actbtn" onClick={()=>setSnoozeMenuId(snoozeMenuId===detail.id?null:detail.id)}>⏰ דחה</button>
+            {renderSnoozeMenu(detail.id)}
+          </span>
+          {!cls.handled?<button type="button" className="gmail-pilot-actbtn" onClick={()=>setHandled(detail.id,true,{reason:"manual"})}>✓ סמן כטופל</button>:<button type="button" className="gmail-pilot-actbtn" onClick={()=>setHandled(detail.id,false)}>↺ החזר לטיפול</button>}
+        </div>
+      </div>
+    </div>}
+    {renderModals()}
     {attachPick&&<Modal open={true} onClose={()=>setAttachPick(null)} title="איזה קבצים לצרף?" maxWidth={480}>
       <div className="gmail-pilot-attlist">
         {attachPick.atts.map(att=>{
@@ -18464,12 +18697,28 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
     </Modal>}
   </div>;
   return<div className="gmail-pilot">
-    {topBar}{subTabs}
-    {view==="inbox"&&<>{primaryBanner}{catTabs}{filterRow}
+    {topBar}{searchExtras}{subTabs}
+    {compose&&!detail&&renderComposePanel()}
+    {view==="inbox"&&<>{primaryBanner}
+    <button type="button" className="gmail-pilot-newbtn" onClick={openComposeNew}>✏️ מייל חדש</button>
+    {catTabs}{filterRow}
     {busy&&messages.length===0?<div className="gmail-pilot-list">{[1,2,3,4,5,6].map(i=><div key={i} className="gmail-pilot-skel"/>)}</div>:<div className="gmail-pilot-list">
       {shown.map(m=>{
         const parsed=gmailParseFrom(m.from);
-        return<button key={m.id} type="button" className={"gmail-pilot-row"+(m.unread?"":" read")} onClick={()=>openMsg(m.id)}>
+        return<button key={m.id} type="button" className={"gmail-pilot-row"+(m.unread?"":" read")} onClick={()=>openMsg(m.id)}
+          onTouchStart={()=>{rowPressRef.current=setTimeout(()=>setRowMenu(m.id),500);}}
+          onTouchEnd={()=>{clearTimeout(rowPressRef.current);}}
+          onTouchMove={()=>{clearTimeout(rowPressRef.current);}}>
+          <div className="gmail-pilot-row-actions">
+            <button type="button" className="gmail-pilot-row-act" title="כוכב" onClick={()=>toggleStar(m)}>{m.starred?"⭐":"☆"}</button>
+            <button type="button" className="gmail-pilot-row-act" title="נקרא/לא נקרא" onClick={()=>m.unread?markRead(m.id):markUnread(m.id)}>{m.unread?"📩":"📬"}</button>
+            <span style={{position:"relative"}}>
+              <button type="button" className="gmail-pilot-row-act" title="דחה" onClick={()=>setSnoozeMenuId(snoozeMenuId===m.id?null:m.id)}>⏰</button>
+              {renderSnoozeMenu(m.id)}
+            </span>
+            <button type="button" className="gmail-pilot-row-act" title="ארכוב" onClick={()=>archiveMsg(m.id)}>📥</button>
+            <button type="button" className="gmail-pilot-row-act" title="טופל" onClick={()=>setHandled(m.id,true,{reason:"manual"})}>✓</button>
+          </div>
           <div className="gmail-pilot-row-top">
             <span className="gmail-pilot-star" onClick={e=>{e.stopPropagation();toggleStar(m);}}>{m.starred?"⭐":"☆"}</span>
             {m.unread?<span className="gmail-pilot-dot"/>:<span style={{width:8,flexShrink:0}}/>}
@@ -18482,7 +18731,7 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
           <div className="gmail-pilot-snip">{m.snippet}</div>
         </button>;
       })}
-      {!shown.length&&!busy&&<div style={{padding:40,textAlign:"center",color:"#69808F"}}>אין מיילים בטאב הזה</div>}
+      {!shown.length&&!busy&&<div style={{padding:40,textAlign:"center",color:"#69808F"}}>{classFilter==="pending"?"אין מיילים ממתינים":"אין מיילים בטאב הזה"}</div>}
     </div>}
     {nextPage&&<button type="button" onClick={()=>loadList(nextPage)} disabled={busy} style={{marginTop:12,padding:"8px 14px",borderRadius:8,border:"1px solid #DBE4E9",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>עמוד הבא</button>}</>}
     {view==="sent"&&<div className="gmail-pilot-list">
@@ -18497,9 +18746,11 @@ function GmailInboxTab({user,notify,clients,onCreateOrder,quotes,orders}){
       {snoozeRows.map(r=><div key={r.message_id} className="gmail-pilot-sent-row">
         <div style={{fontWeight:600}}>⏰ {r.message_id.slice(0,12)}…</div>
         <div style={{fontSize:12,color:"#69808F",marginTop:4}}>חוזר: {new Date(r.snooze_until).toLocaleString("he-IL")}</div>
+        {r.note?<div style={{fontSize:12,color:"#0E3651",marginTop:4}}>📝 {r.note}</div>:null}
       </div>)}
       {!snoozeRows.length&&<div style={{padding:40,textAlign:"center",color:"#69808F"}}>אין מיילים מושהים</div>}
     </div>}
+    {renderModals()}
   </div>;
 }
 

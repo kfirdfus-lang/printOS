@@ -4,6 +4,7 @@
 import { rejectDisallowedInternalOrigin } from "../_shared/cors.ts";
 import {
   corsHeaders,
+  extractAttachments,
   extractBodies,
   gmailGet,
   getValidAccessToken,
@@ -43,6 +44,13 @@ design_approval — אישור או תיקון עיצוב. הלקוח מגיב
 general — תקשורת עסקית שאינה אף אחד מהנ״ל.
 
 irrelevant — פרסום, ניוזלטר, ספאם, התראות מערכת.
+
+כללי הכרעה:
+- מייל עם קובץ PDF/AI/EPS מלקוח = order, גם בלי מילים מפורשות
+- "כמה עולה" / "מחירון" / "הצעת מחיר" = quote_request
+- מסמך שמופנה אל נטלי עם סכום = supplier_invoice
+- "מאשר" / "תיקון קטן" / "אפשר להדפיס" = design_approval
+- ניוזלטר / קידום מכירות / התראת מערכת = irrelevant
 
 כללים:
 1. החזר JSON בלבד. בלי טקסט לפני או אחרי, בלי markdown.
@@ -154,17 +162,22 @@ async function handleClassify(
 async function classifyOne(
   sb: ReturnType<typeof serviceClient>,
   accessToken: string,
-  msg: { id?: string; threadId?: string; from?: string; subject?: string; snippet?: string; body?: string },
+  msg: { id?: string; threadId?: string; from?: string; subject?: string; snippet?: string; body?: string; attachmentNames?: string[] },
 ) {
   const id = String(msg.id || "").trim();
   if (!id) return null;
-  let bodyText = String(msg.body || msg.snippet || "").slice(0, 1500);
-  if (accessToken && bodyText.length < 200) {
+  let bodyText = String(msg.body || msg.snippet || "").slice(0, 3000);
+  let attachmentNames = Array.isArray(msg.attachmentNames) ? msg.attachmentNames.filter(Boolean) : [];
+  if (accessToken && (bodyText.length < 200 || !attachmentNames.length)) {
     try {
       const full = await gmailGet(accessToken, `users/me/messages/${encodeURIComponent(id)}?format=full`);
       if (full.ok) {
-        const extracted = extractBodies((full.data as { payload?: Parameters<typeof extractBodies>[0] }).payload);
-        bodyText = (extracted.text || extracted.html.replace(/<[^>]+>/g, " ") || bodyText).slice(0, 1500);
+        const payload = (full.data as { payload?: Parameters<typeof extractBodies>[0] }).payload;
+        const extracted = extractBodies(payload);
+        bodyText = (extracted.text || extracted.html.replace(/<[^>]+>/g, " ") || bodyText).slice(0, 3000);
+        if (!attachmentNames.length) {
+          attachmentNames = extractAttachments(payload).map((a) => a.filename).filter(Boolean);
+        }
       }
     } catch {
       // keep snippet
@@ -180,7 +193,7 @@ async function classifyOne(
   };
   let parsed = fallback;
   try {
-    parsed = await callClaude(msg.from || "", msg.subject || "", bodyText) || fallback;
+    parsed = await callClaude(msg.from || "", msg.subject || "", bodyText, attachmentNames) || fallback;
   } catch {
     parsed = fallback;
   }
@@ -227,7 +240,16 @@ async function handleHandled(
   const { data, error } = await sb.from("gmail_classifications").update(patch).eq("message_id", messageId)
     .select(CLASS_FIELDS).maybeSingle();
   if (error) return json({ error: error.message }, 500);
-  return json({ row: data });
+  if (data) return json({ row: data });
+  const { data: inserted, error: insErr } = await sb.from("gmail_classifications").upsert({
+    message_id: messageId,
+    category: "general",
+    confidence: 0,
+    classified_at: new Date().toISOString(),
+    ...patch,
+  }, { onConflict: "message_id" }).select(CLASS_FIELDS).maybeSingle();
+  if (insErr) return json({ error: insErr.message }, 500);
+  return json({ row: inserted });
 }
 
 async function handleSaveAlias(sb: ReturnType<typeof serviceClient>, body: Record<string, unknown>) {
@@ -256,9 +278,10 @@ function clampConf(v: unknown): number {
   return Math.max(0, Math.min(1, Math.round(n * 100) / 100));
 }
 
-async function callClaude(from: string, subject: string, body: string) {
+async function callClaude(from: string, subject: string, body: string, attachmentNames: string[] = []) {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) return null;
+  const attLine = attachmentNames.length ? `\nAttachments: ${attachmentNames.join(", ")}` : "";
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -272,7 +295,7 @@ async function callClaude(from: string, subject: string, body: string) {
       system: SYSTEM_PROMPT,
       messages: [{
         role: "user",
-        content: `From: ${from}\nSubject: ${subject}\n\n${body}`,
+        content: `From: ${from}\nSubject: ${subject}${attLine}\n\n${body}`,
       }],
     }),
   });

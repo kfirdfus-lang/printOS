@@ -8116,6 +8116,7 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
   const [err,setErr]=useState(null);
   const [viewRow,setViewRow]=useState(null);
   const reqId=useRef(0);
+  const isQuotes=kind==="quotes";
 
   useEffect(()=>{
     const t=setTimeout(()=>{setDebouncedQ(q.trim());setPage(0);},300);
@@ -8123,22 +8124,35 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
   },[q]);
 
   useEffect(()=>{
-    if(kind!=="orders"){setRows([]);setTotal(0);setLoading(false);setErr(null);return;}
     const id=++reqId.current;
     setLoading(true);setErr(null);
     const minN=amountMin===""?null:Number(amountMin);
     const maxN=amountMax===""?null:Number(amountMax);
-    supabaseClient.rpc("search_order_history",{
-      p_q:debouncedQ||null,
-      p_from:dateFrom||null,
-      p_to:dateTo||null,
-      p_department:department||null,
-      p_amount_min:(minN!=null&&!Number.isNaN(minN))?minN:null,
-      p_amount_max:(maxN!=null&&!Number.isNaN(maxN))?maxN:null,
-      p_sort:sort,
-      p_limit:PAGE,
-      p_offset:page*PAGE,
-    }).then(({data,error})=>{
+    const amountMinArg=(minN!=null&&!Number.isNaN(minN))?minN:null;
+    const amountMaxArg=(maxN!=null&&!Number.isNaN(maxN))?maxN:null;
+    const req=isQuotes
+      ? supabaseClient.rpc("search_quote_history",{
+          p_q:debouncedQ||null,
+          p_from:dateFrom||null,
+          p_to:dateTo||null,
+          p_amount_min:amountMinArg,
+          p_amount_max:amountMaxArg,
+          p_sort:sort,
+          p_limit:PAGE,
+          p_offset:page*PAGE,
+        })
+      : supabaseClient.rpc("search_order_history",{
+          p_q:debouncedQ||null,
+          p_from:dateFrom||null,
+          p_to:dateTo||null,
+          p_department:department||null,
+          p_amount_min:amountMinArg,
+          p_amount_max:amountMaxArg,
+          p_sort:sort,
+          p_limit:PAGE,
+          p_offset:page*PAGE,
+        });
+    req.then(({data,error})=>{
       if(id!==reqId.current)return;
       if(error){setErr(error.message||String(error));setRows([]);setTotal(0);}
       else{
@@ -8151,7 +8165,7 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
       if(id!==reqId.current)return;
       setErr(e.message||String(e));setRows([]);setTotal(0);setLoading(false);
     });
-  },[kind,debouncedQ,dateFrom,dateTo,department,amountMin,amountMax,sort,page]);
+  },[kind,debouncedQ,dateFrom,dateTo,department,amountMin,amountMax,sort,page,isQuotes]);
 
   const fmtMoney=n=>{
     if(n==null||n==="")return "—";
@@ -8163,7 +8177,14 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
     if(!d)return "—";
     try{return new Date(String(d).length<=10?d+"T12:00:00":d).toLocaleDateString("he-IL");}catch{return String(d);}
   };
-  const orderAmount=r=>r.total_inc_vat!=null?r.total_inc_vat:r.total_amount;
+  const rowDocId=r=>isQuotes?r.bina_doc_id:r.bina_order_id;
+  const rowClient=r=>isQuotes?(r.bina_cust_name||"—"):(r.client_name||"—");
+  const rowDate=r=>isQuotes?(r.bina_doc_date||r.sent_at||r.created_at):(r.bina_order_date||r.created_at);
+  const rowContact=r=>isQuotes?(r.contact_person||""):(r.contact||"");
+  const rowAmount=r=>{
+    if(isQuotes)return r.total_amount!=null?r.total_amount:(r.total!=null?r.total:r.subtotal);
+    return r.total_inc_vat!=null?r.total_inc_vat:r.total_amount;
+  };
   const itemPreview=r=>{
     const items=Array.isArray(r.items)?r.items:[];
     if(!items.length)return "אין פריטים";
@@ -8174,58 +8195,75 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
     return desc+qty+more;
   };
   const itemDeptLabel=r=>{
+    if(isQuotes)return "";
     const items=Array.isArray(r.items)?r.items:[];
     const depts=[...new Set(items.map(it=>it.department).filter(Boolean))];
     return depts.length?depts.join(", "):"";
   };
 
-  const mapArchiveItems=items=>(items||[]).slice().sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
+  const mapOrderItems=items=>(items||[]).slice().sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
     const code=it.bina_item_code?String(it.bina_item_code):"";
     const fromCode=code?(HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===code)||null):null;
     const fromDept=it.department?(HB3_DEPT_FALLBACK.find(x=>x.name===it.department)||null):null;
-    const deptName=it.department||(fromCode?fromCode.name:"");
-    const binaItemCode=code||(fromDept?fromDept.bina_item_code:"");
     return {
       description:it.description||"",
       quantity:it.quantity,
       unitPrice:it.price,
       discount:0,
-      binaItemCode,
-      deptName,
+      binaItemCode:code||(fromDept?fromDept.bina_item_code:""),
+      deptName:it.department||(fromCode?fromCode.name:""),
+      lineTotal:it.total,
+    };
+  });
+  const mapQuoteItems=items=>(items||[]).slice().sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
+    const code=it.item_name?String(it.item_name).trim():"";
+    const fromCode=code?(HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===code)||null):null;
+    return {
+      description:it.description||"",
+      quantity:it.quantity,
+      unitPrice:it.unit_price,
+      discount:it.discount_pct!=null?it.discount_pct:0,
+      binaItemCode:fromCode?fromCode.bina_item_code:"",
+      deptName:fromCode?fromCode.name:"",
       lineTotal:it.total,
     };
   });
 
   const duplicateRow=r=>{
     const list=Array.isArray(clients)?clients:[];
-    const client=list.find(c=>String(c.bina_customer_id)===String(r.bina_cust_id))||null;
-    const sourceCreatedAt=r.bina_order_date||r.created_at;
+    const custId=r.bina_cust_id;
+    const client=list.find(c=>String(c.bina_customer_id)===String(custId))||null;
+    const clientName=isQuotes?r.bina_cust_name:r.client_name;
+    const items=isQuotes?mapQuoteItems(r.items):mapOrderItems(r.items);
+    const sourceCreatedAt=isQuotes?(r.bina_doc_date||r.sent_at||r.created_at):(r.bina_order_date||r.created_at);
     onDuplicateOrder?.({
       mode:"order",
       skipFileRequired:true,
-      duplicatedFromOrderId:r.bina_order_id,
+      duplicatedFromOrderId:rowDocId(r),
       sourceCreatedAt,
       title:r.title||"",
       agent:r.sales_agent||"",
-      contactName:r.contact||"",
-      client:client||(r.client_name?{name:r.client_name,bina_customer_id:r.bina_cust_id}:null),
-      bina_cust_id:r.bina_cust_id,
+      contactName:rowContact(r),
+      client:client||(clientName?{name:clientName,bina_customer_id:custId}:null),
+      bina_cust_id:custId,
       remark:"",
-      items:mapArchiveItems(r.items),
+      items,
       paymentTerms:client?hb3ClientTerms(client):"",
     });
   };
 
   const printRow=r=>{
     const list=Array.isArray(clients)?clients:[];
-    const client=list.find(c=>String(c.bina_customer_id)===String(r.bina_cust_id))||{name:r.client_name||""};
-    const items=mapArchiveItems(r.items);
+    const custId=r.bina_cust_id;
+    const clientName=isQuotes?r.bina_cust_name:r.client_name;
+    const client=list.find(c=>String(c.bina_customer_id)===String(custId))||{name:clientName||""};
+    const items=isQuotes?mapQuoteItems(r.items):mapOrderItems(r.items);
     window.openDocumentPDF&&window.openDocumentPDF(hb3BuildPdfDoc({
-      kind:"order",
-      binaDocId:r.bina_order_id,
+      kind:isQuotes?"quote":"order",
+      binaDocId:rowDocId(r),
       title:r.title,
       client,
-      contactName:r.contact||"",
+      contactName:rowContact(r),
       items,
       agent:r.sales_agent||"",
       remark:"",
@@ -8239,112 +8277,112 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
   const pageSafe=Math.min(page,pages-1);
   const btnBase={padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,minHeight:40};
   const inpBase={height:40,padding:"0 10px",borderRadius:8,border:"1px solid #DBE4E9",fontFamily:"inherit",fontSize:13,background:"#fff",color:"#0E3651"};
+  const docLabel=isQuotes?"הצעה":"הזמנה";
 
   return <div style={{direction:"rtl",maxWidth:1100}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
       <h1 style={{fontSize:22,fontWeight:900,margin:0,color:"#0E3651"}}>📚 היסטוריה</h1>
       <div style={{display:"flex",gap:6}}>
-        <button type="button" onClick={()=>{setKind("orders");setPage(0);}} style={{...btnBase,background:kind==="orders"?"#0E3651":"#fff",color:kind==="orders"?"#fff":"#0E3651",borderColor:kind==="orders"?"#0E3651":"var(--border)"}}>הזמנות</button>
-        <button type="button" onClick={()=>{setKind("quotes");setPage(0);}} style={{...btnBase,background:kind==="quotes"?"#0E3651":"#fff",color:kind==="quotes"?"#fff":"#0E3651",borderColor:kind==="quotes"?"#0E3651":"var(--border)"}}>הצעות</button>
+        <button type="button" onClick={()=>{setKind("orders");setPage(0);setRows([]);setErr(null);}} style={{...btnBase,background:kind==="orders"?"#0E3651":"#fff",color:kind==="orders"?"#fff":"#0E3651",borderColor:kind==="orders"?"#0E3651":"var(--border)"}}>הזמנות</button>
+        <button type="button" onClick={()=>{setKind("quotes");setPage(0);setRows([]);setErr(null);}} style={{...btnBase,background:kind==="quotes"?"#0E3651":"#fff",color:kind==="quotes"?"#fff":"#0E3651",borderColor:kind==="quotes"?"#0E3651":"var(--border)"}}>הצעות</button>
       </div>
     </div>
 
-    {kind==="quotes"?
-      <div style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,padding:28,color:"#69808F",lineHeight:1.6}}>
-        היסטוריית הצעות מחיר מבינה (<code>docType -14</code>) עדיין לא נמשכה. כרגע רק הזמנות ארכיון זמינות.
-      </div>
-    :<>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
-        <input
-          value={q}
-          onChange={e=>setQ(e.target.value)}
-          placeholder="חיפוש: לקוח / מספר הזמנה / תיאור פריט"
-          style={{...inpBase,flex:"1 1 280px",minWidth:220}}
-        />
-        <input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPage(0);}} title="מתאריך" style={inpBase}/>
-        <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(0);}} title="עד תאריך" style={inpBase}/>
-        <select value={department} onChange={e=>{setDepartment(e.target.value);setPage(0);}} style={{...inpBase,minWidth:160}}>
-          <option value="">כל המחלקות</option>
-          {HB3_DEPT_FALLBACK.map(d=><option key={d.name} value={d.name}>{d.name}</option>)}
-        </select>
-        <input type="number" inputMode="decimal" placeholder="סכום מ־" value={amountMin} onChange={e=>{setAmountMin(e.target.value);setPage(0);}} style={{...inpBase,width:110}}/>
-        <input type="number" inputMode="decimal" placeholder="סכום עד" value={amountMax} onChange={e=>{setAmountMax(e.target.value);setPage(0);}} style={{...inpBase,width:110}}/>
-        <select value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}} style={{...inpBase,minWidth:140}}>
-          <option value="date_desc">תאריך ↓</option>
-          <option value="date_asc">תאריך ↑</option>
-          <option value="amount_desc">סכום ↓</option>
-          <option value="amount_asc">סכום ↑</option>
-          <option value="client_asc">שם לקוח</option>
-        </select>
-      </div>
-      <div style={{fontSize:13,color:"#69808F",marginBottom:10,fontWeight:600}}>
-        {loading?"טוען...":(total.toLocaleString("he-IL")+" תוצאות")}
-        {department?<span style={{marginInlineStart:8,fontWeight:500,color:"#9AA8B2"}}>· מסנן מחלקה רק על פריטים עם מחלקה ידועה</span>:null}
-      </div>
-      {err&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#B91C1C",borderRadius:10,padding:12,marginBottom:12}}>{err}</div>}
-      {loading&&!rows.length?<div style={{padding:48,textAlign:"center",color:"#69808F"}}><Spinner sz={28}/> טוען היסטוריה...</div>:
-      <div style={{display:"grid",gap:8}}>
-        {rows.map(r=>{
-          const deptLbl=itemDeptLabel(r);
-          return <div key={r.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
-            <div style={{minWidth:0}}>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
-                <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{fmtDate(r.bina_order_date||r.created_at)}</span>
-                <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{r.client_name||"—"}</span>
-                {!r.is_archive&&<span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px",lineHeight:1.4}}>פעילה</span>}
-              </div>
-              <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
-                הזמנה {r.bina_order_id!=null?"#"+r.bina_order_id:"—"}
-                {r.title?(" · "+r.title):""}
-              </div>
-              <div style={{fontSize:14,color:"#0E3651",marginTop:6,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>{itemPreview(r)}</div>
-              <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
-                {fmtMoney(orderAmount(r))}
-                {deptLbl?(" · "+deptLbl):""}
-                {r.sales_agent?(" · "+r.sales_agent):""}
-              </div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+      <input
+        value={q}
+        onChange={e=>setQ(e.target.value)}
+        placeholder={isQuotes?"חיפוש: לקוח / מספר הצעה / תיאור פריט":"חיפוש: לקוח / מספר הזמנה / תיאור פריט"}
+        style={{...inpBase,flex:"1 1 280px",minWidth:220}}
+      />
+      <input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPage(0);}} title="מתאריך" style={inpBase}/>
+      <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(0);}} title="עד תאריך" style={inpBase}/>
+      {!isQuotes&&<select value={department} onChange={e=>{setDepartment(e.target.value);setPage(0);}} style={{...inpBase,minWidth:160}}>
+        <option value="">כל המחלקות</option>
+        {HB3_DEPT_FALLBACK.map(d=><option key={d.name} value={d.name}>{d.name}</option>)}
+      </select>}
+      <input type="number" inputMode="decimal" placeholder="סכום מ־" value={amountMin} onChange={e=>{setAmountMin(e.target.value);setPage(0);}} style={{...inpBase,width:110}}/>
+      <input type="number" inputMode="decimal" placeholder="סכום עד" value={amountMax} onChange={e=>{setAmountMax(e.target.value);setPage(0);}} style={{...inpBase,width:110}}/>
+      <select value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}} style={{...inpBase,minWidth:140}}>
+        <option value="date_desc">תאריך ↓</option>
+        <option value="date_asc">תאריך ↑</option>
+        <option value="amount_desc">סכום ↓</option>
+        <option value="amount_asc">סכום ↑</option>
+        <option value="client_asc">שם לקוח</option>
+      </select>
+    </div>
+    <div style={{fontSize:13,color:"#69808F",marginBottom:10,fontWeight:600}}>
+      {loading?"טוען...":(total.toLocaleString("he-IL")+" תוצאות")}
+      {!isQuotes&&department?<span style={{marginInlineStart:8,fontWeight:500,color:"#9AA8B2"}}>· מסנן מחלקה רק על פריטים עם מחלקה ידועה</span>:null}
+    </div>
+    {err&&<div style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#B91C1C",borderRadius:10,padding:12,marginBottom:12}}>{err}</div>}
+    {loading&&!rows.length?<div style={{padding:48,textAlign:"center",color:"#69808F"}}><Spinner sz={28}/> טוען היסטוריה...</div>:
+    <div style={{display:"grid",gap:8}}>
+      {rows.map(r=>{
+        const deptLbl=itemDeptLabel(r);
+        return <div key={r.id} style={{background:"#fff",border:"1px solid var(--border)",borderRadius:12,padding:"12px 14px",display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"start"}}>
+          <div style={{minWidth:0}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+              <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{fmtDate(rowDate(r))}</span>
+              <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{rowClient(r)}</span>
+              {!r.is_archive&&<span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px",lineHeight:1.4}}>פעילה</span>}
             </div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-              <button type="button" title="צפייה" onClick={()=>setViewRow(r)} style={btnBase}>👁</button>
-              <button type="button" title="שכפל" onClick={()=>duplicateRow(r)} style={{...btnBase,borderColor:"#BFE6E3",background:"#EDF8F7",color:"#0E3651"}}>📋 שכפל</button>
-              <button type="button" title="PDF" onClick={()=>printRow(r)} style={btnBase}>📄 PDF</button>
+            <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
+              {docLabel} {rowDocId(r)!=null?"#"+rowDocId(r):"—"}
+              {r.title?(" · "+r.title):""}
             </div>
-          </div>;
-        })}
-        {!loading&&!rows.length&&!err&&<div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>אין תוצאות תואמות</div>}
-      </div>}
+            <div style={{fontSize:14,color:"#0E3651",marginTop:6,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>{itemPreview(r)}</div>
+            <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
+              {fmtMoney(rowAmount(r))}
+              {deptLbl?(" · "+deptLbl):""}
+              {r.sales_agent?(" · "+r.sales_agent):""}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            <button type="button" title="צפייה" onClick={()=>setViewRow(r)} style={btnBase}>👁</button>
+            <button type="button" title="שכפל להזמנה" onClick={()=>duplicateRow(r)} style={{...btnBase,borderColor:"#BFE6E3",background:"#EDF8F7",color:"#0E3651"}}>📋 שכפל</button>
+            <button type="button" title="PDF" onClick={()=>printRow(r)} style={btnBase}>📄 PDF</button>
+          </div>
+        </div>;
+      })}
+      {!loading&&!rows.length&&!err&&<div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>אין תוצאות תואמות</div>}
+    </div>}
 
-      {total>PAGE&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginTop:16,flexWrap:"wrap"}}>
-        <button type="button" disabled={pageSafe<=0||loading} onClick={()=>setPage(p=>Math.max(0,p-1))} style={{...btnBase,opacity:pageSafe<=0?0.45:1}}>הקודם</button>
-        <span style={{fontSize:13,fontWeight:700,color:"#0E3651"}}>עמוד {pageSafe+1} מתוך {pages}</span>
-        <button type="button" disabled={pageSafe>=pages-1||loading} onClick={()=>setPage(p=>p+1)} style={{...btnBase,opacity:pageSafe>=pages-1?0.45:1}}>הבא</button>
-      </div>}
-    </>}
+    {total>PAGE&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:10,marginTop:16,flexWrap:"wrap"}}>
+      <button type="button" disabled={pageSafe<=0||loading} onClick={()=>setPage(p=>Math.max(0,p-1))} style={{...btnBase,opacity:pageSafe<=0?0.45:1}}>הקודם</button>
+      <span style={{fontSize:13,fontWeight:700,color:"#0E3651"}}>עמוד {pageSafe+1} מתוך {pages}</span>
+      <button type="button" disabled={pageSafe>=pages-1||loading} onClick={()=>setPage(p=>p+1)} style={{...btnBase,opacity:pageSafe>=pages-1?0.45:1}}>הבא</button>
+    </div>}
 
-    {viewRow&&<Modal open={true} onClose={()=>setViewRow(null)} title={"הזמנה #"+(viewRow.bina_order_id||"—")} maxWidth={640}>
+    {viewRow&&<Modal open={true} onClose={()=>setViewRow(null)} title={docLabel+" #"+(rowDocId(viewRow)||"—")} maxWidth={640}>
       <div style={{fontSize:14,lineHeight:1.7,color:"#0E3651"}}>
         {!viewRow.is_archive&&<div style={{marginBottom:10}}><span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px"}}>פעילה</span></div>}
-        <div><strong>לקוח:</strong> {viewRow.client_name||"—"}</div>
-        <div><strong>תאריך:</strong> {fmtDate(viewRow.bina_order_date||viewRow.created_at)}</div>
+        <div><strong>לקוח:</strong> {rowClient(viewRow)}</div>
+        <div><strong>תאריך:</strong> {fmtDate(rowDate(viewRow))}</div>
         <div><strong>כותרת:</strong> {viewRow.title||"—"}</div>
         <div><strong>סוכן:</strong> {viewRow.sales_agent||"—"}</div>
-        <div><strong>איש קשר:</strong> {viewRow.contact||"—"}</div>
-        <div><strong>סטטוס בינה:</strong> {viewRow.bina_order_status||"—"}</div>
-        <div><strong>סכום:</strong> {fmtMoney(viewRow.total_amount)} · <strong>כולל מע״מ:</strong> {fmtMoney(viewRow.total_inc_vat)}</div>
-        {viewRow.discount_amount!=null&&Number(viewRow.discount_amount)!==0&&<div><strong>הנחה:</strong> {fmtMoney(viewRow.discount_amount)}</div>}
+        <div><strong>איש קשר:</strong> {rowContact(viewRow)||"—"}</div>
+        {isQuotes
+          ?<div><strong>סטטוס:</strong> {viewRow.status||viewRow.quote_status||"—"}</div>
+          :<div><strong>סטטוס בינה:</strong> {viewRow.bina_order_status||"—"}</div>}
+        {isQuotes
+          ?<div><strong>סכום:</strong> {fmtMoney(viewRow.subtotal)} · <strong>מע״מ:</strong> {fmtMoney(viewRow.vat_amount)} · <strong>כולל:</strong> {fmtMoney(rowAmount(viewRow))}</div>
+          :<div><strong>סכום:</strong> {fmtMoney(viewRow.total_amount)} · <strong>כולל מע״מ:</strong> {fmtMoney(viewRow.total_inc_vat)}</div>}
+        {!isQuotes&&viewRow.discount_amount!=null&&Number(viewRow.discount_amount)!==0&&<div><strong>הנחה:</strong> {fmtMoney(viewRow.discount_amount)}</div>}
         <div style={{marginTop:14,fontWeight:800}}>פריטים ({(viewRow.items||[]).length})</div>
         <div style={{display:"grid",gap:8,marginTop:8}}>
-          {(viewRow.items||[]).length? (viewRow.items||[]).map((it,i)=>
-            <div key={it.id||i} style={{border:"1px solid #EDF2F5",borderRadius:10,padding:"10px 12px",background:"#FAFCFD"}}>
+          {(viewRow.items||[]).length? (viewRow.items||[]).map((it,i)=>{
+            const unit=isQuotes?it.unit_price:it.price;
+            return <div key={it.id||i} style={{border:"1px solid #EDF2F5",borderRadius:10,padding:"10px 12px",background:"#FAFCFD"}}>
               <div style={{fontWeight:700}}>{it.description||"—"}</div>
               <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
                 {it.quantity!=null?(Number(it.quantity)+" יח׳"):""}
-                {it.price!=null?(" · "+fmtMoney(it.price)):""}
+                {unit!=null?(" · "+fmtMoney(unit)):""}
                 {it.total!=null?(" · סה״כ "+fmtMoney(it.total)):""}
-                {it.department?(" · "+it.department):""}
+                {!isQuotes&&it.department?(" · "+it.department):""}
               </div>
-            </div>
-          ):<div style={{color:"#94a3b8"}}>אין פריטים</div>}
+            </div>;
+          }):<div style={{color:"#94a3b8"}}>אין פריטים</div>}
         </div>
         <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
           <button type="button" onClick={()=>{duplicateRow(viewRow);setViewRow(null);}} style={{...btnBase,borderColor:"#BFE6E3",background:"#EDF8F7"}}>📋 שכפל</button>

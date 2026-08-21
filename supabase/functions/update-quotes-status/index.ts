@@ -5,6 +5,7 @@
 // 3. מסמן הצעות "פגות תוקף" (30+ ימים)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { rejectDisallowedInternalOrigin } from '../_shared/cors.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +43,9 @@ function similarAmount(a: number | null | undefined, b: number | null | undefine
 }
 
 Deno.serve(async (req) => {
+  const originBlock = rejectDisallowedInternalOrigin(req);
+  if (originBlock) return originBlock;
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -64,6 +68,7 @@ Deno.serve(async (req) => {
     const { data: activeQuotes, error: quotesErr } = await supabase
       .from('quotes')
       .select('id, bina_doc_id, bina_cust_id, bina_cust_name, total_amount, auto_status, created_at')
+      .eq('is_archive', false)
       .in('auto_status', ['ממתינה', 'תקועה']);
 
     if (quotesErr) {

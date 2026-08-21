@@ -35,6 +35,7 @@ serve(async (req) => {
         "id,title,bina_doc_id,bina_cust_name,sent_at,created_at,follow_up_sent_at,quote_status",
       )
       .eq("quote_status", "sent")
+      .eq("is_archive", false)
       .is("follow_up_sent_at", null);
 
     if (error) throw error;

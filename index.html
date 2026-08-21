@@ -8367,7 +8367,7 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
     setLoading(true);
     try{
       const[{data,error},{data:ords,error:oErr}]=await Promise.all([
-        supabaseClient.from("quotes").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status").order("sent_at",{ascending:true,nullsFirst:false}),
+        supabaseClient.from("quotes").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status").eq("is_archive",false).order("sent_at",{ascending:true,nullsFirst:false}),
         supabaseClient.from("orders").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,created_at,remark,order_items(id,description,quantity,unit_price,discount_pct,bina_item_code,price_entry_mode,line_total,line_number)").order("created_at",{ascending:false}).limit(250),
       ]);
       if(error)throw error;
@@ -16861,7 +16861,7 @@ function GlobalSearch({onClose,onNavigate}){
           supabaseClient.from("clients").select("id,name,contact_name,phone,email,bina_customer_id").limit(2000),
           supabaseClient.from("tasks").select("id,title,client_name,assignee,dept,status").eq("is_archive",false).is("archived_at",null).limit(2000),
           supabaseClient.from("orders").select("id,bina_doc_id,title,bina_cust_name,task_id").limit(1000),
-          supabaseClient.from("quotes").select("id,bina_doc_id,title,bina_cust_name").limit(1000),
+          supabaseClient.from("quotes").select("id,bina_doc_id,title,bina_cust_name").eq("is_archive",false).limit(1000),
           supabaseClient.from("delivery_notes").select("id,delivery_number,customer_name,customer_address,customer_phone,task_id").limit(1000),
           supabaseClient.from("alut_orders").select("id,order_number,company_name,contact_name").limit(1000),
         ]);
@@ -19277,7 +19277,7 @@ function App(){
       await archiveStaleCompleted();
       const isA=cu.role==="admin";
       const tp="tasks?is_archive=eq.false&archived_at=is.null&order=created_at.desc";
-      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status,tasks!inner(id)&tasks.is_archive=eq.false&tasks.archived_at=is.null&order=created_at.desc")]);
+      const [t,c,q,ds,ti]=await Promise.all([sb(tp),sb("clients?select=id,name,bina_customer_id,payment_terms,contact_name,phone,email,address,collection_email_primary,collection_email_secondary,orders_email_primary,orders_email_secondary,delivery_contact_name,delivery_contact_phone,delivery_email,delivery_notes&order=name.asc"),isA?sb("quotes?is_archive=eq.false&order=created_at.desc&limit=500"):Promise.resolve([]),isA?sb("debt_snapshots?order=snapshot_date.desc,doc_balance.desc&limit=1000"):Promise.resolve(null),sb("task_items?select=id,task_id,bina_order_id,line_number,bina_item_code,department,description,quantity,price,total,status,tasks!inner(id)&tasks.is_archive=eq.false&tasks.archived_at=is.null&order=created_at.desc")]);
       setTasks(t);setClients(c);
       if(isA){
         setQuotes(Array.isArray(q)?q:[]);
@@ -19296,7 +19296,7 @@ function App(){
   const reloadQuotes=async()=>{
     const cu=user;if(!cu||cu.role!=="admin")return;
     try{
-      const q=await sb("quotes?order=created_at.desc&limit=500");
+      const q=await sb("quotes?is_archive=eq.false&order=created_at.desc&limit=500");
       setQuotes(Array.isArray(q)?q:[]);
     }catch(e){setQuotes([]);}
   };

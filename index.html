@@ -7775,11 +7775,18 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       quantity:qty,
       unit_price:unitPrice,
       discount_pct:Number(it.discount)||0,
-      price_entry_mode:priceMode,
       bina_item_code:it.binaItemCode||null,
-      line_total:lineTotal,
     };
-    if(kindId==="quote")row.item_name=String(it.binaItemCode||("LINE-"+(idx+1)));
+    if(kindId==="quote"){
+      // quote_items canonical amount column is `total` (not line_total)
+      row.item_name=String(it.binaItemCode||("LINE-"+(idx+1)));
+      row.total=lineTotal;
+      if(it.deptName)row.department=it.deptName;
+    }else{
+      // order_items uses line_total + price_entry_mode
+      row.price_entry_mode=priceMode;
+      row.line_total=lineTotal;
+    }
     return row;
   });
 
@@ -8473,8 +8480,8 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
       unitPrice:it.unit_price,
       discount:it.discount_pct,
       binaItemCode:it.bina_item_code||it.item_name||"",
-      deptName:d?d.name:"",
-      lineTotal:it.line_total!=null?it.line_total:null,
+      deptName:it.department||(d?d.name:""),
+      lineTotal:it.total!=null?it.total:(it.line_total!=null?it.line_total:null),
     };
   });
 
@@ -8958,15 +8965,21 @@ function CreateQuoteModal({open,onClose,onSuccess,clients,sb}){
       if(!quoteResult?.id)throw new Error("שגיאה ביצירת הצעה ב-DB");
       const quoteId=quoteResult.id;
 
-      const itemsToInsert=items.map((it,idx)=>({
-        quote_id:quoteId,
-        item_name:`LINE-${idx+1}`,
-        description:it.description||`פריט ${idx+1}`,
-        quantity:Number(it.quantity)||1,
-        unit_price:Number(it.unitPrice)||0,
-        discount_pct:Number(it.discount)||0,
-        line_number:idx+1,
-      }));
+      const itemsToInsert=items.map((it,idx)=>{
+        const qty=Number(it.quantity)||1;
+        const unit=Number(it.unitPrice)||0;
+        const disc=Number(it.discount)||0;
+        return {
+          quote_id:quoteId,
+          item_name:`LINE-${idx+1}`,
+          description:it.description||`פריט ${idx+1}`,
+          quantity:qty,
+          unit_price:unit,
+          discount_pct:disc,
+          line_number:idx+1,
+          total:qty*unit*(1-disc/100),
+        };
+      });
 
       await sb("quote_items",{method:"POST",body:JSON.stringify(itemsToInsert)});
 

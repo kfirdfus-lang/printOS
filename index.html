@@ -8105,6 +8105,497 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   </div>;
 }
 
+function AdminTasksTab({user}){
+  const STATUS_META={
+    open:{label:"פתוח",bg:"#FDF2F8",bar:"#EC4899",tagBg:"#FCE7F3",tagColor:"#9D174D"},
+    in_progress:{label:"בטיפול",bg:"#FFFBEB",bar:"#F59E0B",tagBg:"#FEF3C7",tagColor:"#92400E"},
+    done:{label:"הושלם",bg:"#F0FDF4",bar:"#22C55E",tagBg:"#DCFCE7",tagColor:"#166534"},
+  };
+  const ASSIGNEE_OPTS=[
+    {id:"both",label:"שניהם"},
+    {id:"kfir",label:"כפיר"},
+    {id:"natalie",label:"נטלי"},
+  ];
+  const MONTHS_HE=["","ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+  const emptyForm=()=>({
+    title:"",details:"",assignee:"both",due_date:"",
+    is_recurring:false,recur_type:"monthly",recur_day:1,recur_month:1,recur_days:30,
+  });
+
+  const [tasks,setTasks]=useState([]);
+  const [notesByTask,setNotesByTask]=useState({});
+  const [loading,setLoading]=useState(true);
+  const [q,setQ]=useState("");
+  const [dq,setDq]=useState("");
+  const [assigneeFilter,setAssigneeFilter]=useState("all");
+  const [showDone,setShowDone]=useState(false);
+  const [selectedId,setSelectedId]=useState(null);
+  const [formOpen,setFormOpen]=useState(false);
+  const [formMode,setFormMode]=useState("create");
+  const [form,setForm]=useState(emptyForm());
+  const [saving,setSaving]=useState(false);
+  const [noteText,setNoteText]=useState("");
+  const [flash,setFlash]=useState(null);
+
+  const todayISO=()=>{
+    const d=new Date();
+    const y=d.getFullYear();
+    const m=String(d.getMonth()+1).padStart(2,"0");
+    const day=String(d.getDate()).padStart(2,"0");
+    return y+"-"+m+"-"+day;
+  };
+  const daysDiff=(a,b)=>{
+    if(!a||!b)return 0;
+    return Math.round((new Date(b+"T12:00:00").getTime()-new Date(a+"T12:00:00").getTime())/864e5);
+  };
+  const fmtDate=iso=>{
+    if(!iso)return "";
+    const p=String(iso).slice(0,10).split("-");
+    if(p.length!==3)return String(iso);
+    return p[2]+"/"+p[1]+"/"+p[0];
+  };
+  const fmtDateTime=iso=>{
+    if(!iso)return "";
+    try{return new Date(iso).toLocaleString("he-IL",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});}
+    catch{return String(iso);}
+  };
+  const assigneeLabel=a=>(ASSIGNEE_OPTS.find(x=>x.id===a)||{label:a||"—"}).label;
+  const authorLabel=()=>{
+    const n=String(user?.name||"").trim();
+    if(/^כפיר/.test(n))return "כפיר";
+    if(/^נטלי/.test(n))return "נטלי";
+    return n||"משתמש";
+  };
+  const recurLabel=t=>{
+    if(!t||!t.is_recurring)return "";
+    if(t.recur_type==="monthly")return "חוזרת ב־"+(t.recur_day||1)+" לכל חודש";
+    if(t.recur_type==="yearly")return "חוזרת ב־"+(t.recur_day||1)+" ב"+MONTHS_HE[t.recur_month||1];
+    if(t.recur_type==="custom_days")return "חוזרת כל "+(t.recur_days||1)+" יום";
+    return "חוזרת";
+  };
+  const nextDueFrom=(t,fromDate)=>{
+    const base=fromDate?new Date(fromDate+"T12:00:00"):new Date();
+    if(t.recur_type==="custom_days"){
+      const d=new Date(base);d.setDate(d.getDate()+(Number(t.recur_days)||1));
+      return d.toISOString().slice(0,10);
+    }
+    if(t.recur_type==="yearly"){
+      const month=(Number(t.recur_month)||1)-1;
+      const day=Number(t.recur_day)||1;
+      let y=base.getFullYear();
+      let cand=new Date(y,month,Math.min(day,new Date(y,month+1,0).getDate()),12);
+      if(cand.getTime()<=base.getTime()){
+        y+=1;
+        cand=new Date(y,month,Math.min(day,new Date(y,month+1,0).getDate()),12);
+      }
+      return cand.toISOString().slice(0,10);
+    }
+    // monthly
+    const day=Number(t.recur_day)||1;
+    let y=base.getFullYear();
+    let m=base.getMonth();
+    let cand=new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()),12);
+    if(cand.getTime()<=base.getTime()){
+      m+=1;
+      if(m>11){m=0;y+=1;}
+      cand=new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()),12);
+    }
+    return cand.toISOString().slice(0,10);
+  };
+
+  const load=async()=>{
+    setLoading(true);
+    try{
+      const[{data:tData,error:tErr},{data:nData,error:nErr}]=await Promise.all([
+        supabaseClient.from("admin_tasks").select("*").order("due_date",{ascending:true,nullsFirst:false}),
+        supabaseClient.from("admin_task_notes").select("id,task_id,author,note,created_at").order("created_at",{ascending:false}),
+      ]);
+      if(tErr)throw tErr;
+      if(nErr)console.warn(nErr);
+      setTasks(tData||[]);
+      const map={};
+      (nData||[]).forEach(n=>{
+        if(!map[n.task_id])map[n.task_id]=[];
+        map[n.task_id].push(n);
+      });
+      setNotesByTask(map);
+    }catch(e){
+      console.warn(e);
+      window.alert(e.message||String(e));
+      setTasks([]);
+    }
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+  useEffect(()=>{
+    const t=setTimeout(()=>setDq(q.trim().toLowerCase()),300);
+    return()=>clearTimeout(t);
+  },[q]);
+
+  const filtered=tasks.filter(t=>{
+    if(!showDone&&t.status==="done")return false;
+    if(assigneeFilter==="kfir"&&!(t.assignee==="kfir"||t.assignee==="both"))return false;
+    if(assigneeFilter==="natalie"&&!(t.assignee==="natalie"||t.assignee==="both"))return false;
+    if(dq){
+      const blob=[t.title,t.details||"",...(notesByTask[t.id]||[]).map(n=>n.note||"")].join(" ").toLowerCase();
+      if(!blob.includes(dq))return false;
+    }
+    return true;
+  });
+
+  const today=todayISO();
+  const groups=[
+    {id:"overdue",title:"🔴 באיחור",items:[]},
+    {id:"today",title:"📅 היום",items:[]},
+    {id:"week",title:"📆 השבוע",items:[]},
+    {id:"later",title:"🗓️ בהמשך",items:[]},
+    {id:"none",title:"⚪ ללא תאריך",items:[]},
+  ];
+  filtered.forEach(t=>{
+    if(!t.due_date){groups[4].items.push(t);return;}
+    if(t.status!=="done"&&t.due_date<today){groups[0].items.push(t);return;}
+    if(t.due_date===today){groups[1].items.push(t);return;}
+    const d=daysDiff(today,t.due_date);
+    if(d>=1&&d<=7){groups[2].items.push(t);return;}
+    groups[3].items.push(t);
+  });
+
+  const selected=tasks.find(t=>t.id===selectedId)||null;
+  const selectedNotes=selected?(notesByTask[selected.id]||[]):[];
+
+  const openCreate=()=>{
+    setForm(emptyForm());
+    setFormMode("create");
+    setFormOpen(true);
+  };
+  const openEdit=t=>{
+    setForm({
+      title:t.title||"",
+      details:t.details||"",
+      assignee:t.assignee||"both",
+      due_date:t.due_date||"",
+      is_recurring:!!t.is_recurring,
+      recur_type:t.recur_type||"monthly",
+      recur_day:t.recur_day||1,
+      recur_month:t.recur_month||1,
+      recur_days:t.recur_days||30,
+    });
+    setFormMode("edit");
+    setFormOpen(true);
+  };
+
+  const saveForm=async()=>{
+    if(!form.title.trim()){window.alert("כותרת חובה");return;}
+    setSaving(true);
+    try{
+      const payload={
+        title:form.title.trim(),
+        details:form.details.trim()||null,
+        assignee:form.assignee||"both",
+        due_date:form.due_date||null,
+        is_recurring:!!form.is_recurring,
+        recur_type:form.is_recurring?(form.recur_type||"monthly"):null,
+        recur_day:form.is_recurring&&(form.recur_type==="monthly"||form.recur_type==="yearly")?Number(form.recur_day)||1:null,
+        recur_month:form.is_recurring&&form.recur_type==="yearly"?Number(form.recur_month)||1:null,
+        recur_days:form.is_recurring&&form.recur_type==="custom_days"?Number(form.recur_days)||1:null,
+        updated_at:new Date().toISOString(),
+      };
+      if(formMode==="create"){
+        payload.status="open";
+        payload.created_by=authorLabel();
+        const{error}=await supabaseClient.from("admin_tasks").insert(payload);
+        if(error)throw error;
+      }else{
+        const{error}=await supabaseClient.from("admin_tasks").update(payload).eq("id",selectedId);
+        if(error)throw error;
+      }
+      setFormOpen(false);
+      await load();
+    }catch(e){window.alert(e.message||String(e));}
+    setSaving(false);
+  };
+
+  const setStatus=async(t,status)=>{
+    if(!t||t.status===status)return;
+    try{
+      const patch={status,updated_at:new Date().toISOString()};
+      if(status==="done"){
+        patch.completed_at=new Date().toISOString();
+        patch.completed_by=authorLabel();
+      }else{
+        patch.completed_at=null;
+        patch.completed_by=null;
+      }
+      const{error}=await supabaseClient.from("admin_tasks").update(patch).eq("id",t.id);
+      if(error)throw error;
+
+      let msg=null;
+      if(status==="done"&&t.is_recurring){
+        const nextDue=nextDueFrom(t,todayISO());
+        const child={
+          title:t.title,
+          details:t.details,
+          status:"open",
+          assignee:t.assignee,
+          due_date:nextDue,
+          is_recurring:true,
+          recur_type:t.recur_type,
+          recur_day:t.recur_day,
+          recur_month:t.recur_month,
+          recur_days:t.recur_days,
+          parent_task_id:t.id,
+          created_by:authorLabel(),
+        };
+        const{error:cErr}=await supabaseClient.from("admin_tasks").insert(child);
+        if(cErr)throw cErr;
+        msg="✅ הושלם. נוצרה משימה חדשה ל־"+fmtDate(nextDue);
+      }
+      await load();
+      if(msg){setFlash(msg);window.setTimeout(()=>setFlash(null),5000);}
+    }catch(e){window.alert(e.message||String(e));}
+  };
+
+  const addNote=async()=>{
+    if(!selected||!noteText.trim())return;
+    try{
+      const{error}=await supabaseClient.from("admin_task_notes").insert({
+        task_id:selected.id,
+        author:authorLabel(),
+        note:noteText.trim(),
+      });
+      if(error)throw error;
+      setNoteText("");
+      await load();
+    }catch(e){window.alert(e.message||String(e));}
+  };
+
+  const removeTask=async(t)=>{
+    if(!t)return;
+    if(!window.confirm("למחוק את המשימה?"))return;
+    try{
+      const{error}=await supabaseClient.from("admin_tasks").delete().eq("id",t.id);
+      if(error)throw error;
+      setSelectedId(null);
+      await load();
+    }catch(e){window.alert(e.message||String(e));}
+  };
+
+  const chip=(active,label,onClick)=>(
+    <button type="button" onClick={onClick} style={{padding:"6px 12px",borderRadius:8,border:active?"1px solid #62C7C2":"1px solid #e2e8f0",background:active?"#EDF8F7":"#fff",color:active?"#0E3651":"#64748b",fontWeight:active?700:500,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+  );
+
+  const TaskCard=({t})=>{
+    const meta=STATUS_META[t.status]||STATUS_META.open;
+    const notesCount=(notesByTask[t.id]||[]).length;
+    const overdue=t.status!=="done"&&t.due_date&&t.due_date<today;
+    const overdueDays=overdue?daysDiff(t.due_date,today):0;
+    return(
+      <button type="button" onClick={()=>setSelectedId(t.id)} style={{
+        width:"100%",textAlign:"right",cursor:"pointer",fontFamily:"inherit",
+        display:"block",padding:"12px 14px 12px 12px",marginBottom:8,
+        borderRadius:10,border:"1px solid #e2e8f0",
+        background:meta.bg,opacity:t.status==="done"?0.6:1,
+        borderRight:"4px solid "+meta.bar,
+        boxShadow:"none",
+      }}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"flex-start"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:500,color:"#0E3651",textDecoration:t.status==="done"?"line-through":"none"}}>{t.title}</div>
+            <div style={{marginTop:4,fontSize:12,color:overdue?"#DC2626":"#69808F"}}>
+              {t.due_date?fmtDate(t.due_date):"ללא תאריך"}
+              {overdue?(" · באיחור "+overdueDays+" ימים"):""}
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
+            <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:6,background:"#fff",color:"#0E3651",border:"1px solid #e2e8f0"}}>{assigneeLabel(t.assignee)}</span>
+            <div style={{display:"flex",gap:6,alignItems:"center",fontSize:12,color:"#69808F"}}>
+              {t.is_recurring&&<span title={recurLabel(t)}>🔄</span>}
+              {notesCount>0&&<span>💬 {notesCount}</span>}
+            </div>
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  if(selected){
+    const meta=STATUS_META[selected.status]||STATUS_META.open;
+    const overdue=selected.status!=="done"&&selected.due_date&&selected.due_date<today;
+    const overdueDays=overdue?daysDiff(selected.due_date,today):0;
+    return(
+      <div style={{direction:"rtl",maxWidth:720}}>
+        {flash&&<div style={{marginBottom:12,padding:"10px 14px",background:"#ECFDF5",border:"1px solid #A7F3D0",borderRadius:10,color:"#065F46",fontWeight:600}}>{flash}</div>}
+        <button type="button" onClick={()=>setSelectedId(null)} style={{background:"none",border:"none",color:"#0E3651",cursor:"pointer",fontFamily:"inherit",fontWeight:700,marginBottom:12,padding:0}}>← חזרה</button>
+        <div style={{background:meta.bg,border:"1px solid #e2e8f0",borderRight:"4px solid "+meta.bar,borderRadius:12,padding:18,opacity:selected.status==="done"?0.85:1}}>
+          <div style={{fontSize:22,fontWeight:800,color:"#0E3651",textDecoration:selected.status==="done"?"line-through":"none"}}>{selected.title}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:10,alignItems:"center"}}>
+            <span style={{fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:8,background:meta.tagBg,color:meta.tagColor}}>{meta.label}</span>
+            <span style={{fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:8,background:"#fff",border:"1px solid #e2e8f0",color:"#0E3651"}}>{assigneeLabel(selected.assignee)}</span>
+            <span style={{fontSize:13,color:overdue?"#DC2626":"#69808F"}}>
+              {selected.due_date?fmtDate(selected.due_date):"ללא תאריך"}
+              {overdue?(" · באיחור "+overdueDays+" ימים"):""}
+            </span>
+            {selected.is_recurring&&<span style={{fontSize:12,color:"#69808F"}}>🔄 {recurLabel(selected)}</span>}
+          </div>
+          {selected.details&&<div style={{marginTop:14,fontSize:14,color:"#334155",whiteSpace:"pre-wrap",lineHeight:1.55}}>{selected.details}</div>}
+        </div>
+
+        <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap"}}>
+          {["open","in_progress","done"].map(st=>{
+            const m=STATUS_META[st];
+            const on=selected.status===st;
+            return<button key={st} type="button" onClick={()=>setStatus(selected,st)} style={{
+              padding:"8px 14px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13,
+              border:on?"2px solid "+m.bar:"1px solid #e2e8f0",
+              background:on?m.tagBg:"#fff",color:m.tagColor,
+            }}>{m.label}</button>;
+          })}
+        </div>
+
+        <div style={{marginTop:22}}>
+          <div style={{fontWeight:800,color:"#0E3651",marginBottom:10}}>💬 הערות</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <input value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="הוסף הערה..." style={{flex:1,padding:"10px 12px",borderRadius:10,border:"1px solid #e2e8f0",fontFamily:"inherit",fontSize:14}} onKeyDown={e=>{if(e.key==="Enter")addNote();}}/>
+            <button type="button" onClick={addNote} disabled={!noteText.trim()} style={{padding:"10px 16px",borderRadius:10,border:"none",background:noteText.trim()?"#62C7C2":"#cbd5e1",color:"#0E3651",fontWeight:800,cursor:noteText.trim()?"pointer":"default",fontFamily:"inherit"}}>הוסף</button>
+          </div>
+          {selectedNotes.length===0?<div style={{color:"#94a3b8",fontSize:13}}>אין הערות עדיין</div>:
+            selectedNotes.map(n=>(
+              <div key={n.id} style={{padding:"12px 0",borderBottom:"1px solid #f1f5f9"}}>
+                <div style={{fontSize:12,color:"#69808F",marginBottom:4}}><strong style={{color:"#0E3651"}}>{n.author||"—"}</strong> · {fmtDateTime(n.created_at)}</div>
+                <div style={{fontSize:14,color:"#334155",whiteSpace:"pre-wrap"}}>{n.note}</div>
+              </div>
+            ))
+          }
+        </div>
+
+        <div style={{display:"flex",gap:10,marginTop:24,justifyContent:"flex-start"}}>
+          <button type="button" onClick={()=>openEdit(selected)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>✏️ ערוך</button>
+          <button type="button" onClick={()=>removeTask(selected)} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #fecaca",background:"#FEF2F2",color:"#B91C1C",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🗑️ מחק</button>
+        </div>
+
+        {formOpen&&(
+          <div onClick={()=>!saving&&setFormOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.35)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:14,padding:20,width:"min(480px,100%)",maxHeight:"90vh",overflowY:"auto",direction:"rtl"}}>
+              <div style={{fontWeight:800,fontSize:18,color:"#0E3651",marginBottom:14}}>✏️ עריכת משימה</div>
+              <AdminTaskFormFields form={form} setForm={setForm} ASSIGNEE_OPTS={ASSIGNEE_OPTS} MONTHS_HE={MONTHS_HE}/>
+              <div style={{display:"flex",gap:8,marginTop:16}}>
+                <button type="button" onClick={saveForm} disabled={saving} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#62C7C2",color:"#0E3651",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{saving?"שומר...":"שמור"}</button>
+                <button type="button" onClick={()=>setFormOpen(false)} disabled={saving} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return(
+    <div style={{direction:"rtl",maxWidth:860}}>
+      {flash&&<div style={{marginBottom:12,padding:"10px 14px",background:"#ECFDF5",border:"1px solid #A7F3D0",borderRadius:10,color:"#065F46",fontWeight:600}}>{flash}</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+        <h1 style={{fontSize:22,fontWeight:900,margin:0,color:"#0E3651"}}>📋 מנהלה</h1>
+        <button type="button" onClick={openCreate} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#62C7C2",color:"#0E3651",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ משימה חדשה</button>
+      </div>
+
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:18}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 חיפוש..." style={{flex:"1 1 180px",minWidth:160,padding:"9px 12px",borderRadius:10,border:"1px solid #e2e8f0",fontFamily:"inherit",fontSize:14}}/>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {chip(assigneeFilter==="all","הכל",()=>setAssigneeFilter("all"))}
+          {chip(assigneeFilter==="kfir","כפיר",()=>setAssigneeFilter("kfir"))}
+          {chip(assigneeFilter==="natalie","נטלי",()=>setAssigneeFilter("natalie"))}
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"#475569",cursor:"pointer",userSelect:"none"}}>
+          <input type="checkbox" checked={showDone} onChange={e=>setShowDone(e.target.checked)}/> הצג שהושלמו
+        </label>
+      </div>
+
+      {loading?<div style={{padding:40,textAlign:"center",color:"#69808F"}}><Spinner sz={28}/> טוען...</div>:
+        filtered.length===0?<div style={{padding:32,textAlign:"center",color:"#94a3b8"}}>אין משימות להצגה</div>:
+        groups.filter(g=>g.items.length>0).map(g=>(
+          <div key={g.id} style={{marginBottom:22}}>
+            <div style={{fontWeight:800,color:"#0E3651",marginBottom:8}}>{g.title} ({g.items.length})</div>
+            {g.items.map(t=><TaskCard key={t.id} t={t}/>)}
+          </div>
+        ))
+      }
+
+      {formOpen&&(
+        <div onClick={()=>!saving&&setFormOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.35)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:14,padding:20,width:"min(480px,100%)",maxHeight:"90vh",overflowY:"auto",direction:"rtl"}}>
+            <div style={{fontWeight:800,fontSize:18,color:"#0E3651",marginBottom:14}}>+ משימה חדשה</div>
+            <AdminTaskFormFields form={form} setForm={setForm} ASSIGNEE_OPTS={ASSIGNEE_OPTS} MONTHS_HE={MONTHS_HE}/>
+            <div style={{display:"flex",gap:8,marginTop:16}}>
+              <button type="button" onClick={saveForm} disabled={saving} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#62C7C2",color:"#0E3651",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{saving?"שומר...":"צור משימה"}</button>
+              <button type="button" onClick={()=>setFormOpen(false)} disabled={saving} style={{padding:"10px 16px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminTaskFormFields({form,setForm,ASSIGNEE_OPTS,MONTHS_HE}){
+  const set=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const inp={width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid #e2e8f0",fontFamily:"inherit",fontSize:14,boxSizing:"border-box"};
+  const lab={display:"block",fontSize:12,fontWeight:700,color:"#64748b",marginBottom:5};
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div>
+        <label style={lab}>כותרת *</label>
+        <input value={form.title} onChange={e=>set("title",e.target.value)} style={inp}/>
+      </div>
+      <div>
+        <label style={lab}>פרטים</label>
+        <textarea value={form.details} onChange={e=>set("details",e.target.value)} rows={3} style={{...inp,resize:"vertical"}}/>
+      </div>
+      <div>
+        <label style={lab}>אחראי</label>
+        <select value={form.assignee} onChange={e=>set("assignee",e.target.value)} style={inp}>
+          {ASSIGNEE_OPTS.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={lab}>תאריך יעד</label>
+        <input type="date" value={form.due_date||""} onChange={e=>set("due_date",e.target.value)} style={inp}/>
+      </div>
+      <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,color:"#0E3651",cursor:"pointer"}}>
+        <input type="checkbox" checked={!!form.is_recurring} onChange={e=>set("is_recurring",e.target.checked)}/>
+        🔄 משימה חוזרת
+      </label>
+      {form.is_recurring&&(
+        <div style={{padding:12,background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0",display:"flex",flexDirection:"column",gap:10}}>
+          <select value={form.recur_type} onChange={e=>set("recur_type",e.target.value)} style={inp}>
+            <option value="monthly">חודשי</option>
+            <option value="yearly">שנתי</option>
+            <option value="custom_days">כל X ימים</option>
+          </select>
+          {(form.recur_type==="monthly"||form.recur_type==="yearly")&&(
+            <div>
+              <label style={lab}>יום בחודש (1–31)</label>
+              <input type="number" min={1} max={31} value={form.recur_day||1} onChange={e=>set("recur_day",Number(e.target.value)||1)} style={inp}/>
+            </div>
+          )}
+          {form.recur_type==="yearly"&&(
+            <div>
+              <label style={lab}>חודש</label>
+              <select value={form.recur_month||1} onChange={e=>set("recur_month",Number(e.target.value)||1)} style={inp}>
+                {MONTHS_HE.slice(1).map((name,i)=><option key={name} value={i+1}>{name}</option>)}
+              </select>
+            </div>
+          )}
+          {form.recur_type==="custom_days"&&(
+            <div>
+              <label style={lab}>כל כמה ימים</label>
+              <input type="number" min={1} value={form.recur_days||30} onChange={e=>set("recur_days",Number(e.target.value)||1)} style={inp}/>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OrderHistoryTab({clients,onDuplicateOrder}){
   const PAGE=50;
   const [kind,setKind]=useState("orders");
@@ -19598,6 +20089,7 @@ function App(){
 
 
   const isA=user?.role==="admin";
+  const isAdminTasksUser=/^(כפיר|נטלי)/.test(String(user?.name||"").trim());
   const handleLogout=()=>{
     if(!window.confirm("להתנתק מהמערכת?"))return;
     localStorage.removeItem("printos_session");
@@ -19752,6 +20244,7 @@ function App(){
     {id:"tasks",ic:"☑",lb:"משימות"},
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
+    ...(isAdminTasksUser?[{id:"admin_tasks",ic:"📋",lb:"מנהלה"}]:[]),
     ...(isA?[{id:"gmail",ic:"📧",lb:"מייל"},{id:"work-files",ic:"📎",lb:"קבצי עבודה"},{id:"order-history",ic:"📚",lb:"היסטוריה"},{id:"quotes-lifecycle",ic:"📄",lb:"הצעות מחיר"},{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
@@ -19885,6 +20378,8 @@ function App(){
       {tab==="delivery-notes"&&isA&&<DeliveryNotesDashboard/>}
 
       {tab==="my_day"&&<MyDayScreen user={user} onRefreshAll={refreshAll}/>}
+
+      {tab==="admin_tasks"&&isAdminTasksUser&&<AdminTasksTab user={user}/>}
 
       {tab==="work-files"&&isA&&<WorkFilesAdminTab user={user}/>}
 

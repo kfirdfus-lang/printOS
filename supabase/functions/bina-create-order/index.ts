@@ -117,14 +117,19 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
     throw new Error('binaCustomerId חייב להיות מספר תקין');
   }
 
-  const custOrderRaw = String(req.client.customerOrderId ?? '').trim();
+  // בינה ממלאים "הז' לקוח" מ-requestId כש-custOrderId ריק —
+  // במקום זה שולחים את כותרת העבודה (עד 30 תווים). ערך ידני גובר.
+  const titleRaw = String(req.title ?? '').trim();
+  const docTitle = titleRaw || 'הזמנה חדשה';
+  const custOrderUser = String(req.client.customerOrderId ?? '').trim();
+  const custOrderRaw = custOrderUser || (titleRaw ? titleRaw.slice(0, 30) : '');
 
   const payload: Record<string, unknown> = {
     tokenId: token,
     requestId,
     docType: 15,
     docWithvat: 0,
-    docTitle: req.title || 'הזמנה חדשה',
+    docTitle,
     docStatus: req.status || 'חדשה',
     docRemark: req.remark || '',
     Cust: {

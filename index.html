@@ -9429,7 +9429,7 @@ function PurchaseOrdersTab({user}){
   const todayStr=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
   const emptyForm=()=>({
     id:null,supplier_id:null,supplier_name:"",supplier_contact:"",
-    po_date:todayStr(),expected_date:"",payment_terms:"",notes:"",status:"draft",
+    title:"",po_date:todayStr(),expected_date:"",payment_terms:"",notes:"",status:"draft",
     items:[poEmptyItem()],
   });
 
@@ -9504,15 +9504,11 @@ function PurchaseOrdersTab({user}){
     unit:it.unit||"",
     priceMode:(it.price_entry_mode||it.priceMode)==="total"?"total":"unit",
   }));
-  const poTitle=po=>{
-    const first=(po.items||[])[0];
-    return(first&&first.description)||po.notes||"הזמנת רכש";
-  };
   const openPdf=po=>{
     window.openDocumentPDF&&window.openDocumentPDF(hb3BuildPdfDoc({
       kind:"purchase",
       binaDocId:po.po_number,
-      title:poTitle(po),
+      title:(po.title||"").trim(),
       supplierName:po.supplier_name,
       client:{name:po.supplier_name},
       contactName:po.supplier_contact,
@@ -9535,9 +9531,10 @@ function PurchaseOrdersTab({user}){
     if(qq)list=list.filter(po=>{
       const num=String(po.po_number||"");
       const name=String(po.supplier_name||"").toLowerCase();
+      const title=String(po.title||"").toLowerCase();
       const notes=String(po.notes||"").toLowerCase();
       const itemHit=(po.items||[]).some(it=>String(it.description||"").toLowerCase().includes(qq));
-      return num.includes(qq)||name.includes(qq)||notes.includes(qq)||itemHit;
+      return num.includes(qq)||name.includes(qq)||title.includes(qq)||notes.includes(qq)||itemHit;
     });
     return list;
   },[rows,q,supplierFilter,dateFrom,dateTo,statusFilter]);
@@ -9561,7 +9558,7 @@ function PurchaseOrdersTab({user}){
     setFormErr(null);setShowNewSup(false);setSupSearch("");
     setForm({
       id:po.id,supplier_id:po.supplier_id||null,supplier_name:po.supplier_name||"",supplier_contact:po.supplier_contact||"",
-      po_date:po.po_date||todayStr(),expected_date:po.expected_date||"",payment_terms:po.payment_terms||"",notes:po.notes||"",
+      title:po.title||"",po_date:po.po_date||todayStr(),expected_date:po.expected_date||"",payment_terms:po.payment_terms||"",notes:po.notes||"",
       status:po.status==="sent"?"sent":"draft",
       items:items.length?items.concat([poEmptyItem(items[items.length-1])]):[poEmptyItem()],
       po_number:po.po_number,
@@ -9647,6 +9644,7 @@ function PurchaseOrdersTab({user}){
       supplier_id:form.supplier_id||null,
       supplier_name:form.supplier_name.trim(),
       supplier_contact:(form.supplier_contact||"").trim()||null,
+      title:(form.title||"").trim()||null,
       po_date:form.po_date||todayStr(),
       expected_date:form.expected_date||null,
       status:form.status==="sent"?"sent":"draft",
@@ -9745,6 +9743,7 @@ function PurchaseOrdersTab({user}){
               <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{po.supplier_name||"—"}</span>
               {statusBadge(po.status)}
             </div>
+            {!!(po.title||"").trim()&&<div style={{fontSize:14,fontWeight:700,color:"#0E3651",marginTop:4,overflow:"hidden",textOverflow:"ellipsis"}}>{po.title}</div>}
             <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
               {fmtDate(po.po_date)}
               {po.expected_date?(" · אספקה "+fmtDate(po.expected_date)):""}
@@ -9767,6 +9766,7 @@ function PurchaseOrdersTab({user}){
       <div style={{fontSize:14,lineHeight:1.7,color:"#0E3651"}}>
         <div style={{marginBottom:10}}>{statusBadge(viewRow.status)}</div>
         <div><strong>ספק:</strong> {viewRow.supplier_name||"—"}</div>
+        <div><strong>כותרת:</strong> {viewRow.title||"—"}</div>
         <div><strong>איש קשר:</strong> {viewRow.supplier_contact||"—"}</div>
         <div><strong>תאריך:</strong> {fmtDate(viewRow.po_date)}</div>
         <div><strong>אספקה צפויה:</strong> {fmtDate(viewRow.expected_date)}</div>
@@ -9829,6 +9829,8 @@ function PurchaseOrdersTab({user}){
             </div>
             <div className="hb3-card">
               <div className="hb3-sec">פרטי מסמך</div>
+              <label className="hb3-lab">כותרת</label>
+              <input className="hb3-inp" style={{marginBottom:8}} value={form.title||""} onChange={e=>setForm(prev=>prev?{...prev,title:e.target.value}:prev)} placeholder="אופציונלי — למשל נייר כרומו"/>
               <label className="hb3-lab">תאריך</label>
               <input className="hb3-inp" type="date" style={{marginBottom:8}} value={form.po_date} onChange={e=>setForm(prev=>prev?{...prev,po_date:e.target.value}:prev)}/>
               <label className="hb3-lab">אספקה צפויה</label>

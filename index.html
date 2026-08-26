@@ -6851,11 +6851,227 @@ function ClientAddressesList({clientId}){
   </div>;
 }
 
-function ClientDeliveryEditModal({client,user,onClose,onSaved}){
+const CUSTOMER_INSIGHTS_ACCURACY_NOTE="ℹ️ הנתונים מבוססים על הזמנות מבינה. חשבוניות, זיכויים והנחות שבוצעו לאחר מכן אינם כלולים. לדוחות כספיים — בינה.";
+
+function customerInsightsFmtMoney(n){
+  const v=Number(n);
+  if(!Number.isFinite(v))return "—";
+  return "₪"+v.toLocaleString("he-IL",{maximumFractionDigits:0});
+}
+function customerInsightsFmtDate(iso){
+  if(!iso)return "—";
+  const s=String(iso).slice(0,10);
+  const p=s.split("-");
+  if(p.length!==3)return s;
+  return p[2]+"/"+p[1]+"/"+p[0];
+}
+function customerInsightsFmtMonth(ym){
+  if(!ym||String(ym).length<7)return ym||"";
+  const[y,m]=String(ym).split("-");
+  const names=["","ינו","פבר","מרץ","אפר","מאי","יונ","יול","אוג","ספט","אוק","נוב","דצמ"];
+  return (names[Number(m)]||m)+" "+String(y).slice(2);
+}
+function customerInsightsDaysColor(days){
+  if(days==null||!Number.isFinite(Number(days)))return "#69808F";
+  const d=Number(days);
+  if(d<=30)return "#69808F";
+  if(d<=89)return "#EA580C";
+  return "#DC2626";
+}
+
+function CustomerHistoryPanel({clientName,binaCustId,onDuplicateOrder}){
+  const [stats,setStats]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [err,setErr]=useState(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    setLoading(true);setErr(null);
+    const args={p_client_name:clientName||null};
+    if(binaCustId!=null&&String(binaCustId).trim()!==""){
+      const n=Number(binaCustId);
+      if(Number.isFinite(n))args.p_bina_cust_id=n;
+    }
+    supabaseClient.rpc("get_customer_stats",args).then(({data,error})=>{
+      if(cancelled)return;
+      if(error){setErr(error.message||String(error));setStats(null);}
+      else{
+        const payload=typeof data==="string"?(()=>{try{return JSON.parse(data);}catch{return null;}})():data;
+        setStats(payload&&typeof payload==="object"?payload:null);
+      }
+      setLoading(false);
+    }).catch(e=>{
+      if(cancelled)return;
+      setErr(e.message||String(e));setStats(null);setLoading(false);
+    });
+    return()=>{cancelled=true;};
+  },[clientName,binaCustId]);
+
+  if(loading)return<div style={{padding:36,textAlign:"center",color:"#69808F"}}><Spinner sz={28}/> טוען היסטוריה...</div>;
+  if(err)return<div style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#B91C1C",borderRadius:10,padding:12}}>{err}</div>;
+  if(!stats||!stats.total_orders){
+    return<div style={{padding:28,textAlign:"center",color:"#94a3b8"}}>
+      <div style={{fontSize:28,marginBottom:8}}>📊</div>
+      <div>אין הזמנות מבינה ללקוח זה</div>
+      <div style={{fontSize:12,marginTop:10,color:"#69808F",lineHeight:1.5}}>{CUSTOMER_INSIGHTS_ACCURACY_NOTE}</div>
+    </div>;
+  }
+
+  const depts=Array.isArray(stats.departments)?stats.departments:[];
+  const deptTotal=depts.reduce((s,d)=>s+Number(d.amount||0),0)||1;
+  const orderedDeptNames=new Set(depts.map(d=>d.department));
+  const neverOrdered=HB3_DEPT_FALLBACK.map(d=>d.name).filter(n=>!orderedDeptNames.has(n));
+  const monthly=Array.isArray(stats.monthly)?stats.monthly:[];
+  const maxMonthAmt=Math.max(1,...monthly.map(m=>Number(m.amount||0)));
+  const topItems=Array.isArray(stats.top_items)?stats.top_items:[];
+  const recent=Array.isArray(stats.recent_orders)?stats.recent_orders:[];
+  const days=stats.days_since_last;
+  const daysColor=customerInsightsDaysColor(days);
+
+  const duplicateOrder=o=>{
+    if(!onDuplicateOrder)return;
+    const items=(o.items||[]).map(it=>{
+      const d=HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===String(it.bina_item_code||""))||null;
+      return {
+        description:it.description||"",
+        quantity:it.quantity,
+        unitPrice:it.price,
+        discount:0,
+        binaItemCode:it.bina_item_code||"",
+        deptName:it.department||(d?d.name:""),
+        lineTotal:it.total,
+      };
+    });
+    onDuplicateOrder({
+      mode:"order",
+      skipFileRequired:true,
+      duplicatedFromOrderId:o.bina_order_id,
+      sourceCreatedAt:o.order_date,
+      title:o.title||"",
+      agent:o.sales_agent||"",
+      items,
+    });
+  };
+
+  const kpiBox=(label,value)=>(
+    <div style={{flex:"1 1 100px",minWidth:100,background:"#F8FAFC",borderRadius:12,padding:"12px 10px",textAlign:"center",border:"1px solid #EDF2F5"}}>
+      <div style={{fontSize:20,fontWeight:900,color:"#0E3651"}}>{value}</div>
+      <div style={{fontSize:12,color:"#69808F",marginTop:4,fontWeight:600}}>{label}</div>
+    </div>
+  );
+
+  return(
+    <div style={{direction:"rtl",display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"10px 12px",fontSize:12,color:"#92400E",lineHeight:1.55}}>
+        {CUSTOMER_INSIGHTS_ACCURACY_NOTE}
+      </div>
+
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {kpiBox("הזמנות",Number(stats.total_orders).toLocaleString("he-IL"))}
+        {kpiBox("סה״כ",customerInsightsFmtMoney(stats.total_amount))}
+        {kpiBox("ממוצע",customerInsightsFmtMoney(stats.avg_order))}
+      </div>
+
+      <div style={{fontSize:13,color:"#0E3651",lineHeight:1.7}}>
+        <div>
+          הזמנה אחרונה: <strong>{customerInsightsFmtDate(stats.last_order_date)}</strong>
+          {days!=null&&<> · <span style={{color:daysColor,fontWeight:800}}>לפני {days} ימים</span></>}
+        </div>
+        <div style={{color:"#69808F"}}>
+          לקוח מאז: {stats.first_order_date?customerInsightsFmtDate(stats.first_order_date).slice(3):"—"}
+          {stats.avg_days_between!=null&&<> · מזמין כל ~{stats.avg_days_between} יום</>}
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontWeight:800,color:"#0E3651",marginBottom:10}}>📈 רכישות לפי חודש</div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:6,height:120,padding:"0 2px"}}>
+          {monthly.map(m=>{
+            const amt=Number(m.amount||0);
+            const h=amt>0?Math.max(6,Math.round((amt/maxMonthAmt)*100)):2;
+            return(
+              <div key={m.month} title={customerInsightsFmtMonth(m.month)+": "+customerInsightsFmtMoney(amt)+" · "+(m.orders||0)+" הזמנות"} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:0}}>
+                <div style={{width:"100%",maxWidth:28,height:h,borderRadius:"6px 6px 2px 2px",background:amt>0?"#62C7C2":"#E8EEF2"}}/>
+                <div style={{fontSize:9,color:"#69808F",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{customerInsightsFmtMonth(m.month)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontWeight:800,color:"#0E3651",marginBottom:10}}>🎯 פילוח לפי מחלקה</div>
+        {depts.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>אין פריטים עם מחלקה ידועה</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {depts.map(d=>{
+              const pct=Math.round((Number(d.amount||0)/deptTotal)*100);
+              const color=DEPT_COLORS[d.department]||"#62C7C2";
+              return(
+                <div key={d.department}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:13,marginBottom:4}}>
+                    <span style={{fontWeight:700,color:"#0E3651"}}>{d.department}</span>
+                    <span style={{color:"#69808F",fontWeight:600}}>{pct}% · {customerInsightsFmtMoney(d.amount)}</span>
+                  </div>
+                  <div style={{height:8,background:"#EDF2F5",borderRadius:6,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:pct+"%",background:color,borderRadius:6}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        }
+        {neverOrdered.length>0&&(
+          <div style={{marginTop:10,fontSize:13,color:"#94a3b8"}}>
+            ⚪ לא הזמין: {neverOrdered.join(" · ")}
+          </div>
+        )}
+      </div>
+
+      {topItems.length>0&&(
+        <div>
+          <div style={{fontWeight:800,color:"#0E3651",marginBottom:10}}>🔁 מה הוא מזמין הכי הרבה</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {topItems.slice(0,10).map((it,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13,padding:"8px 10px",background:"#F8FAFC",borderRadius:8,border:"1px solid #EDF2F5"}}>
+                <span style={{fontWeight:600,color:"#0E3651",overflow:"hidden",textOverflow:"ellipsis"}}>{it.description}</span>
+                <span style={{color:"#69808F",flexShrink:0}}>{it.times} פעמים · {Number(it.total_qty).toLocaleString("he-IL")} יח׳</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div style={{fontWeight:800,color:"#0E3651",marginBottom:10}}>📋 הזמנות אחרונות</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {recent.map(o=>(
+            <div key={o.id||o.bina_order_id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:8,alignItems:"center",padding:"10px 12px",background:"#fff",border:"1px solid #EDF2F5",borderRadius:10}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:800,color:"#0E3651",fontSize:14}}>
+                  {customerInsightsFmtDate(o.order_date)}
+                  {o.bina_order_id!=null?<> · #{o.bina_order_id}</>:null}
+                </div>
+                <div style={{fontSize:13,color:"#69808F",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.title||"—"}</div>
+                <div style={{fontSize:13,color:"#0E3651",marginTop:2,fontWeight:600}}>{customerInsightsFmtMoney(o.total_amount)}</div>
+              </div>
+              {onDuplicateOrder&&(
+                <button type="button" title="שכפל להזמנה" onClick={()=>duplicateOrder(o)} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #BFE6E3",background:"#EDF8F7",color:"#0E3651",fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>📋 שכפל</button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientDeliveryEditModal({client,user,onClose,onSaved,initialTab="delivery",onDuplicateOrder}){
   const [form,setForm]=useState({...client});
   const [showAddAddress,setShowAddAddress]=useState(false);
   const [saving,setSaving]=useState(false);
   const [addrKey,setAddrKey]=useState(0);
+  const [tab,setTab]=useState(initialTab==="history"?"history":"delivery");
+  useEffect(()=>{setTab(initialTab==="history"?"history":"delivery");},[initialTab,client?.id]);
   const fldIS={background:"var(--bg2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13,width:"100%",outline:"none",fontFamily:"inherit",direction:"rtl"};
   const fldLS={color:"var(--text3)",fontSize:11,fontWeight:700,marginBottom:5,display:"block"};
   const updateField=(k,v)=>setForm(p=>({...p,[k]:v}));
@@ -6875,8 +7091,35 @@ function ClientDeliveryEditModal({client,user,onClose,onSaved}){
     }
     setSaving(false);
   };
-  return<Modal open={true} onClose={onClose} title={`🚚 פרטי משלוח — ${client.name}`} maxWidth={560}>
+  const tabBtn=(id,label)=>(
+    <button type="button" onClick={()=>setTab(id)} style={{
+      flex:1,padding:"10px 12px",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:tab===id?800:600,fontSize:13,
+      background:tab===id?"#fff":"transparent",color:tab===id?"#0E3651":"#69808F",
+      borderRadius:8,boxShadow:tab===id?"0 1px 3px rgba(14,54,81,0.08)":"none",
+    }}>{label}</button>
+  );
+  return<Modal open={true} onClose={onClose} title={`${client.name}`} maxWidth={tab==="history"?720:560}>
     <div style={{direction:"rtl",display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",gap:4,background:"#F1F5F9",borderRadius:10,padding:4}}>
+        {tabBtn("delivery","🚚 משלוח")}
+        {tabBtn("history","📊 היסטוריה")}
+      </div>
+
+      {tab==="history"?(
+        <CustomerHistoryPanel
+          clientName={client.name}
+          binaCustId={client.bina_customer_id}
+          onDuplicateOrder={prefill=>{
+            onDuplicateOrder?.({
+              ...prefill,
+              client,
+              bina_cust_id:client.bina_customer_id,
+              paymentTerms:client.payment_terms||"",
+            });
+            onClose?.();
+          }}
+        />
+      ):(<>
       <div style={{padding:15,background:"#f0f9ff",borderRadius:10,borderRight:"4px solid #0e7490"}}>
         <h3 style={{margin:"0 0 12px",color:"#0e7490",fontSize:15,fontWeight:700}}>🚚 פרטי משלוח</h3>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
@@ -6902,6 +7145,7 @@ function ClientDeliveryEditModal({client,user,onClose,onSaved}){
         <button type="button" onClick={onClose} style={{flex:1,padding:12,borderRadius:10,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>ביטול</button>
         <button type="button" disabled={saving} onClick={handleSave} style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#0e7490",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saving?"⏳ שומר...":"💾 שמור"}</button>
       </div>
+      </>)}
     </div>
     {showAddAddress&&<AddAddressModal clientId={client.id} user={user} onClose={()=>setShowAddAddress(false)} onAdd={()=>setAddrKey(k=>k+1)}/>}
   </Modal>;
@@ -8605,7 +8849,7 @@ function AdminTaskFormFields({form,setForm,ASSIGNEE_OPTS,MONTHS_HE}){
   );
 }
 
-function OrderHistoryTab({clients,onDuplicateOrder}){
+function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
   const PAGE=50;
   const [kind,setKind]=useState("orders");
   const [q,setQ]=useState("");
@@ -8831,7 +9075,7 @@ function OrderHistoryTab({clients,onDuplicateOrder}){
           <div style={{minWidth:0}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
               <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{fmtDate(rowDate(r))}</span>
-              <span style={{fontWeight:800,fontSize:15,color:"#0E3651"}}>{rowClient(r)}</span>
+              <button type="button" onClick={()=>onOpenClient?.({name:rowClient(r),binaCustId:r.bina_cust_id})} style={{fontWeight:800,fontSize:15,color:"#0E3651",background:"none",border:"none",padding:0,cursor:onOpenClient?"pointer":"default",fontFamily:"inherit",textDecoration:onOpenClient?"underline":"none",textUnderlineOffset:3}}>{rowClient(r)}</button>
               {!r.is_archive&&<span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px",lineHeight:1.4}}>פעילה</span>}
             </div>
             <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
@@ -19639,6 +19883,7 @@ function App(){
   const [deliveryNoteModal,setDeliveryNoteModal]=useState(null);
   const [moveToDeliveryModal,setMoveToDeliveryModal]=useState(null);
   const [editClientDelivery,setEditClientDelivery]=useState(null);
+  const [clientCardTab,setClientCardTab]=useState("delivery");
   const [showSignupGenerator,setShowSignupGenerator]=useState(false);
 
   const [showGlobalSearch,setShowGlobalSearch]=useState(false);
@@ -19679,7 +19924,7 @@ function App(){
     if(type==="client"){
       setTab("clients");
       const full=clients.find(c=>String(c.id)===String(item.id));
-      if(full)setEditClientDelivery(full);
+      if(full){setClientCardTab("delivery");setEditClientDelivery(full);}
     }else if(type==="task"){
       setTab("tasks");
       const full=[...tasks,...archivedTasks].find(t=>String(t.id)===String(item.id));
@@ -20394,7 +20639,14 @@ function App(){
 
       {tab==="gmail"&&isA&&<GmailInboxTab user={user} notify={notify} clients={clients} quotes={quotes} orders={[]} onCreateOrder={(prefill)=>openOrderQuoteModal("order",prefill)}/>}
 
-      {tab==="order-history"&&isA&&<OrderHistoryTab clients={clients} onDuplicateOrder={(prefill)=>openOrderQuoteModal("order",prefill)}/>}
+      {tab==="order-history"&&isA&&<OrderHistoryTab clients={clients} onDuplicateOrder={(prefill)=>openOrderQuoteModal("order",prefill)} onOpenClient={(info)=>{
+        const list=Array.isArray(clients)?clients:[];
+        const byId=info?.binaCustId!=null?list.find(c=>String(c.bina_customer_id)===String(info.binaCustId)):null;
+        const byName=info?.name?list.find(c=>String(c.name||"").trim()===String(info.name||"").trim()):null;
+        const found=byId||byName||{id:null,name:info?.name||"לקוח",bina_customer_id:info?.binaCustId||null,payment_terms:""};
+        setClientCardTab("history");
+        setEditClientDelivery(found);
+      }}/>}
 
       {tab==="quotes-lifecycle"&&isA&&<QuotesLifecycleTab clients={clients} sb={sb} onConvertToOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}} onDuplicateOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}}/>}
 
@@ -20603,7 +20855,8 @@ function App(){
                   openOrderQuoteModal("order",{mode:"order",skipFileRequired:true,duplicatedFromOrderId:o.bina_doc_id,sourceCreatedAt:o.created_at,title:o.title||"",agent:o.sales_agent||"",contactName:o.contact_person||"",client:c,bina_cust_id:o.bina_cust_id,remark:o.remark||"",items,paymentTerms:c.payment_terms||""});
                 }catch(e){window.alert(e.message||String(e));}
               }} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #BFE6E3",background:"#EDF8F7",color:"#0E3651",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>📋 שכפל</button>
-              <button type="button" onClick={()=>setEditClientDelivery(c)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #0e7490",background:"#ecfeff",color:"#0e7490",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🚚 משלוח</button>
+              <button type="button" onClick={()=>{setClientCardTab("history");setEditClientDelivery(c);}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #BFE6E3",background:"#EDF8F7",color:"#0E3651",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>📊 היסטוריה</button>
+              <button type="button" onClick={()=>{setClientCardTab("delivery");setEditClientDelivery(c);}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #0e7490",background:"#ecfeff",color:"#0e7490",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>🚚 משלוח</button>
             </div>
           </Card>)}
           {clients.length===0&&!loading&&<div style={{textAlign:"center",padding:"60px 20px",color:"var(--text3)"}}>
@@ -20778,7 +21031,7 @@ function App(){
 
     {moveToDeliveryModal&&<MoveToDeliveryModal task={moveToDeliveryModal.task} user={user} onClose={()=>setMoveToDeliveryModal(null)} onSuccess={()=>refreshAll()}/>}
 
-    {editClientDelivery&&<ClientDeliveryEditModal client={editClientDelivery} user={user} onClose={()=>setEditClientDelivery(null)} onSaved={updated=>{setClients(p=>p.map(c=>c.id===updated.id?updated:c));setEditClientDelivery(null);}}/>}
+    {editClientDelivery&&<ClientDeliveryEditModal client={editClientDelivery} user={user} initialTab={clientCardTab} onDuplicateOrder={(prefill)=>openOrderQuoteModal("order",prefill)} onClose={()=>{setEditClientDelivery(null);setClientCardTab("delivery");}} onSaved={updated=>{setClients(p=>p.map(c=>c.id===updated.id?updated:c));setEditClientDelivery(null);setClientCardTab("delivery");}}/>}
 
     {showSignupGenerator&&<SignupLinkGeneratorModal user={user} onClose={()=>setShowSignupGenerator(false)} onCreated={()=>{}}/>}
 

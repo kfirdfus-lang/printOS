@@ -103,9 +103,11 @@ function isSendableItem(it: OrderItem): boolean {
 }
 
 function buildBinaPayload(req: CreateOrderRequest, token: string) {
-  // requestId = מספר פנייה חד-ערכי שלנו. מספר משימה עדיין לא קיים ביצירה.
-  // Date.now() משמעותי יותר מאקראי ועומד בדרישת הייחודיות של בינה.
-  const requestId = Date.now();
+  // requestId = timestamp בשניות — משמעותי + ייחודי מספיק ליצירה.
+  // בינה מצפים ל-int32; Date.now() (ms) גורם overflow — ראו ResCode 3.
+  // 2038: שניות יחרגו מ-Int32.max — נשארים בטווח עם modulo.
+  const INT32_MAX = 2_147_483_647;
+  const requestId = Math.floor(Date.now() / 1000) % INT32_MAX;
 
   const custIdNum = typeof req.client.binaCustomerId === 'number'
     ? req.client.binaCustomerId

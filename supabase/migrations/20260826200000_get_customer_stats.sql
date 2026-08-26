@@ -138,12 +138,23 @@ begin
     select
       trim(ti.description) as description,
       count(*)::int as times,
-      coalesce(sum(ti.quantity), 0)::numeric as total_qty
+      coalesce(sum(ti.quantity), 0)::numeric as total_qty,
+      coalesce(sum(ti.total), 0)::numeric as total_sum,
+      coalesce(sum(ti.price), 0)::numeric as price_sum
     from public.task_items ti
     join base b on b.id = ti.task_id
-    where ti.description is not null and trim(ti.description) <> ''
+    where ti.description is not null
+      and trim(ti.description) <> ''
+      and trim(ti.description) <> '—'
+      and trim(ti.description) <> '-'
+      and trim(ti.description) <> '–'
     group by trim(ti.description)
     having count(*) >= 2
+      and not (
+        coalesce(sum(ti.quantity), 0) = 0
+        and coalesce(sum(ti.price), 0) = 0
+        and coalesce(sum(ti.total), 0) = 0
+      )
   ),
   top_items as (
     select coalesce(
@@ -164,6 +175,18 @@ begin
       ),
       '[]'::jsonb
     ) as arr
+  ),
+  item_money as (
+    select
+      coalesce(sum(ti.total), 0)::numeric as all_items_amount,
+      coalesce(
+        sum(ti.total) filter (
+          where ti.department is not null and trim(ti.department) <> ''
+        ),
+        0
+      )::numeric as dept_assigned_amount
+    from public.task_items ti
+    join base b on b.id = ti.task_id
   ),
   recent as (
     select
@@ -226,14 +249,17 @@ begin
     'monthly', coalesce(m.arr, '[]'::jsonb),
     'departments', coalesce(d.arr, '[]'::jsonb),
     'top_items', coalesce(t.arr, '[]'::jsonb),
-    'recent_orders', coalesce(ro.arr, '[]'::jsonb)
+    'recent_orders', coalesce(ro.arr, '[]'::jsonb),
+    'dept_assigned_amount', coalesce(im.dept_assigned_amount, 0),
+    'all_items_amount', coalesce(im.all_items_amount, 0)
   )
   into v_result
   from summary s
   cross join monthly m
   cross join departments d
   cross join top_items t
-  cross join recent_orders ro;
+  cross join recent_orders ro
+  cross join item_money im;
 
   return coalesce(v_result, '{}'::jsonb);
 end;

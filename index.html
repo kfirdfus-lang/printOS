@@ -6918,12 +6918,23 @@ function CustomerHistoryPanel({clientName,binaCustId,onDuplicateOrder}){
   }
 
   const depts=Array.isArray(stats.departments)?stats.departments:[];
+  const deptAssigned=Number(stats.dept_assigned_amount!=null?stats.dept_assigned_amount:depts.reduce((s,d)=>s+Number(d.amount||0),0));
+  const totalForDept=Number(stats.total_amount||0);
+  const deptCoveragePct=totalForDept>0?Math.round((deptAssigned/totalForDept)*100):0;
   const deptTotal=depts.reduce((s,d)=>s+Number(d.amount||0),0)||1;
   const orderedDeptNames=new Set(depts.map(d=>d.department));
   const neverOrdered=HB3_DEPT_FALLBACK.map(d=>d.name).filter(n=>!orderedDeptNames.has(n));
+  const showNeverOrdered=deptCoveragePct>=70&&neverOrdered.length>0;
   const monthly=Array.isArray(stats.monthly)?stats.monthly:[];
   const maxMonthAmt=Math.max(1,...monthly.map(m=>Number(m.amount||0)));
-  const topItems=Array.isArray(stats.top_items)?stats.top_items:[];
+  const topItems=(Array.isArray(stats.top_items)?stats.top_items:[]).filter(it=>{
+    const desc=String(it.description||"").trim();
+    if(!desc||desc==="—"||desc==="-"||desc==="–")return false;
+    const qty=Number(it.total_qty)||0;
+    // placeholder rows: zero qty (and typically no real product)
+    if(qty===0)return false;
+    return true;
+  });
   const recent=Array.isArray(stats.recent_orders)?stats.recent_orders:[];
   const days=stats.days_since_last;
   const daysColor=customerInsightsDaysColor(days);
@@ -7000,7 +7011,16 @@ function CustomerHistoryPanel({clientName,binaCustId,onDuplicateOrder}){
       </div>
 
       <div>
-        <div style={{fontWeight:800,color:"#0E3651",marginBottom:10}}>🎯 פילוח לפי מחלקה</div>
+        <div style={{fontWeight:800,color:"#0E3651",marginBottom:6}}>🎯 פילוח לפי מחלקה</div>
+        <div style={{fontSize:12,color:"#69808F",marginBottom:8}}>
+          משויך למחלקה: {customerInsightsFmtMoney(deptAssigned)} מתוך {customerInsightsFmtMoney(totalForDept)}
+          {totalForDept>0?<> ({deptCoveragePct}%)</>:null}
+        </div>
+        {deptCoveragePct<50&&totalForDept>0&&(
+          <div style={{fontSize:12,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+            חלק מהפריטים ההיסטוריים ללא שיוך מחלקה
+          </div>
+        )}
         {depts.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>אין פריטים עם מחלקה ידועה</div>:
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {depts.map(d=>{
@@ -7020,7 +7040,7 @@ function CustomerHistoryPanel({clientName,binaCustId,onDuplicateOrder}){
             })}
           </div>
         }
-        {neverOrdered.length>0&&(
+        {showNeverOrdered&&(
           <div style={{marginTop:10,fontSize:13,color:"#94a3b8"}}>
             ⚪ לא הזמין: {neverOrdered.join(" · ")}
           </div>
@@ -7149,6 +7169,232 @@ function ClientDeliveryEditModal({client,user,onClose,onSaved,initialTab="delive
     </div>
     {showAddAddress&&<AddAddressModal clientId={client.id} user={user} onClose={()=>setShowAddAddress(false)} onAdd={()=>setAddrKey(k=>k+1)}/>}
   </Modal>;
+}
+
+const INSIGHTS_MONTH_NAMES=["","ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+
+function InsightsTab({clients,onOpenClient}){
+  const [dormant,setDormant]=useState([]);
+  const [season,setSeason]=useState(null);
+  const [prices,setPrices]=useState([]);
+  const [lead,setLead]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [err,setErr]=useState(null);
+  const [dismissBusy,setDismissBusy]=useState(null);
+  const [reloadKey,setReloadKey]=useState(0);
+
+  useEffect(()=>{
+    let cancelled=false;
+    setLoading(true);setErr(null);
+    Promise.all([
+      supabaseClient.rpc("get_dormant_customers"),
+      supabaseClient.rpc("get_seasonality_stats"),
+      supabaseClient.rpc("get_price_trends"),
+      supabaseClient.rpc("get_lead_time_by_dept"),
+    ]).then(([dRes,sRes,pRes,lRes])=>{
+      if(cancelled)return;
+      const firstErr=dRes.error||sRes.error||pRes.error||lRes.error;
+      if(firstErr){setErr(firstErr.message||String(firstErr));setLoading(false);return;}
+      const parse=x=>{
+        const raw=x?.data;
+        if(typeof raw==="string"){try{return JSON.parse(raw);}catch{return null;}}
+        return raw;
+      };
+      setDormant(Array.isArray(parse(dRes))?parse(dRes):[]);
+      setSeason(parse(sRes)&&typeof parse(sRes)==="object"?parse(sRes):null);
+      setPrices(Array.isArray(parse(pRes))?parse(pRes):[]);
+      setLead(Array.isArray(parse(lRes))?parse(lRes):[]);
+      setLoading(false);
+    }).catch(e=>{
+      if(cancelled)return;
+      setErr(e.message||String(e));setLoading(false);
+    });
+    return()=>{cancelled=true;};
+  },[reloadKey]);
+
+  const dismissDormant=async(row)=>{
+    const name=String(row.client_name||"").trim();
+    const binaId=row.bina_cust_id!=null?String(row.bina_cust_id):"";
+    if(!window.confirm("להסתיר את \""+name+"\" מרשימת הלקוחות שנעלמו?"))return;
+    setDismissBusy(name);
+    try{
+      const list=Array.isArray(clients)?clients:[];
+      const match=list.find(c=>(binaId&&String(c.bina_customer_id)===binaId)||String(c.name||"").trim().toLowerCase()===name.toLowerCase());
+      let q=supabaseClient.from("clients").update({dormant_dismissed:true,dormant_dismissed_at:new Date().toISOString()});
+      if(match?.id)q=q.eq("id",match.id);
+      else if(binaId)q=q.eq("bina_customer_id",binaId);
+      else q=q.ilike("name",name);
+      const{error,data}=await q.select("id");
+      if(error)throw error;
+      if(!data||!data.length){
+        window.alert("לא נמצא רשומת לקוח להסתרה. הוסף את הלקוח לטבלת הלקוחות ונסה שוב.");
+      }else{
+        setDormant(prev=>prev.filter(x=>String(x.client_name||"").trim()!==name));
+      }
+    }catch(e){
+      window.alert("שגיאה בהסתרה: "+(e.message||String(e)));
+    }
+    setDismissBusy(null);
+  };
+
+  const openClient=row=>{
+    if(!onOpenClient)return;
+    onOpenClient({name:row.client_name,binaCustId:row.bina_cust_id});
+  };
+
+  if(loading)return<div style={{padding:48,textAlign:"center",color:"#69808F"}}><Spinner sz={28}/> טוען תובנות...</div>;
+  if(err)return<div style={{background:"#FEF2F2",border:"1px solid #FECACA",color:"#B91C1C",borderRadius:10,padding:14}}>{err}</div>;
+
+  const months=Array.isArray(season?.months)?season.months:[];
+  const maxSeasonAmt=Math.max(1,...months.map(m=>Number(m.amount||0)));
+  const ranked=[...months].sort((a,b)=>Number(b.amount||0)-Number(a.amount||0));
+  const strong=ranked.filter(m=>Number(m.amount||0)>0).slice(0,3);
+  const weak=[...ranked].reverse().filter(m=>Number(m.amount||0)>=0).slice(0,3);
+  const stalePrices=prices.filter(p=>p.stale).slice(0,12);
+  const priceShow=(stalePrices.length?stalePrices:prices).slice(0,15);
+
+  const card=(title,body)=>(
+    <div style={{background:"#fff",border:"1px solid #EDF2F5",borderRadius:14,padding:16,marginBottom:16}}>
+      <div style={{fontWeight:800,color:"#0E3651",marginBottom:12,fontSize:15}}>{title}</div>
+      {body}
+    </div>
+  );
+
+  return(
+    <div style={{direction:"rtl",maxWidth:920}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+        <div>
+          <h1 style={{margin:0,fontSize:22,fontWeight:900,color:"#0E3651"}}>💡 תובנות</h1>
+          <p style={{margin:"6px 0 0",fontSize:13,color:"#69808F"}}>לקוחות שנעלמו · עונתיות · מחירים · זמני אספקה</p>
+        </div>
+        <button type="button" onClick={()=>setReloadKey(k=>k+1)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #D0D5DD",background:"#fff",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600}}>↻ רענון</button>
+      </div>
+      <div style={{fontSize:12,color:"#69808F",background:"#F8FAFC",border:"1px solid #EDF2F5",borderRadius:10,padding:"10px 12px",marginBottom:16,lineHeight:1.55}}>
+        {CUSTOMER_INSIGHTS_ACCURACY_NOTE}
+      </div>
+
+      {card(
+        "⚠️ לקוחות שנעלמו"+(dormant.length?` · ${dormant.length}`:""),
+        dormant.length===0?(
+          <div style={{fontSize:13,color:"#94a3b8"}}>אין לקוחות שעומדים בהגדרה (3+ הזמנות בשנה · 90+ יום בלי הזמנה)</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:12,color:"#69808F",marginBottom:2}}>ממוין לפי סכום יורד (שנה אחרונה)</div>
+            {dormant.map(row=>(
+              <div key={String(row.client_name)+"|"+String(row.bina_cust_id||"")} style={{display:"flex",gap:10,alignItems:"flex-start",justifyContent:"space-between",padding:"12px 12px",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:12}}>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                    <button type="button" onClick={()=>openClient(row)} style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:14,color:"#0E3651",textAlign:"right"}}>{row.client_name}</button>
+                    <span style={{fontWeight:800,color:"#0E3651"}}>{customerInsightsFmtMoney(row.amount_last_year)}</span>
+                  </div>
+                  <div style={{fontSize:12,color:"#69808F",marginTop:4}}>
+                    {row.orders_last_year} הזמנות · אחרונה לפני <span style={{color:customerInsightsDaysColor(row.days_since_last),fontWeight:700}}>{row.days_since_last}</span> יום
+                    {row.top_department?<> · הזמין בעיקר: {row.top_department}</>:null}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button type="button" title="כרטיס לקוח" onClick={()=>openClient(row)} style={{width:36,height:36,borderRadius:8,border:"1px solid #D0D5DD",background:"#fff",cursor:"pointer",fontSize:16}}>📞</button>
+                  <button type="button" title="לא רלוונטי" disabled={dismissBusy===String(row.client_name||"").trim()} onClick={()=>dismissDormant(row)} style={{width:36,height:36,borderRadius:8,border:"1px solid #FECACA",background:"#fff",cursor:"pointer",fontSize:14,color:"#B91C1C"}}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {card("📅 עונתיות",
+        !months.length?(
+          <div style={{fontSize:13,color:"#94a3b8"}}>אין נתונים</div>
+        ):(
+          <div>
+            {season?.partial&&(
+              <div style={{fontSize:12,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+                פחות מ־12 חודשי נתונים ({season.months_with_data||0}) — המסקנות חלקיות
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"flex-end",gap:4,height:120,marginBottom:10}}>
+              {months.map(m=>{
+                const amt=Number(m.amount||0);
+                const h=Math.round((amt/maxSeasonAmt)*100);
+                return(
+                  <div key={m.month} title={INSIGHTS_MONTH_NAMES[m.month]+": "+customerInsightsFmtMoney(amt)+" · "+(m.orders||0)+" הזמנות"} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:0}}>
+                    <div style={{width:"100%",height:100,display:"flex",alignItems:"flex-end"}}>
+                      <div style={{width:"100%",height:Math.max(amt>0?6:2,h)+"%",background:amt>0?"#62C7C2":"#EDF2F5",borderRadius:4}}/>
+                    </div>
+                    <div style={{fontSize:9,color:"#69808F"}}>{String(INSIGHTS_MONTH_NAMES[m.month]||"").slice(0,3)}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{fontSize:13,color:"#0E3651",lineHeight:1.6}}>
+              <div>📅 החודשים החזקים: {strong.length?strong.map(m=>INSIGHTS_MONTH_NAMES[m.month]).join(" · "):"—"}</div>
+              <div style={{color:"#69808F"}}>📉 החלשים: {weak.length?weak.map(m=>INSIGHTS_MONTH_NAMES[m.month]).join(" · "):"—"}</div>
+            </div>
+          </div>
+        )
+      )}
+
+      {card("💰 מגמת מחיר לפריט",
+        !priceShow.length?(
+          <div style={{fontSize:13,color:"#94a3b8"}}>אין פריטים שחוזרים 3+ פעמים עם מחיר</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:12,color:"#69808F"}}>
+              נרמול: lowercase · איחוד מפרידי מידה (/ \\ *) · ללא גרשיים. רק 3+ הופעות.
+              {stalePrices.length?<> · מציג קודם מחירים שלא השתנו 6+ חודשים</>:null}
+            </div>
+            {priceShow.map(p=>{
+              const pts=Array.isArray(p.points)?p.points:[];
+              return(
+                <div key={p.key||p.description} style={{borderBottom:"1px solid #F1F5F9",paddingBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:700,color:"#0E3651",fontSize:13}}>{p.description}</span>
+                    <span style={{fontSize:12,color:"#69808F"}}>{p.times} פעמים</span>
+                  </div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:6,fontSize:12,color:"#475569"}}>
+                    {pts.slice(-6).map((pt,i)=>(
+                      <span key={i}>{customerInsightsFmtDate(pt.date)}{" "}
+                        <strong style={{color:"#0E3651"}}>{customerInsightsFmtMoney(pt.price)}</strong>
+                      </span>
+                    ))}
+                  </div>
+                  {p.stale&&(
+                    <div style={{marginTop:6,fontSize:12,color:"#B45309",fontWeight:600}}>
+                      ⚠️ המחיר לא השתנה {p.months_unchanged||6}+ חודשים
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {card("⏱️ זמן אספקה לפי מחלקה",
+        !lead.length?(
+          <div style={{fontSize:13,color:"#94a3b8"}}>אין מספיק הזמנות שהושלמו עם שני תאריכים</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {lead.map(row=>{
+              const color=DEPT_COLORS[row.department]||"#62C7C2";
+              return(
+                <div key={row.department} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 10px",background:"#F8FAFC",borderRadius:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                    <span style={{width:10,height:10,borderRadius:3,background:color,flexShrink:0}}/>
+                    <span style={{fontWeight:700,color:"#0E3651",fontSize:13}}>{row.department}</span>
+                    <span style={{fontSize:11,color:"#94a3b8"}}>({row.sample_size})</span>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:700,color:row.slow?"#DC2626":"#0E3651"}}>
+                    ממוצע {row.avg_days} ימים{row.slow?" ⚠️":""}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+    </div>
+  );
 }
 
 // ── LOGIN ──
@@ -20257,6 +20503,12 @@ function App(){
   },[tab,user]);
 
   useEffect(()=>{
+    if(tab==="insights"&&(!user||user.role!=="admin")){
+      setTab("dashboard");
+    }
+  },[tab,user]);
+
+  useEffect(()=>{
     if(tab==="shipments"&&user?.role==="admin"){
       loadArchive();
     }
@@ -20499,7 +20751,7 @@ function App(){
     {id:"recently_completed",ic:"🗂️",lb:"הושלמו לאחרונה"},
     {id:"calendar",ic:"📅",lb:"לוח שנה"},
     ...(isAdminTasksUser?[{id:"admin_tasks",ic:"📋",lb:"מנהלה"}]:[]),
-    ...(isA?[{id:"gmail",ic:"📧",lb:"מייל"},{id:"work-files",ic:"📎",lb:"קבצי עבודה"},{id:"order-history",ic:"📚",lb:"היסטוריה"},{id:"quotes-lifecycle",ic:"📄",lb:"הצעות מחיר"},{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
+    ...(isA?[{id:"gmail",ic:"📧",lb:"מייל"},{id:"work-files",ic:"📎",lb:"קבצי עבודה"},{id:"order-history",ic:"📚",lb:"היסטוריה"},{id:"insights",ic:"💡",lb:"תובנות"},{id:"quotes-lifecycle",ic:"📄",lb:"הצעות מחיר"},{id:"shipments",ic:"🚚",lb:"משלוחים"},{id:"alut-dashboard",ic:"🗓️",lb:"אלוט 2026"},{id:"city-regions",ic:"🗺️",lb:"אזורים וערים"},{id:"clients",ic:"◎",lb:"לקוחות"},{id:"signup-forms",ic:"📋",lb:"טפסי לקוחות"},{id:"vacations",ic:"📅",lb:"חופשות"},{id:"documents",ic:"📁",lb:"מסמכים"},{id:"employees",ic:"👥",lb:"עובדים"},{id:"employee-messages",ic:"📧",lb:"הודעות לעובדים"},{id:"supplier_invoices",ic:"🧾",lb:"חשבוניות ספקים"},{id:"tv-gallery",ic:"🎨",lb:"גלריית TV"},{id:"designer",ic:"🎨",lb:"גרפיקאי"},{id:"archive",ic:"📦",lb:"משימות שהושלמו"},{id:"sales",ic:"📊",lb:"דשבורד מכירות"},{id:"delivery-notes",ic:"📋",lb:"תעודות משלוח"},{id:"user-passwords",ic:"🔐",lb:"סיסמאות"}]:[]),
   ];
 
   const binaStatusLabel=binaStatus==="online"?"בינה: זמינה":binaStatus==="offline"?"בינה: לא זמינה":"בודק...";
@@ -20640,6 +20892,15 @@ function App(){
       {tab==="gmail"&&isA&&<GmailInboxTab user={user} notify={notify} clients={clients} quotes={quotes} orders={[]} onCreateOrder={(prefill)=>openOrderQuoteModal("order",prefill)}/>}
 
       {tab==="order-history"&&isA&&<OrderHistoryTab clients={clients} onDuplicateOrder={(prefill)=>openOrderQuoteModal("order",prefill)} onOpenClient={(info)=>{
+        const list=Array.isArray(clients)?clients:[];
+        const byId=info?.binaCustId!=null?list.find(c=>String(c.bina_customer_id)===String(info.binaCustId)):null;
+        const byName=info?.name?list.find(c=>String(c.name||"").trim()===String(info.name||"").trim()):null;
+        const found=byId||byName||{id:null,name:info?.name||"לקוח",bina_customer_id:info?.binaCustId||null,payment_terms:""};
+        setClientCardTab("history");
+        setEditClientDelivery(found);
+      }}/>}
+
+      {tab==="insights"&&isA&&<InsightsTab clients={clients} onOpenClient={(info)=>{
         const list=Array.isArray(clients)?clients:[];
         const byId=info?.binaCustId!=null?list.find(c=>String(c.bina_customer_id)===String(info.binaCustId)):null;
         const byName=info?.name?list.find(c=>String(c.name||"").trim()===String(info.name||"").trim()):null;

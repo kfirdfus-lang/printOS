@@ -68,6 +68,11 @@ function binaOrderStatusFields(order: Record<string, unknown>): {
   return { bina_order_status: status, bina_order_state: state }
 }
 
+/** invNumber מבינה → bina_invoice_number (null אם חסר / לא מספרי) */
+function binaInvoiceNumber(order: Record<string, unknown>): number | null {
+  return num(order.invNumber)
+}
+
 function normalizeBinaSalesAgentServer(val: unknown): string | null {
   const v = String(val ?? '').trim()
   if (!v) return null
@@ -438,12 +443,16 @@ Deno.serve(async (req) => {
           skipped++
           await ensureClientFromOrder(order, supabase, linkedByBinaId, unlinkedByName)
 
+          const o = order as Record<string, unknown>
+          const invNum = binaInvoiceNumber(o)
           await supabase
             .from('tasks')
-            .update(binaOrderStatusFields(order as Record<string, unknown>))
+            .update({
+              ...binaOrderStatusFields(o),
+              ...(invNum != null ? { bina_invoice_number: invNum } : {}),
+            })
             .eq('id', existing.id)
 
-          const o = order as Record<string, unknown>
           const deptFromItemsName = deptFromOrderItems(o)
 
           let dueDate = null
@@ -551,6 +560,7 @@ Deno.serve(async (req) => {
           discount_amount: num(o.orderDiscount),
           sales_agent: normalizeBinaSalesAgentServer(o.orderSalesMan),
           bina_order_date: parseHebrewDateForDB(o.orderDate),
+          bina_invoice_number: binaInvoiceNumber(o),
           ...binaOrderStatusFields(o),
         }
 

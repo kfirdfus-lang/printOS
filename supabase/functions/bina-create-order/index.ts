@@ -54,6 +54,9 @@ interface CreateOrderRequest {
   payment?: OrderPayment;
   salesAgent?: string;
   dueDate?: string;
+  /** If true — return built Bina payload without calling Bina / writing DB */
+  dry_run?: boolean;
+  dryRun?: boolean;
 }
 
 interface BinaResponse {
@@ -92,8 +95,17 @@ function resolveDept(itemId: unknown): { code: string | null; department: string
   return { code: null, department: null }
 }
 
+/** שורה בלי כמות או בלי מחיר לא נשלחת לבינה (גם עם תיאור). */
+function isSendableItem(it: OrderItem): boolean {
+  const qty = Number(it.quantity) || 0;
+  const price = Number(it.unitPrice) || 0;
+  return qty > 0 && price > 0 && String(it.description || '').trim() !== '';
+}
+
 function buildBinaPayload(req: CreateOrderRequest, token: string) {
-  const requestId = Math.floor(Math.random() * 2_000_000_000);
+  // requestId = מספר פנייה חד-ערכי שלנו. מספר משימה עדיין לא קיים ביצירה.
+  // Date.now() משמעותי יותר מאקראי ועומד בדרישת הייחודיות של בינה.
+  const requestId = Date.now();
 
   const custIdNum = typeof req.client.binaCustomerId === 'number'
     ? req.client.binaCustomerId
@@ -102,6 +114,8 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
   if (!custIdNum || Number.isNaN(custIdNum)) {
     throw new Error('binaCustomerId חייב להיות מספר תקין');
   }
+
+  const custOrderRaw = String(req.client.customerOrderId ?? '').trim();
 
   const payload: Record<string, unknown> = {
     tokenId: token,
@@ -119,7 +133,7 @@ function buildBinaPayload(req: CreateOrderRequest, token: string) {
       custIshKheser: req.client.contactPerson,
       custTel: req.client.phone || '',
       custEmail: req.client.email || '',
-      custOrderId: req.client.customerOrderId || '',
+      custOrderId: custOrderRaw,
     },
     docItems: req.items.map((it) => ({
       ItemId: resolveDept(it.itemId).code || it.itemId,
@@ -158,14 +172,16 @@ function validateRequest(req: CreateOrderRequest): string | null {
   if (!req.client.city) return 'חסרה עיר';
   if (!req.client.address) return 'חסרה כתובת';
   if (!req.client.contactPerson) return 'חסר איש קשר (custIshKheser - שדה חובה בבינה)';
-  if (!Array.isArray(req.items) || req.items.length === 0) return 'חסרים פריטים';
+  if (!Array.isArray(req.items) || req.items.length === 0) {
+    return 'חסרים פריטים (נדרשת כמות ומחיר > 0)';
+  }
 
   for (let i = 0; i < req.items.length; i++) {
     const it = req.items[i];
     if (!it.itemId) return `פריט ${i + 1}: חסר itemId`;
     if (!it.description) return `פריט ${i + 1}: חסר תיאור`;
     if (!it.quantity || it.quantity <= 0) return `פריט ${i + 1}: כמות לא תקינה`;
-    if (it.unitPrice == null || it.unitPrice < 0) return `פריט ${i + 1}: מחיר לא תקין`;
+    if (it.unitPrice == null || Number(it.unitPrice) <= 0) return `פריט ${i + 1}: מחיר לא תקין`;
   }
 
   return null;
@@ -210,7 +226,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const body = (await req.json()) as CreateOrderRequest;
+    const rawBody = (await req.json()) as CreateOrderRequest & { items?: OrderItem[] };
+    const filteredItems = (Array.isArray(rawBody.items) ? rawBody.items : []).filter(isSendableItem);
+    const body: CreateOrderRequest = { ...rawBody, items: filteredItems };
 
     const validationError = validateRequest(body);
     if (validationError) {
@@ -226,6 +244,19 @@ Deno.serve(async (req) => {
     // לוג בלי הטוקן
     const { tokenId: _, ...payloadForLog } = payload as { tokenId: string };
     console.log('[bina-create-order] שולח לבינה:', JSON.stringify(payloadForLog));
+
+    if (body.dry_run === true || body.dryRun === true) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          dry_run: true,
+          payload: payloadForLog,
+          itemsReceived: Array.isArray(rawBody.items) ? rawBody.items.length : 0,
+          itemsSent: filteredItems.length,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // נבנה את task + task_items מלאים מיד (הסנכרון הוא גיבוי בלבד).
     const salesAgentNormalized = normalizeBinaSalesAgentServer(body.salesAgent)

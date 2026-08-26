@@ -7527,6 +7527,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   const [remark,setRemark]=useState("");
   const [agent,setAgent]=useState("");
   const [contactName,setContactName]=useState("");
+  const [customerOrderId,setCustomerOrderId]=useState("");
   const [dueDate,setDueDate]=useState("");
   const [workFile,setWorkFile]=useState(null);
   const [workerNote,setWorkerNote]=useState("");
@@ -7560,6 +7561,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     if(p.remark!=null)setRemark(p.remark||"");
     if(p.agent!=null)setAgent(normalizeBinaSalesAgent(p.agent)||"");
     if(p.contactName!=null)setContactName(p.contactName||"");
+    if(p.customerOrderId!=null)setCustomerOrderId(String(p.customerOrderId||""));
     if(p.dueDate!=null)setDueDate(p.dueDate||"");
     if(p.workerNote!=null)setWorkerNote(p.workerNote||"");
     if(p.priceMode)setPriceMode(p.priceMode==="total"?"total":"unit");
@@ -7616,6 +7618,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     setRemark("");
     setAgent("");
     setContactName("");
+    setCustomerOrderId("");
     setDueDate("");
     setWorkFile(null);
     setWorkerNote("");
@@ -7698,6 +7701,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     if(!selectedClient)return "נא לבחור לקוח";
     if(!selectedClient.bina_customer_id)return "הלקוח לא מקושר לבינה";
     if(!filled.length)return "נא למלא לפחות פריט אחד";
+    if(!binaItems().length)return "נא למלא פריט עם כמות ומחיר";
     if(isOrder&&!dueDate)return "נא למלא דדליין להזמנה";
     return null;
   };
@@ -7752,7 +7756,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   };
 
   const binaItems=()=>filled.map((it,idx)=>{
-    const qty=Number(it.quantity)||1;
+    const qty=Number(it.quantity)||0;
     const lineTotal=priceMode==="total"?Number(it.lineTotal)||hb3LineTotal(it):hb3LineTotal(it);
     const unitPrice=qty?lineTotal/qty:0;
     return {
@@ -7762,7 +7766,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       unitPrice,
       discount:Number(it.discount)||0,
     };
-  });
+  }).filter(it=>it.quantity>0&&Number(it.unitPrice)>0);
 
   const localLineRows=kindId=>(idKey,idVal)=>filled.map((it,idx)=>{
     const qty=Number(it.quantity)||1;
@@ -7800,6 +7804,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
         contactPerson:(contactName||"").trim()||selectedClient.name||"ללא",
         phone:selectedClient.phone||"",
         email:selectedClient.email||"",
+        customerOrderId:(customerOrderId||"").trim()||undefined,
       },
       items:binaItems(),
       title:title||("הזמנה ל"+(selectedClient.name||"לקוח")),
@@ -8004,6 +8009,10 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
             <div className="hb3-sec">פרטי מסמך</div>
             <label className="hb3-lab">כותרת</label>
             <input className="hb3-inp" style={{marginBottom:8}} value={title} onChange={e=>setTitle(e.target.value)} placeholder={isOrder?"כותרת הזמנה":"כותרת הצעה"}/>
+            {isOrder&&<>
+              <label className="hb3-lab">מספר הזמנת הלקוח</label>
+              <input className="hb3-inp" style={{marginBottom:8}} value={customerOrderId} onChange={e=>setCustomerOrderId(e.target.value)} placeholder="אופציונלי — יופיע בבינה כהז׳ לקוח"/>
+            </>}
             <label className="hb3-lab">סוכן</label>
             <select className="hb3-inp" style={{marginBottom:8}} value={agent} onChange={e=>setAgent(e.target.value)}>
               <option value="">בחר סוכן...</option>

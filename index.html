@@ -7984,6 +7984,26 @@ function hb3ClientTerms(c){
   if(!c)return "";
   return c.payment_terms||"";
 }
+function quoteIsEditable(q){
+  if(!q||q.is_archive)return false;
+  const st=q.quote_status||"sent";
+  return st==="sent"||st==="rejected";
+}
+function quoteEditDisabledTitle(q){
+  if(q&&q.is_archive)return "הצעה בארכיון לא ניתנת לעריכה";
+  if(q&&(q.quote_status||"")==="approved")return "הצעה שאושרה לא ניתנת לעריכה";
+  return "";
+}
+function quoteEditedBadge(q){
+  const n=Number(q&&q.edit_count)||0;
+  if(n<1)return null;
+  return<span style={{fontSize:10,fontWeight:700,color:"#475569",background:"#F1F5F9",borderRadius:6,padding:"2px 6px",lineHeight:1.4,whiteSpace:"nowrap"}}>עודכנה ×{n}</span>;
+}
+function QuoteEditButton({q,onEdit,busy,btnStyle}){
+  const can=quoteIsEditable(q);
+  const tip=can?"עריכה":(quoteEditDisabledTitle(q)||"לא ניתן לערוך");
+  return<button type="button" disabled={!can||!!busy} title={tip} onClick={()=>{if(can&&!busy)onEdit(q);}} style={{...btnStyle,opacity:can?1:0.45,cursor:can&&!busy?"pointer":"not-allowed"}}>✏️</button>;
+}
 function hb3PdfFilename({docNumber,clientName,title}){
   const clean=s=>String(s||"").replace(/[/\\:*?"<>|]/g,"-").replace(/\s+/g," ").trim().replace(/_+/g,"_");
   const num=String(docNumber||"").trim();
@@ -8057,6 +8077,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   const [unmatchedEmail,setUnmatchedEmail]=useState(null);
   const [gmailMessageId,setGmailMessageId]=useState(null);
   const [extraWorkFilesFromGmail,setExtraWorkFilesFromGmail]=useState([]);
+  const [editingQuoteId,setEditingQuoteId]=useState(null);
+  const [editingBinaDocId,setEditingBinaDocId]=useState(null);
 
   const loadDepts=async()=>{
     try{
@@ -8075,6 +8097,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     if(p.mode)setMode(p.mode==="quote"?"quote":"order");
     if(p.title!=null)setTitle(p.title||"");
     if(p.remark!=null)setRemark(p.remark||"");
+    else if(p.notes!=null)setRemark(p.notes||"");
     if(p.agent!=null)setAgent(normalizeBinaSalesAgent(p.agent)||"");
     if(p.contactName!=null)setContactName(p.contactName||"");
     if(p.customerOrderId!=null)setCustomerOrderId(String(p.customerOrderId||""));
@@ -8114,6 +8137,11 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       }
     }
     if(p.sourceQuoteId)setActiveQuoteId(p.sourceQuoteId);
+    if(p.editQuoteId){
+      setEditingQuoteId(p.editQuoteId);
+      setMode("quote");
+    }
+    if(p.editBinaDocId!=null)setEditingBinaDocId(p.editBinaDocId);
     if(p.workFile)setWorkFile(p.workFile);
     if(p.unmatchedEmail){
       setUnmatchedEmail(p.unmatchedEmail);
@@ -8147,6 +8175,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     setUnmatchedEmail(null);
     setGmailMessageId(null);
     setExtraWorkFilesFromGmail([]);
+    setEditingQuoteId(null);
+    setEditingBinaDocId(null);
     setPaymentTerms("");
     loadDepts();
     if(prefill)applyPrefill(prefill);
@@ -8155,7 +8185,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
 
   if(!open)return null;
 
-  const isOrder=mode==="order";
+  const isEditingQuote=!!editingQuoteId;
+  const isOrder=isEditingQuote?false:mode==="order";
   const filled=hb3FilledItems(items);
   const itemsTotal=filled.reduce((sum,it)=>sum+hb3ItemLineTotal(it),0);
   const vatAmt=itemsTotal*HB3_VAT;
@@ -8409,6 +8440,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
       status:"טיוטה",
       quote_status:"sent",
       sent_at:new Date().toISOString(),
+      notes:(remark||"").trim()||null,
     };
     let quoteId=null;
     try{
@@ -8438,6 +8470,41 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     }
   };
 
+  const submitQuoteEdit=async()=>{
+    const quoteTitle=title||("הצעה ל"+(selectedClient.name||"לקוח"));
+    const{data:cur,error:curErr}=await supabaseClient.from("quotes").select("id,bina_doc_id,edit_count").eq("id",editingQuoteId).single();
+    if(curErr||!cur?.id)throw new Error(curErr?.message||"ההצעה לא נמצאה");
+    const binaDocId=cur.bina_doc_id!=null?cur.bina_doc_id:editingBinaDocId;
+    const quotePatch={
+      title:quoteTitle,
+      notes:(remark||"").trim()||null,
+      contact_person:(contactName||"").trim()||null,
+      sales_agent:(agent||"").trim()||null,
+      subtotal:Math.round(itemsTotal*100)/100,
+      vat_rate:18,
+      vat_amount:Math.round(vatAmt*100)/100,
+      total:Math.round(grand*100)/100,
+      total_amount:Math.round(itemsTotal*100)/100,
+      edit_count:(Number(cur.edit_count)||0)+1,
+      last_edited_at:new Date().toISOString(),
+      last_edited_by:(user&&(user.name||user.full_name||user.email))||null,
+      updated_at:new Date().toISOString(),
+    };
+    const{error:uErr}=await supabaseClient.from("quotes").update(quotePatch).eq("id",editingQuoteId);
+    if(uErr)throw uErr;
+    const{error:dErr}=await supabaseClient.from("quote_items").delete().eq("quote_id",editingQuoteId);
+    if(dErr)throw dErr;
+    const itemRows=localLineRows("quote")("quote_id",editingQuoteId);
+    if(itemRows.length){
+      const{error:iErr}=await supabaseClient.from("quote_items").insert(itemRows);
+      if(iErr)throw iErr;
+    }
+    await saveClientTerms();
+    const pdfDoc=hb3BuildPdfDoc({kind:"quote",binaDocId:binaDocId,title:quoteTitle,client:selectedClient,contactName,items:filled,agent,remark,paymentTerms,dueDate:""});
+    if(onSuccess)onSuccess({kind:"quote-edit",id:binaDocId});
+    setSuccess({kind:"quote-edit",id:binaDocId,pdfDoc});
+  };
+
   const handleSubmit=async()=>{
     const v=validate();
     if(v){setError(v);return;}
@@ -8449,7 +8516,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
     setSubmitting(true);
     setError(null);
     try{
-      if(isOrder)await submitOrder();
+      if(isEditingQuote)await submitQuoteEdit();
+      else if(isOrder)await submitOrder();
       else await submitQuote();
     }catch(err){
       setError(err.message||String(err));
@@ -8462,19 +8530,21 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   const modalStyle={width:"100%",maxWidth:860,maxHeight:"96vh",background:"#F7FBFA",borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",boxShadow:"0 -8px 32px rgba(14,54,81,0.18)",overflow:"hidden"};
 
   if(success){
+    const isEdit=success.kind==="quote-edit";
     const lab=success.kind==="order"?"הזמנה":"הצעה";
     return<div style={overlayStyle} onClick={()=>!submitting&&onClose()}>
       <div style={modalStyle} onClick={e=>e.stopPropagation()}>
         <div style={{padding:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <strong style={{color:"#0E3651"}}>נוצר בבינה</strong>
+          <strong style={{color:"#0E3651"}}>{isEdit?"עודכנה בפרינטוס":"נוצר בבינה"}</strong>
           <button type="button" onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
         </div>
         <div style={{padding:"8px 16px 24px"}}>
           <div className="hb3-ok">
             <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"center"}}>
               <div>
-                <div style={{fontWeight:800,color:"#0E3651",fontSize:16}}>✅ {lab} {success.id} נוצרה בבינה</div>
+                <div style={{fontWeight:800,color:"#0E3651",fontSize:16}}>{isEdit?("✅ הצעה "+(success.id||"")+" עודכנה בפרינטוס"):("✅ "+lab+" "+success.id+" נוצרה בבינה")}</div>
                 {success.kind==="order"&&<div style={{fontSize:13,color:"#2A807C",marginTop:4}}>הקובץ יחובר למשימה אוטומטית כשהסנכרון יסתיים</div>}
+                {isEdit&&<div style={{fontSize:13,color:"#2A807C",marginTop:4}}>ההצעה בבינה לא שונתה. שלח ללקוח את ה-PDF המעודכן.</div>}
               </div>
               <button type="button" onClick={()=>window.openDocumentPDF&&window.openDocumentPDF(success.pdfDoc)} style={{padding:"10px 14px",borderRadius:10,border:"none",background:"#62C7C2",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:44}}>📄 הדפס PDF</button>
             </div>
@@ -8487,13 +8557,18 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
   return<div style={overlayStyle} onClick={()=>!submitting&&onClose()}>
     <div style={modalStyle} onClick={e=>e.stopPropagation()}>
       <div style={{padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:"#fff",borderBottom:"1px solid #E2EEED"}}>
-        <div className="hb3-toggle" style={{maxWidth:280,flex:1}}>
+        {isEditingQuote
+          ?<strong style={{color:"#0E3651",fontSize:16}}>עריכת הצעה #{editingBinaDocId||"—"}</strong>
+          :<div className="hb3-toggle" style={{maxWidth:280,flex:1}}>
           <button type="button" className={!isOrder?"on":""} onClick={()=>!submitting&&setMode("quote")}>הצעת מחיר</button>
           <button type="button" className={isOrder?"on":""} onClick={()=>!submitting&&setMode("order")}>הזמנה</button>
-        </div>
+        </div>}
         <button type="button" onClick={onClose} disabled={submitting} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#0E3651",fontFamily:"inherit"}}>✕</button>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:14,direction:"rtl"}}>
+        {isEditingQuote&&<div style={{background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:13,color:"#0E3651",lineHeight:1.55}}>
+          ℹ️ העריכה מתעדכנת בפרינטוס בלבד. ההצעה בבינה נשארת<br/>כפי שנוצרה. ה-PDF ללקוח יופק מהגרסה המעודכנת.
+        </div>}
         {isOrder&&<div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRight:"4px solid #D97706",borderRadius:10,padding:"10px 12px",marginBottom:12,fontSize:13,color:"#92400E"}}>
           <strong>שווה לוודא את תנאי התשלום</strong>
           <div style={{marginTop:4}}>הם נמשכים מכרטיס הלקוח וקובעים את מועד הגבייה. שינוי כאן מתעדכן בכרטיס הלקוח ויחול על כל ההזמנות הבאות.</div>
@@ -8510,7 +8585,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
             {selectedClient?<div>
               <div style={{fontWeight:800,color:"#0E3651"}}>{selectedClient.name}</div>
               <div style={{fontSize:12,color:"#2A807C",marginTop:4}}>{selectedClient.phone||"—"} · {selectedClient.bina_customer_id}</div>
-              <button type="button" onClick={()=>setSelectedClient(null)} style={{marginTop:8,padding:"6px 10px",borderRadius:8,border:"1px solid #D5E3E1",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>החלף</button>
+              {!isEditingQuote&&<button type="button" onClick={()=>setSelectedClient(null)} style={{marginTop:8,padding:"6px 10px",borderRadius:8,border:"1px solid #D5E3E1",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>החלף</button>}
             </div>:<>
               <input className="hb3-inp" type="text" placeholder="חיפוש שם / טלפון / קוד בינה" value={clientSearch} onChange={e=>setClientSearch(e.target.value)}/>
               <div style={{marginTop:8,maxHeight:140,overflowY:"auto"}}>
@@ -8525,6 +8600,10 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
             <div className="hb3-sec">פרטי מסמך</div>
             <label className="hb3-lab">כותרת</label>
             <input className="hb3-inp" style={{marginBottom:8}} value={title} onChange={e=>setTitle(e.target.value)} placeholder={isOrder?"כותרת הזמנה":"כותרת הצעה"}/>
+            {isEditingQuote&&<>
+              <label className="hb3-lab">מספר הצעה</label>
+              <input className="hb3-inp" style={{marginBottom:8,background:"#F1F5F4",color:"#6B7F92"}} readOnly value={editingBinaDocId||"—"}/>
+            </>}
             {isOrder&&<>
               <label className="hb3-lab">מספר הזמנת הלקוח</label>
               <input className="hb3-inp" style={{marginBottom:8}} value={customerOrderId} onChange={e=>setCustomerOrderId(e.target.value)} placeholder="אופציונלי — יופיע בבינה כהז׳ לקוח"/>
@@ -8539,10 +8618,8 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
             <label className="hb3-lab">תנאי תשלום</label>
             <input className="hb3-inp" value={paymentTerms} onChange={e=>setPaymentTerms(e.target.value)} placeholder="שוטף + 30"/>
             {selectedClient&&<div style={{fontSize:11,color:"#6B7F92",marginTop:4}}>מכרטיס הלקוח · ניתן לשנות</div>}
-            {isOrder&&<>
-              <label className="hb3-lab" style={{marginTop:8}}>הערות</label>
-              <textarea className="hb3-inp" rows={2} value={remark} onChange={e=>setRemark(e.target.value)} style={{resize:"vertical"}}/>
-            </>}
+            <label className="hb3-lab" style={{marginTop:8}}>הערות</label>
+            <textarea className="hb3-inp" rows={2} value={remark} onChange={e=>setRemark(e.target.value)} style={{resize:"vertical"}}/>
           </div>
         </div>
 
@@ -8626,7 +8703,7 @@ function UnifiedOrderQuoteModal({open,onClose,onSuccess,clients,sb,user=null,ini
           <span>מע״מ <strong>{vatAmt.toFixed(2)}</strong></span>
           <span style={{fontSize:16,fontWeight:800}}>סה״כ ₪{grand.toFixed(2)}</span>
         </div>
-        <button type="button" onClick={handleSubmit} disabled={submitting} style={{padding:"12px 22px",border:"none",borderRadius:10,background:submitting?"#9CA3AF":"#62C7C2",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:44,minWidth:120}}>{submitting?"שולח...":(isOrder?"צור הזמנה":"צור הצעה")}</button>
+        <button type="button" onClick={handleSubmit} disabled={submitting} style={{padding:"12px 22px",border:"none",borderRadius:10,background:submitting?"#9CA3AF":"#62C7C2",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:44,minWidth:120}}>{submitting?(isEditingQuote?"שומר...":"שולח..."):(isEditingQuote?"שמור הצעה":(isOrder?"צור הזמנה":"צור הצעה"))}</button>
       </div>
     </div>
   </div>;
@@ -9123,7 +9200,7 @@ function AdminTaskFormFields({form,setForm,ASSIGNEE_OPTS,MONTHS_HE}){
   );
 }
 
-function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
+function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient,onEditQuote}){
   const PAGE=50;
   const [kind,setKind]=useState("orders");
   const [q,setQ]=useState("");
@@ -9241,16 +9318,18 @@ function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
     };
   });
   const mapQuoteItems=items=>(items||[]).slice().sort((a,b)=>(a.line_number||0)-(b.line_number||0)).map(it=>{
-    const code=it.item_name?String(it.item_name).trim():"";
+    const code=it.bina_item_code?String(it.bina_item_code):(it.item_name?String(it.item_name).trim():"");
     const fromCode=code?(HB3_DEPT_FALLBACK.find(x=>x.bina_item_code===code)||null):null;
+    const fromDept=it.department?(HB3_DEPT_FALLBACK.find(x=>x.name===it.department)||null):null;
     return {
       description:it.description||"",
       quantity:it.quantity,
       unitPrice:it.unit_price,
       discount:it.discount_pct!=null?it.discount_pct:0,
-      binaItemCode:fromCode?fromCode.bina_item_code:"",
-      deptName:fromCode?fromCode.name:"",
+      binaItemCode:code||(fromDept?fromDept.bina_item_code:""),
+      deptName:it.department||(fromCode?fromCode.name:""),
       lineTotal:it.total,
+      priceMode:it.price_entry_mode==="total"?"total":"unit",
     };
   });
 
@@ -9275,6 +9354,29 @@ function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
       items,
       paymentTerms:client?hb3ClientTerms(client):"",
     });
+  };
+
+  const startEditQuote=async(r)=>{
+    if(!isQuotes||!quoteIsEditable(r))return;
+    try{
+      const{data:qItems}=await supabaseClient.from("quote_items").select("*").eq("quote_id",r.id).order("line_number");
+      const list=Array.isArray(clients)?clients:[];
+      const custId=r.bina_cust_id;
+      const client=list.find(c=>String(c.bina_customer_id)===String(custId))||{name:r.bina_cust_name,bina_customer_id:custId};
+      onEditQuote?.({
+        mode:"quote",
+        editQuoteId:r.id,
+        editBinaDocId:r.bina_doc_id,
+        title:r.title||"",
+        remark:r.notes||"",
+        agent:r.sales_agent||"",
+        contactName:r.contact_person||"",
+        client,
+        bina_cust_id:custId,
+        items:mapQuoteItems(qItems&&qItems.length?qItems:r.items),
+        paymentTerms:hb3ClientTerms(client),
+      });
+    }catch(e){window.alert(e.message||String(e));}
   };
 
   const printRow=r=>{
@@ -9351,8 +9453,9 @@ function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
               <button type="button" onClick={()=>onOpenClient?.({name:rowClient(r),binaCustId:r.bina_cust_id})} style={{fontWeight:800,fontSize:15,color:"#0E3651",background:"none",border:"none",padding:0,cursor:onOpenClient?"pointer":"default",fontFamily:"inherit",textDecoration:onOpenClient?"underline":"none",textUnderlineOffset:3}}>{rowClient(r)}</button>
               {!r.is_archive&&<span style={{fontSize:11,fontWeight:800,color:"#0E3651",background:"#EDF8F7",border:"1px solid #BFE6E3",borderRadius:6,padding:"2px 8px",lineHeight:1.4}}>פעילה</span>}
             </div>
-            <div style={{fontSize:13,color:"#69808F",marginTop:4}}>
-              {docLabel} {rowDocId(r)!=null?"#"+rowDocId(r):"—"}
+            <div style={{fontSize:13,color:"#69808F",marginTop:4,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+              <span>{docLabel} {rowDocId(r)!=null?"#"+rowDocId(r):"—"}</span>
+              {isQuotes&&quoteEditedBadge(r)}
               {r.title?(" · "+r.title):""}
             </div>
             <div style={{fontSize:14,color:"#0E3651",marginTop:6,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>{itemPreview(r)}</div>
@@ -9364,6 +9467,7 @@ function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
             <button type="button" title="צפייה" onClick={()=>setViewRow(r)} style={btnBase}>👁</button>
+            {isQuotes&&<QuoteEditButton q={r} onEdit={startEditQuote} btnStyle={btnBase}/>}
             <button type="button" title="שכפל להזמנה" onClick={()=>duplicateRow(r)} style={{...btnBase,borderColor:"#BFE6E3",background:"#EDF8F7",color:"#0E3651"}}>📋 שכפל</button>
             <button type="button" title="PDF" onClick={()=>printRow(r)} style={btnBase}>📄 PDF</button>
           </div>
@@ -9389,6 +9493,7 @@ function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
         {isQuotes
           ?<div><strong>סטטוס:</strong> {viewRow.status||viewRow.quote_status||"—"}</div>
           :<div><strong>סטטוס בינה:</strong> {viewRow.bina_order_status||"—"}</div>}
+        {isQuotes&&(Number(viewRow.edit_count)||0)>0&&<div>עודכנה {viewRow.edit_count} פעמים · אחרון: {viewRow.last_edited_at?new Date(viewRow.last_edited_at).toLocaleDateString("he-IL"):"—"} · {viewRow.last_edited_by||"—"}</div>}
         {isQuotes
           ?<div><strong>סכום:</strong> {fmtMoney(viewRow.subtotal)} · <strong>מע״מ:</strong> {fmtMoney(viewRow.vat_amount)} · <strong>כולל:</strong> {fmtMoney(rowAmount(viewRow))}</div>
           :<div><strong>סכום:</strong> {fmtMoney(viewRow.total_amount)} · <strong>כולל מע״מ:</strong> {fmtMoney(viewRow.total_inc_vat)}</div>}
@@ -9410,6 +9515,7 @@ function OrderHistoryTab({clients,onDuplicateOrder,onOpenClient}){
         </div>
         <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
           <button type="button" onClick={()=>{duplicateRow(viewRow);setViewRow(null);}} style={{...btnBase,borderColor:"#BFE6E3",background:"#EDF8F7"}}>📋 שכפל</button>
+          {isQuotes&&<QuoteEditButton q={viewRow} onEdit={q=>{setViewRow(null);startEditQuote(q);}} btnStyle={btnBase}/>}
           <button type="button" onClick={()=>printRow(viewRow)} style={btnBase}>📄 PDF</button>
         </div>
       </div>
@@ -9911,7 +10017,7 @@ function PurchaseOrdersTab({user}){
   </div>;
 }
 
-function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
+function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder,onEditQuote}){
   const [quotes,setQuotes]=useState([]);
   const [orders,setOrders]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -9924,7 +10030,7 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
     setLoading(true);
     try{
       const[{data,error},{data:ords,error:oErr}]=await Promise.all([
-        supabaseClient.from("quotes").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status").eq("is_archive",false).order("sent_at",{ascending:true,nullsFirst:false}),
+        supabaseClient.from("quotes").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,quote_status,sent_at,created_at,follow_up_sent_at,converted_to_order_id,converted_at,status_changed_at,total_amount,status,notes,edit_count,last_edited_at,last_edited_by,is_archive").eq("is_archive",false).order("sent_at",{ascending:true,nullsFirst:false}),
         supabaseClient.from("orders").select("id,title,bina_doc_id,bina_cust_id,bina_cust_name,contact_person,sales_agent,created_at,remark,order_items(id,description,quantity,unit_price,discount_pct,bina_item_code,price_entry_mode,line_total,line_number)").order("created_at",{ascending:false}).limit(250),
       ]);
       if(error)throw error;
@@ -9998,6 +10104,30 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
     };
   });
 
+  const startEditQuote=async(q)=>{
+    if(!quoteIsEditable(q))return;
+    setBusyId(q.id);
+    try{
+      const{data:qItems}=await supabaseClient.from("quote_items").select("*").eq("quote_id",q.id).order("line_number");
+      const list=Array.isArray(clients)?clients:[];
+      const client=list.find(c=>String(c.bina_customer_id)===String(q.bina_cust_id))||{name:q.bina_cust_name,bina_customer_id:q.bina_cust_id};
+      onEditQuote?.({
+        mode:"quote",
+        editQuoteId:q.id,
+        editBinaDocId:q.bina_doc_id,
+        title:q.title||"",
+        remark:q.notes||"",
+        agent:q.sales_agent||"",
+        contactName:q.contact_person||"",
+        client,
+        bina_cust_id:q.bina_cust_id,
+        items:mapQuoteItems(qItems),
+        paymentTerms:hb3ClientTerms(client),
+      });
+    }catch(e){window.alert(e.message||String(e));}
+    finally{setBusyId(null);}
+  };
+
   const convert=async(q)=>{
     setBusyId(q.id);
     try{
@@ -10024,7 +10154,7 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
     const client=list.find(c=>String(c.bina_customer_id)===String(q.bina_cust_id))||{name:q.bina_cust_name};
     const items=mapQuoteItems(qItems);
     window.openDocumentPDF&&window.openDocumentPDF(hb3BuildPdfDoc({
-      kind:"quote",binaDocId:q.bina_doc_id,title:q.title,client,contactName:q.contact_person,items,agent:q.sales_agent,remark:"",paymentTerms:hb3ClientTerms(client),dueDate:""
+      kind:"quote",binaDocId:q.bina_doc_id,title:q.title,client,contactName:q.contact_person,items,agent:q.sales_agent,remark:q.notes||"",paymentTerms:hb3ClientTerms(client),dueDate:""
     }));
   };
 
@@ -10135,7 +10265,11 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
           <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
             <div>
               <div style={{fontWeight:800,fontSize:16}}>{q.bina_cust_name||"—"} · {q.title||"הצעה"}</div>
-              <div style={{fontSize:13,color:"#64748b",marginTop:4}}>#{q.bina_doc_id||"—"} · {d} ימים · {q.sales_agent||""} · {st==="sent"?"ממתינה":st==="approved"?"אושרה":st==="rejected"?"נדחתה":st}</div>
+              <div style={{fontSize:13,color:"#64748b",marginTop:4,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+                <span>#{q.bina_doc_id||"—"}</span>
+                {quoteEditedBadge(q)}
+                <span>· {d} ימים · {q.sales_agent||""} · {st==="sent"?"ממתינה":st==="approved"?"אושרה":st==="rejected"?"נדחתה":st}</span>
+              </div>
               {q.follow_up_sent_at&&<div style={{fontSize:12,color:"#0d9488",marginTop:4}}>תזכורת נשלחה {new Date(q.follow_up_sent_at).toLocaleDateString("he-IL")}</div>}
             </div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -10146,6 +10280,7 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
               </>}
               {st==="approved"&&<button type="button" disabled={busyId===q.id} onClick={()=>convert(q)} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#0E3651",color:"#fff",fontWeight:700,cursor:"pointer",fontFamily:"inherit",minHeight:40}}>צור הזמנה</button>}
               <button type="button" onClick={()=>printQuote(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>📄 PDF</button>
+              <QuoteEditButton q={q} busy={busyId===q.id} onEdit={startEditQuote} btnStyle={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",fontFamily:"inherit",minHeight:40}}/>
               <button type="button" onClick={()=>setViewQ(q)} style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>👁️</button>
               <button type="button" disabled={busyId===q.id} onClick={()=>remove(q)} style={{padding:"8px 12px",borderRadius:8,border:"none",background:"#fee2e2",color:"#dc2626",cursor:"pointer",fontFamily:"inherit",minHeight:40}}>🗑️</button>
             </div>
@@ -10162,6 +10297,10 @@ function QuotesLifecycleTab({clients,sb,onConvertToOrder,onDuplicateOrder}){
         <div><strong>נשלחה:</strong> {viewQ.sent_at?new Date(viewQ.sent_at).toLocaleString("he-IL"):"—"}</div>
         <div><strong>סוכן:</strong> {viewQ.sales_agent||"—"}</div>
         <div><strong>איש קשר:</strong> {viewQ.contact_person||"—"}</div>
+        {(Number(viewQ.edit_count)||0)>0&&<div style={{marginTop:8,fontSize:13,color:"#475569"}}>עודכנה {viewQ.edit_count} פעמים · אחרון: {viewQ.last_edited_at?new Date(viewQ.last_edited_at).toLocaleDateString("he-IL"):"—"} · {viewQ.last_edited_by||"—"}</div>}
+        <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+          <QuoteEditButton q={viewQ} busy={busyId===viewQ.id} onEdit={q=>{setViewQ(null);startEditQuote(q);}} btnStyle={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"#fff",fontFamily:"inherit",minHeight:40}}/>
+        </div>
       </div>
     </Modal>}
 
@@ -21450,7 +21589,7 @@ function App(){
 
       {tab==="gmail"&&isA&&<GmailInboxTab user={user} notify={notify} clients={clients} quotes={quotes} orders={[]} onCreateOrder={(prefill)=>openOrderQuoteModal("order",prefill)}/>}
 
-      {tab==="order-history"&&isA&&<OrderHistoryTab clients={clients} onDuplicateOrder={(prefill)=>openOrderQuoteModal("order",prefill)} onOpenClient={(info)=>{
+      {tab==="order-history"&&isA&&<OrderHistoryTab clients={clients} onDuplicateOrder={(prefill)=>openOrderQuoteModal("order",prefill)} onEditQuote={(prefill)=>openOrderQuoteModal("quote",prefill)} onOpenClient={(info)=>{
         const list=Array.isArray(clients)?clients:[];
         const byId=info?.binaCustId!=null?list.find(c=>String(c.bina_customer_id)===String(info.binaCustId)):null;
         const byName=info?.name?list.find(c=>String(c.name||"").trim()===String(info.name||"").trim()):null;
@@ -21470,7 +21609,7 @@ function App(){
         setEditClientDelivery(found);
       }}/>}
 
-      {tab==="quotes-lifecycle"&&isA&&<QuotesLifecycleTab clients={clients} sb={sb} onConvertToOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}} onDuplicateOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}}/>}
+      {tab==="quotes-lifecycle"&&isA&&<QuotesLifecycleTab clients={clients} sb={sb} onConvertToOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}} onDuplicateOrder={(prefill)=>{openOrderQuoteModal("order",prefill);}} onEditQuote={(prefill)=>{openOrderQuoteModal("quote",prefill);}}/>}
 
       {tab==="alut-dashboard"&&isA&&<AlutDashboard user={user}/>}
 

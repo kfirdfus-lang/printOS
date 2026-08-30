@@ -1,0 +1,18 @@
+---
+description: Compare insert/update fields against the live DB schema before every push
+alwaysApply: true
+---
+
+# Schema compare before push
+
+Before every git push that touches `insert` / `update` / `upsert` (or REST POST/PATCH) to a table:
+
+1. Query live columns:
+   `information_schema.columns` for that table (`table_schema = 'public'`).
+2. List every field the new/changed code writes.
+3. Paste the comparison in the reply (field → exists yes/no).
+4. Do not push if any written field is missing.
+
+Canonical amount columns: `quote_items.total`, `order_items.line_total`. Do not send the other name.
+
+Prefer finding all gaps in one pass over discovering them in production one by one.
